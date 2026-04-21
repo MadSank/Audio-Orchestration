@@ -1,0 +1,58 @@
+{
+  "hash": "25351f1d",
+  "configHash": "88ebb889",
+  "lockfileHash": "3b69cbe9",
+  "browserHash": "a61e546d",
+  "optimized": {
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "2d74bcbc",
+      "needsInterop": true
+    },
+    "react-dropzone": {
+      "src": "../../node_modules/react-dropzone/dist/es/index.js",
+      "file": "react-dropzone.js",
+      "fileHash": "3821c848",
+      "needsInterop": false
+    },
+    "react-router-dom": {
+      "src": "../../node_modules/react-router-dom/dist/index.mjs",
+      "file": "react-router-dom.js",
+      "fileHash": "d6013549",
+      "needsInterop": false
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "8d364098",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "277585b5",
+      "needsInterop": true
+    },
+    "tone": {
+      "src": "../../node_modules/tone/build/esm/index.js",
+      "file": "tone.js",
+      "fileHash": "dae55d82",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-BoAXSpZd": {
+      "file": "chunk-BoAXSpZd.js",
+      "isDynamicEntry": false
+    },
+    "react-dom-BjPBJlww": {
+      "file": "react-dom-BjPBJlww.js",
+      "isDynamicEntry": false
+    },
+    "tslib.es6-DxzTCP6C": {
+      "file": "tslib.es6-DxzTCP6C.js",
+      "isDynamicEntry": false
+    }
+  }
+}

@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Global resets — let Shell own all layout */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #080c10;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  /* Reset the Vite boilerplate styles that broke our flex layout */
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  text-align: left;
+  display: block;
+  border: none;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ffffff18; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #ffffff30; }
+
+/* Range input accent */
+input[type=range] { accent-color: #10b981; }
+
+/* Smooth font rendering */
+html { font-family: system-ui, -apple-system, sans-serif; }
