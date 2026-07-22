@@ -1,24 +1,13 @@
+/**
+ * ProcessingOverlay.jsx — Staged Processing Indicator
+ * =====================================================
+ * Animated multi-stage progress indicator. Purple accent only.
+ */
+
 import { useEffect, useRef, useState } from "react";
+import { Loader2, Check } from "lucide-react";
 
-const COLORS = {
-  emerald: "#10b981",
-  violet:  "#8b5cf6",
-  blue:    "#3b82f6",
-  amber:   "#f59e0b",
-};
-
-function Spinner({ color }) {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
-      style={{ animation: "aoe-spin 0.75s linear infinite", flexShrink: 0 }}>
-      <circle cx="12" cy="12" r="9" stroke={color} strokeWidth="2" strokeOpacity="0.15"/>
-      <path d="M12 3a9 9 0 0 1 9 9" stroke={color} strokeWidth="2" strokeLinecap="round"/>
-      <style>{`@keyframes aoe-spin { to { transform: rotate(360deg); } }`}</style>
-    </svg>
-  );
-}
-
-export default function ProcessingOverlay({ stages, intervalMs = 3800, accentColor = "emerald" }) {
+export default function ProcessingOverlay({ stages, intervalMs = 3800, accentColor = "violet" }) {
   const [idx, setIdx] = useState(0);
   const keyRef = useRef(stages.join("|"));
 
@@ -29,72 +18,67 @@ export default function ProcessingOverlay({ stages, intervalMs = 3800, accentCol
     return () => clearInterval(t);
   }, [stages.join("|"), intervalMs]); // eslint-disable-line
 
-  const color = COLORS[accentColor] ?? COLORS.emerald;
-  const pct   = Math.round(((idx + 1) / stages.length) * 91);
+  const pct = Math.round(((idx + 1) / stages.length) * 91);
 
   return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center",
-      gap: "18px", padding: "20px 0", maxWidth: "340px", margin: "0 auto",
-    }}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-        <Spinner color={color} />
-        <span style={{
-          fontSize: "11px", color: "#6b7280", letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          animation: "aoe-pulse 2s ease-in-out infinite",
-        }}>
+    <div className="flex flex-col items-center gap-5 py-5 max-w-[340px] mx-auto">
+      {/* Spinner + label */}
+      <div className="flex flex-col items-center gap-2">
+        <Loader2 className="w-7 h-7 text-purple-500 animate-spin" />
+        <span
+          className="text-[11px] text-zinc-500 uppercase tracking-[0.08em]"
+          style={{ animation: "saics-pulse 2s ease-in-out infinite" }}
+        >
           {stages[idx]}
-          <style>{`@keyframes aoe-pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }`}</style>
         </span>
       </div>
 
-      <div style={{ width: "100%" }}>
-        <div style={{
-          display: "flex", justifyContent: "space-between",
-          fontSize: "10px", color: "#374151", marginBottom: "5px",
-        }}>
+      {/* Progress bar */}
+      <div className="w-full">
+        <div className="flex justify-between text-[10px] text-zinc-700 mb-1.5">
           <span>{stages[idx]}</span>
-          <span>{pct}%</span>
+          <span className="font-mono">{pct}%</span>
         </div>
-        <div style={{
-          height: "3px", background: "rgba(255,255,255,0.07)",
-          borderRadius: "9999px", overflow: "hidden",
-        }}>
-          <div style={{
-            height: "100%", width: `${pct}%`,
-            background: color, borderRadius: "9999px",
-            transition: "width 3.5s ease-out",
-            boxShadow: `0 0 8px ${color}50`,
-          }}/>
+        <div className="h-[3px] bg-white/[0.04] rounded-full overflow-hidden">
+          <div
+            className="h-full bg-purple-500 rounded-full transition-all duration-[3.5s] ease-out"
+            style={{
+              width: `${pct}%`,
+              boxShadow: "0 0 8px rgba(139,92,246,0.4)",
+            }}
+          />
         </div>
       </div>
 
-      <ol style={{ width: "100%", listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "7px" }}>
+      {/* Stage list */}
+      <ol className="w-full flex flex-col gap-2 list-none p-0 m-0">
         {stages.map((s, i) => (
-          <li key={s} style={{
-            display: "flex", alignItems: "center", gap: "9px",
-            fontSize: "12px",
-            color: i < idx ? color : i === idx ? "#e5e7eb" : "#1f2937",
-            transition: "color 0.3s",
-          }}>
-            <span style={{
-              width: "16px", height: "16px", borderRadius: "50%", flexShrink: 0,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              background: i < idx ? `${color}18` : i === idx ? "rgba(255,255,255,0.06)" : "transparent",
-              border: `1px solid ${i < idx ? `${color}40` : i === idx ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)"}`,
-            }}>
+          <li key={s} className="flex items-center gap-2.5 text-[12px] transition-colors duration-300">
+            <span className={`
+              w-4 h-4 rounded-full shrink-0 flex items-center justify-center
+              border transition-all duration-300
+              ${i < idx
+                ? "bg-purple-500/15 border-purple-500/30"
+                : i === idx
+                  ? "bg-white/[0.04] border-white/[0.08]"
+                  : "border-white/[0.04]"
+              }
+            `}>
               {i < idx ? (
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
+                <Check className="w-2.5 h-2.5 text-purple-400" />
               ) : i === idx ? (
-                <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: color, boxShadow: `0 0 5px ${color}` }}/>
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_5px_rgba(139,92,246,0.6)]" />
               ) : (
-                <span style={{ width: "3px", height: "3px", borderRadius: "50%", background: "rgba(255,255,255,0.12)" }}/>
+                <span className="w-1 h-1 rounded-full bg-white/[0.08]" />
               )}
             </span>
-            {s}
+            <span className={
+              i < idx ? "text-purple-400" :
+              i === idx ? "text-zinc-200" :
+              "text-zinc-800"
+            }>
+              {s}
+            </span>
           </li>
         ))}
       </ol>

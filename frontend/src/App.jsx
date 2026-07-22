@@ -1,23 +1,19 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import Shell from "./components/Shell";
-import Library from "./pages/Library";
-import InfiniteJukebox from "./pages/InfiniteJukebox";
-import TrackTransitions from "./pages/TrackTransitions";
+/**
+ * App.jsx — SAICS v5 Application Root
+ * =====================================
+ * Context providers + Shell layout with routing.
+ */
+
 import { LibraryProvider } from "./context/LibraryContext";
+import { AppProvider } from "./context/AppContext";
+import Shell from "./components/Shell";
 
 export default function App() {
   return (
     <LibraryProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Shell />}>
-            <Route index element={<Navigate to="/library" replace />} />
-            <Route path="library"     element={<Library />} />
-            <Route path="jukebox"     element={<InfiniteJukebox />} />
-            <Route path="transitions" element={<TrackTransitions />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <AppProvider>
+        <Shell />
+      </AppProvider>
     </LibraryProvider>
   );
 }

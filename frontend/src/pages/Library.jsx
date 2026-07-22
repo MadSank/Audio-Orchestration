@@ -1,359 +1,323 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useDropzone } from "react-dropzone";
-import * as Tone from "tone";
-import { useLibrary } from "../context/LibraryContext";
+/**
+ * Library.jsx — Track Library & Player
+ * ======================================
+ * Upload zone, track grid, and sticky bottom audio player.
+ */
 
-const S = {
-  card:  { background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "14px", padding: "20px" },
-  inner: { background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "10px" },
-  lbl:   { fontSize: "10px", color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em" },
-  mono:  { fontFamily: "'JetBrains Mono', ui-monospace, monospace" },
-};
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useLibrary } from "../context/LibraryContext";
+import { useApp } from "../context/AppContext";
+import useLibraryPlayer, { PLAYBACK_MODES } from "../hooks/useLibraryPlayer";
+import AudioDropzone from "../components/AudioDropzone";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Play, Pause, Square, Volume2, Music2, Clock, Loader2,
+  ChevronDown, Download, Trash2,
+} from "lucide-react";
+
+const API = "http://localhost:8000";
 
 function fmt(s) {
   if (!s || !isFinite(s)) return "--:--";
   return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 }
-function fmtSize(b) {
-  return b < 1e6 ? `${(b / 1e3).toFixed(0)} KB` : `${(b / 1e6).toFixed(1)} MB`;
-}
 
-function SpectrumBars({ fftRef, playing }) {
-  const canvasRef = useRef(null);
-  const rafRef    = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const tick = () => {
-      const w = canvas.offsetWidth, h = canvas.offsetHeight;
-      const dpr = window.devicePixelRatio || 1;
-      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-        canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
-      }
-      const ctx = canvas.getContext("2d");
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
-      const N = 52, bw = (w - N + 1) / N;
-      const fft = fftRef.current;
-      let vals = new Array(N).fill(-80);
-      if (fft && playing) {
-        try {
-          const raw = fft.getValue(), step = Math.floor(raw.length / N);
-          for (let i = 0; i < N; i++) vals[i] = raw[i * step] ?? -80;
-        } catch (_) {}
-      }
-      for (let i = 0; i < N; i++) {
-        const norm = (Math.max(vals[i], -80) + 80) / 80;
-        const bh   = Math.max(2, norm * h * 0.88);
-        ctx.fillStyle = `rgba(59,130,246,${playing ? 0.25 + norm * 0.75 : 0.1})`;
-        ctx.beginPath(); ctx.roundRect(i * (bw + 1), h - bh, bw, bh, 1.5); ctx.fill();
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [fftRef, playing]);
-
-  return <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" }}/>;
-}
-
-let activePlayer = null, activeVol = null, activeFft = null;
-
-function teardown() {
-  if (activePlayer) { try { activePlayer.stop(); } catch (_) {} activePlayer.disconnect(); activePlayer.dispose(); activePlayer = null; }
-  if (activeFft)    { activeFft.dispose(); activeFft = null; }
-  if (activeVol)    { activeVol.dispose(); activeVol = null; }
-  Tone.getTransport().stop();
-  Tone.getTransport().cancel();
-}
-
-function DropZone({ onFiles }) {
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop: f => { if (f.length) onFiles(f); },
-    accept: { "audio/*": [".mp3", ".wav", ".flac", ".ogg", ".aac", ".aiff", ".m4a"] },
-    multiple: true,
-  });
-  return (
-    <div {...getRootProps()} style={{
-      border: `1.5px dashed ${isDragActive ? "#3b82f6" : "rgba(255,255,255,0.09)"}`,
-      borderRadius: "12px", padding: "22px 16px",
-      display: "flex", flexDirection: "column", alignItems: "center", gap: "7px",
-      cursor: "pointer", textAlign: "center",
-      background: isDragActive ? "rgba(59,130,246,0.06)" : "transparent",
-      boxShadow: isDragActive ? "0 0 0 3px rgba(59,130,246,0.12)" : "none",
-      transition: "all 0.15s",
-    }}
-    onMouseEnter={e => { if (!isDragActive) e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
-    onMouseLeave={e => { if (!isDragActive) e.currentTarget.style.background = "transparent"; }}
-    >
-      <input {...getInputProps()} />
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={isDragActive ? "#3b82f6" : "#374151"} strokeWidth="1.8" strokeLinecap="round">
-        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-      </svg>
-      <span style={{ fontSize: "12px", color: isDragActive ? "#93c5fd" : "#6b7280" }}>
-        {isDragActive ? "Release to add" : "Drop audio files here · they'll be available across all tools"}
-      </span>
-      <span style={{ fontSize: "10px", color: "#374151" }}>MP3 · WAV · FLAC · OGG · AAC</span>
-    </div>
-  );
+function fmtSize(bytes) {
+  if (!bytes) return "--";
+  return `${(bytes / 1e6).toFixed(1)} MB`;
 }
 
 export default function Library() {
   const { tracks, addTracks, removeTrack, updateTrack } = useLibrary();
+  const { currentMode, setCurrentMode, isProcessing, setIsProcessing } = useApp();
+  const player = useLibraryPlayer();
 
-  const [activeId,    setActiveId]    = useState(null);
-  const [playing,     setPlaying]     = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration,    setDuration]    = useState(0);
-  const [volume,      setVolumeState] = useState(0.8);
+  const waveformRef = useRef(null);
+  const [processingIds, setProcessingIds] = useState(new Set());
+  const [showModes, setShowModes] = useState(false);
 
-  const playerRef = useRef(null);
-  const volRef    = useRef(null);
-  const fftRef    = useRef(null);
-  const syncedRef = useRef(false);
-  const pollRef   = useRef(null);
+  const activeTrack = tracks.find(t => t.id === player.activeId);
 
-  useEffect(() => {
-    return () => { teardown(); clearInterval(pollRef.current); };
-  }, []);
+  // Analyze track with backend
+  const analyzeTrack = useCallback(async (track) => {
+    setProcessingIds(prev => new Set(prev).add(track.id));
+    const body = new FormData();
+    body.append("file", track.file);
 
-  // Auto-analyze: fetch BPM/key for any track that hasn't been analyzed yet
-  useEffect(() => {
-    const API = "http://localhost:8000";
-    tracks.forEach(track => {
-      if (track.bpm != null || track.error || track._metaPending) return;
-      // Mark as pending to avoid duplicate calls on re-render
-      updateTrack(track.id, { _metaPending: true });
-      const body = new FormData();
-      body.append("file", track.file);
-      fetch(`${API}/analyze-meta`, { method: "POST", body })
-        .then(res => res.ok ? res.json() : Promise.reject(new Error("meta-analysis failed")))
-        .then(data => {
-          updateTrack(track.id, {
-            bpm:      data.tempo,
-            duration: data.duration || track.duration,
-            _metaPending: false,
-          });
-        })
-        .catch(() => {
-          updateTrack(track.id, { _metaPending: false });
+    try {
+      const res = await fetch(`${API}/analyze`, { method: "POST", body });
+      if (res.ok) {
+        const data = await res.json();
+        updateTrack(track.id, {
+          bpm: data.tempo?.toFixed(1) || null,
+          key: data.key || null,
+          camelot_key: data.camelot_key || null,
+          duration: data.song_duration_s || null,
         });
-    });
-  }, [tracks, updateTrack]);
-
-  const handleFiles = useCallback((files) => {
-    addTracks(files);
-  }, [addTracks]);
-
-  const handleRemove = useCallback((id) => {
-    if (activeId === id) {
-      teardown(); playerRef.current = null;
-      setActiveId(null); setPlaying(false); setCurrentTime(0); setDuration(0);
-    }
-    removeTrack(id);
-  }, [activeId, removeTrack]);
-
-  const loadAndPlay = useCallback(async (track) => {
-    if (activeId === track.id && playerRef.current) {
-      await Tone.start();
-      if (playing) {
-        Tone.getTransport().pause(); setPlaying(false); clearInterval(pollRef.current);
-      } else {
-        if (!syncedRef.current) { playerRef.current.sync().start(0); syncedRef.current = true; }
-        Tone.getTransport().start(); setPlaying(true);
-        pollRef.current = setInterval(() => setCurrentTime(Tone.getTransport().seconds), 100);
       }
-      return;
+    } catch (err) {
+      updateTrack(track.id, { error: err.message });
+    } finally {
+      setProcessingIds(prev => {
+        const next = new Set(prev);
+        next.delete(track.id);
+        return next;
+      });
     }
+  }, [updateTrack]);
 
-    clearInterval(pollRef.current);
-    teardown(); playerRef.current = null; syncedRef.current = false;
-    setPlaying(false); setCurrentTime(0); setDuration(0);
-    setActiveId(track.id);
-    await Tone.start();
+  // Handle file drop
+  const handleDrop = useCallback((files) => {
+    const newTracks = addTracks(files);
+    newTracks.forEach(t => analyzeTrack(t));
+  }, [addTracks, analyzeTrack]);
 
-    const vol = new Tone.Volume(20 * Math.log10(Math.max(volume, 0.0001))).toDestination();
-    const fft = new Tone.FFT(256);
-    activeVol = vol; activeFft = fft;
-    volRef.current = vol; fftRef.current = fft;
-
-    const player = new Tone.Player({
-      url: track.url, loop: false,
-      onload: () => {
-        const dur = player.buffer.duration;
-        setDuration(dur);
-        updateTrack(track.id, { duration: dur });
-      },
-      onerror: () => updateTrack(track.id, { error: "Failed to load" }),
-    });
-    player.connect(vol);
-    player.connect(fft);
-    activePlayer = player; playerRef.current = player;
-
-    const go = () => {
-      if (!playerRef.current) return;
-      playerRef.current.sync().start(0); syncedRef.current = true;
-      Tone.getTransport().start(); setPlaying(true);
-      pollRef.current = setInterval(() => {
-        const t = Tone.getTransport().seconds; setCurrentTime(t);
-        const dur = playerRef.current?.buffer?.duration;
-        if (dur && t >= dur - 0.15) {
-          Tone.getTransport().stop(); clearInterval(pollRef.current);
-          setPlaying(false); setCurrentTime(0);
-        }
-      }, 100);
-    };
-
-    if (player.loaded) { go(); }
-    else { const w = setInterval(() => { if (player.loaded) { clearInterval(w); go(); } }, 80); }
-  }, [activeId, playing, volume, updateTrack]);
-
-  const seek = useCallback((e) => {
-    if (!duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const t = Math.max(0, Math.min((e.clientX - rect.left) / rect.width * duration, duration - 0.1));
-    Tone.getTransport().seconds = t; setCurrentTime(t);
-  }, [duration]);
-
-  const handleVolume = (v) => {
-    setVolumeState(v);
-    if (volRef.current) volRef.current.volume.value = v === 0 ? -Infinity : 20 * Math.log10(v);
-  };
-
-  const activeTrack = tracks.find(t => t.id === activeId);
-  const progress    = activeTrack && duration ? (currentTime / duration) * 100 : 0;
+  // Handle track click → play
+  const handleTrackClick = useCallback((track) => {
+    player.loadAndPlay(track, waveformRef.current);
+  }, [player]);
 
   return (
-    <div style={{ maxWidth: "700px", display: "flex", flexDirection: "column", gap: "20px" }}>
-      <div>
-        <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#f9fafb", margin: "0 0 6px", letterSpacing: "-0.3px" }}>
-          Library
-        </h2>
-        <p style={{ fontSize: "13px", color: "#6b7280", margin: 0, lineHeight: 1.6 }}>
-          Tracks added here are available everywhere — pick them directly in Infinite Jukebox and Transitions without re-uploading.
-        </p>
+    <div className="flex flex-col h-full">
+      {/* Scrollable content */}
+      <div className={`flex-1 overflow-y-auto p-6 pb-32 ${player.activeId ? "pb-44" : ""}`}>
+        {/* Page header */}
+        <div className="mb-6">
+          <h1 className="text-xl font-bold text-white tracking-tight">Library</h1>
+          <p className="text-xs text-zinc-600 mt-1">Upload, analyze, and play your audio tracks</p>
+        </div>
+
+        {/* Upload zone */}
+        <div className="mb-8">
+          <AudioDropzone
+            onFile={(files) => handleDrop(Array.isArray(files) ? files : [files])}
+            label="Drop audio files to upload"
+          />
+        </div>
+
+        {/* Track list */}
+        {tracks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-zinc-700">
+            <Music2 className="w-10 h-10 mb-3 opacity-30" />
+            <p className="text-sm font-medium">No tracks yet</p>
+            <p className="text-xs text-zinc-800 mt-1">Drop audio files above to get started</p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {/* Table header */}
+            <div className="grid grid-cols-[1fr_80px_80px_80px_40px] gap-3 px-4 py-2 text-[10px] uppercase tracking-[0.12em] text-zinc-600 font-medium border-b border-white/[0.04]">
+              <span>Track</span>
+              <span className="text-right">BPM</span>
+              <span className="text-right">Key</span>
+              <span className="text-right">Duration</span>
+              <span></span>
+            </div>
+
+            {/* Track rows */}
+            <AnimatePresence mode="popLayout">
+            {tracks.map(track => {
+              const isActive = player.activeId === track.id;
+              const isAnalyzing = processingIds.has(track.id);
+
+              return (
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  key={track.id}
+                  onClick={() => handleTrackClick(track)}
+                  className={`
+                    grid grid-cols-[1fr_80px_80px_80px_40px] gap-3 items-center
+                    px-4 py-3 rounded-lg cursor-pointer
+                    transition-colors duration-150 group
+                    ${isActive
+                      ? "bg-purple-500/8 border border-purple-500/20"
+                      : "border border-transparent hover:bg-white/[0.02] hover:border-white/[0.04]"
+                    }
+                  `}
+                >
+                  {/* Name */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`
+                      w-8 h-8 rounded-md flex items-center justify-center shrink-0
+                      ${isActive
+                        ? "bg-purple-500/20 border border-purple-500/30"
+                        : "bg-zinc-900 border border-white/[0.06]"
+                      }
+                    `}>
+                      {isActive && player.playing ? (
+                        <Pause className="w-3.5 h-3.5 text-purple-400" />
+                      ) : isAnalyzing ? (
+                        <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className={`text-[13px] font-medium truncate ${isActive ? "text-white" : "text-zinc-300"}`}>
+                        {track.name}
+                      </div>
+                      <div className="text-[10px] text-zinc-700 mt-0.5">{fmtSize(track.size)}</div>
+                    </div>
+                  </div>
+
+                  {/* BPM */}
+                  <div className={`text-right font-mono text-[13px] font-medium ${isActive ? "text-purple-400" : "text-zinc-400"}`}>
+                    {isAnalyzing ? "..." : track.bpm || "--"}
+                  </div>
+
+                  {/* Key */}
+                  <div className="text-right font-mono text-[13px] text-zinc-400">
+                    {isAnalyzing ? "..." : track.camelot_key || track.key || "--"}
+                  </div>
+
+                  {/* Duration */}
+                  <div className="text-right font-mono text-[12px] text-zinc-500">
+                    {track.duration ? fmt(track.duration) : "--:--"}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeTrack(track.id); }}
+                      className="p-1 rounded text-zinc-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer bg-transparent border-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
 
-      {activeTrack && (
-        <div style={{ ...S.card, display: "flex", flexDirection: "column", gap: "14px" }}>
-          <div style={{ ...S.inner, position: "relative", height: "58px", overflow: "hidden" }}>
-            <SpectrumBars fftRef={fftRef} playing={playing} />
-          </div>
-          <div onClick={seek} style={{ height: "4px", borderRadius: "2px", background: "rgba(255,255,255,0.07)", cursor: "pointer", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${progress}%`, background: "linear-gradient(90deg, #3b82f6, #6366f1)", borderRadius: "2px", transition: "width 0.1s linear" }}/>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <button onClick={() => loadAndPlay(activeTrack)} style={{
-              width: "36px", height: "36px", borderRadius: "50%",
-              background: "linear-gradient(135deg, #3b82f6, #6366f1)",
-              border: "none", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "white", flexShrink: 0, boxShadow: "0 0 16px rgba(59,130,246,0.3)",
-            }}>
-              {playing
-                ? <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-                : <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-              }
-            </button>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "12px", fontWeight: 500, color: "#e5e7eb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeTrack.name}</div>
-              <div style={{ fontSize: "10px", color: "#4b5563", marginTop: "2px", ...S.mono }}>{fmt(currentTime)} / {fmt(duration)}</div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                {volume > 0.25 && <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>}
-                {volume > 0.65 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>}
-              </svg>
-              <input type="range" min="0" max="1" step="0.01" value={volume}
-                onChange={e => handleVolume(+e.target.value)}
-                style={{ width: "72px", accentColor: "#3b82f6", cursor: "pointer" }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Sticky Bottom Player ── */}
+      <AnimatePresence>
+      {player.activeId && (
+        <motion.div
+          initial={{ y: "100%", opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: "100%", opacity: 0 }}
+          transition={{ type: "spring", stiffness: 350, damping: 30 }}
+          className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/[0.06]"
+          style={{
+            background: "linear-gradient(to top, rgba(0,0,0,0.98), rgba(9,9,11,0.95))",
+            backdropFilter: "blur(20px) saturate(1.5)",
+          }}
+        >
+          <div className="px-6 py-3">
+            {/* Waveform */}
+            <div
+              ref={waveformRef}
+              className="h-[48px] rounded-md bg-black/60 border border-white/[0.04] overflow-hidden mb-3"
+            />
 
-      <DropZone onFiles={handleFiles} />
-
-      {tracks.length === 0 ? (
-        <div style={{ ...S.inner, padding: "40px 20px", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="1.6" strokeLinecap="round">
-            <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-          </svg>
-          <p style={{ fontSize: "13px", color: "#4b5563", margin: 0 }}>No tracks yet</p>
-          <p style={{ fontSize: "11px", color: "#1f2937", margin: 0 }}>Add files above — they'll appear in Jukebox and Transitions too</p>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <div style={{ ...S.lbl, marginBottom: "8px" }}>{tracks.length} track{tracks.length !== 1 ? "s" : ""} in pool</div>
-          {tracks.map((track, i) => {
-            const isActive = track.id === activeId;
-            const rowProg  = isActive && duration ? (currentTime / duration) * 100 : 0;
-            return (
-              <div key={track.id} onClick={() => !track.error && loadAndPlay(track)} style={{
-                display: "flex", alignItems: "center", gap: "12px",
-                padding: "10px 14px", borderRadius: "10px",
-                cursor: track.error ? "default" : "pointer",
-                background: isActive ? "rgba(59,130,246,0.08)" : "rgba(255,255,255,0.02)",
-                border: `1px solid ${isActive ? "rgba(59,130,246,0.2)" : "rgba(255,255,255,0.05)"}`,
-                position: "relative", overflow: "hidden", transition: "background 0.12s",
-              }}
-              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
-              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isActive ? "rgba(59,130,246,0.08)" : "rgba(255,255,255,0.02)"; }}
+            <div className="flex items-center gap-4">
+              {/* Play/Pause */}
+              <button
+                onClick={() => activeTrack && player.loadAndPlay(activeTrack, waveformRef.current)}
+                disabled={player.isLoading}
+                className="
+                  w-10 h-10 rounded-full shrink-0
+                  bg-gradient-to-br from-purple-500 to-purple-700
+                  flex items-center justify-center
+                  shadow-[0_0_20px_rgba(139,92,246,0.3)]
+                  hover:shadow-[0_0_30px_rgba(139,92,246,0.5)]
+                  transition-shadow cursor-pointer border-0 text-white
+                  disabled:opacity-50
+                "
               >
-                {isActive && <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${rowProg}%`, background: "rgba(59,130,246,0.05)", transition: "width 0.1s linear", pointerEvents: "none" }}/>}
-                <div style={{
-                  width: "28px", height: "28px", borderRadius: "8px", flexShrink: 0,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  background: isActive ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.04)",
-                  border: `1px solid ${isActive ? "rgba(59,130,246,0.3)" : "rgba(255,255,255,0.06)"}`,
-                  position: "relative", zIndex: 1,
-                }}>
-                  {isActive && playing
-                    ? <svg width="11" height="11" viewBox="0 0 24 24" fill="#3b82f6"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-                    : isActive
-                    ? <svg width="11" height="11" viewBox="0 0 24 24" fill="#3b82f6"><polygon points="5,3 19,12 5,21"/></svg>
-                    : <span style={{ fontSize: "10px", color: "#4b5563", ...S.mono }}>{i + 1}</span>
-                  }
-                </div>
-                <div style={{ flex: 1, minWidth: 0, position: "relative", zIndex: 1 }}>
-                  <div style={{ fontSize: "13px", fontWeight: 500, color: isActive ? "#e5e7eb" : "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {track.name}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "7px", marginTop: "2px" }}>
-                    <span style={{ fontSize: "10px", color: "#374151", ...S.mono }}>{fmtSize(track.size)}</span>
-                    <span style={{ width: "2px", height: "2px", borderRadius: "50%", background: "#1f2937" }}/>
-                    <span style={{ fontSize: "10px", color: "#374151" }}>{track.ext}</span>
-                    {track.duration && <>
-                      <span style={{ width: "2px", height: "2px", borderRadius: "50%", background: "#1f2937" }}/>
-                      <span style={{ fontSize: "10px", color: "#374151", ...S.mono }}>{fmt(track.duration)}</span>
-                    </>}
-                    {track.error && <span style={{ fontSize: "10px", color: "#ef4444" }}>{track.error}</span>}
-                  </div>
-                </div>
-                {isActive && duration > 0 && (
-                  <div style={{ fontSize: "10px", color: "#3b82f6", ...S.mono, flexShrink: 0, position: "relative", zIndex: 1 }}>{fmt(currentTime)}</div>
+                {player.isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : player.playing ? (
+                  <Pause className="w-4 h-4" />
+                ) : (
+                  <Play className="w-4 h-4 ml-0.5" />
                 )}
-                <button onClick={e => { e.stopPropagation(); handleRemove(track.id); }} style={{
-                  width: "26px", height: "26px", borderRadius: "6px", border: "none",
-                  background: "transparent", cursor: "pointer", color: "#374151",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  flexShrink: 0, position: "relative", zIndex: 1, transition: "all 0.1s",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.background = "rgba(239,68,68,0.1)"; }}
-                onMouseLeave={e => { e.currentTarget.style.color = "#374151"; e.currentTarget.style.background = "transparent"; }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
-                  </svg>
-                </button>
+              </button>
+
+              {/* Stop */}
+              <button
+                onClick={player.stop}
+                className="p-2 rounded-md text-zinc-600 hover:text-zinc-300 bg-transparent border-0 cursor-pointer transition-colors"
+              >
+                <Square className="w-4 h-4" />
+              </button>
+
+              {/* Track Info */}
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-medium text-white truncate">
+                  {activeTrack?.name || "No track"}
+                </div>
+                <div className="font-mono text-[11px] text-zinc-600 mt-0.5">
+                  {fmt(player.currentTime)} / {fmt(player.duration)}
+                </div>
               </div>
-            );
-          })}
-        </div>
+
+              {/* DSP Mode selector */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowModes(s => !s)}
+                  className="
+                    flex items-center gap-1.5 px-3 py-1.5 rounded-md
+                    bg-zinc-900 border border-white/[0.06]
+                    text-[11px] font-medium text-zinc-400
+                    hover:text-zinc-200 hover:border-white/[0.1]
+                    transition-all cursor-pointer
+                  "
+                >
+                  <span>{PLAYBACK_MODES.find(m => m.id === currentMode)?.icon}</span>
+                  <span>{PLAYBACK_MODES.find(m => m.id === currentMode)?.label || "Normal"}</span>
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+
+                {showModes && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowModes(false)} />
+                    <div className="absolute bottom-full right-0 mb-2 z-50 w-48 py-1 rounded-lg bg-zinc-900 border border-white/[0.08] shadow-2xl">
+                      {PLAYBACK_MODES.map(m => (
+                        <button
+                          key={m.id}
+                          onClick={() => { setCurrentMode(m.id); setShowModes(false); }}
+                          className={`
+                            w-full flex items-center gap-2 px-3 py-2
+                            text-[11px] text-left cursor-pointer
+                            border-0 bg-transparent transition-colors
+                            ${currentMode === m.id
+                              ? "text-purple-400 bg-purple-500/10"
+                              : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03]"
+                            }
+                          `}
+                        >
+                          <span>{m.icon}</span>
+                          <span className="font-medium">{m.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Volume */}
+              <div className="flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-zinc-600" />
+                <input
+                  type="range" min="0" max="1" step="0.01"
+                  value={player.volume}
+                  onChange={e => player.handleVolume(+e.target.value)}
+                  className="w-20 cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

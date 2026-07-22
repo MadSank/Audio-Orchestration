@@ -7,15 +7,18 @@ export function LibraryProvider({ children }) {
 
   const addTracks = useCallback((files) => {
     const next = files.map(f => ({
-      id:       crypto.randomUUID(),
-      file:     f,
-      url:      URL.createObjectURL(f),
-      name:     f.name.replace(/\.[^.]+$/, ""),
-      ext:      (f.name.split(".").pop() ?? "").toUpperCase(),
-      size:     f.size,
-      duration: null,
-      bpm:      null,
-      error:    null,
+      id:          crypto.randomUUID(),
+      file:        f,
+      url:         URL.createObjectURL(f),
+      name:        f.name.replace(/\.[^.]+$/, ""),
+      ext:         (f.name.split(".").pop() ?? "").toUpperCase(),
+      size:        f.size,
+      duration:    null,
+      bpm:         null,
+      key:         null,
+      camelot_key: null,
+      fingerprint: null,
+      error:       null,
     }));
     setTracks(prev => [...prev, ...next]);
     return next;

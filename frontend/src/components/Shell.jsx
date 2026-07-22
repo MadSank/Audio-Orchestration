@@ -1,225 +1,246 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+/**
+ * Shell.jsx — SAICS v5 Application Shell
+ * ========================================
+ * Dark sidebar navigation + main content area with routing.
+ * Reactive background driven by AppContext audio analyzers.
+ */
 
-function Logo() {
+import { useState, useEffect, useRef } from "react";
+import { Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
+import { Library as LibraryIcon, Infinity, ArrowLeftRight, ChevronLeft, ChevronRight, AudioLines } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useApp } from "../context/AppContext";
+
+import Library from "../pages/Library";
+import InfiniteJukebox from "../pages/InfiniteJukebox";
+import TrackTransitions from "../pages/TrackTransitions";
+
+const NAV_ITEMS = [
+  { to: "/library",     label: "Library",           icon: LibraryIcon },
+  { to: "/jukebox",     label: "Infinite Jukebox",  icon: Infinity },
+  { to: "/transitions", label: "Track Transitions", icon: ArrowLeftRight },
+];
+
+function ReactiveBackground() {
+  const { globalMeter, globalFFT } = useApp();
+  const bgRef = useRef(null);
+
+  useEffect(() => {
+    let rafId;
+    const loop = () => {
+      if (!globalMeter || !globalFFT || !bgRef.current) {
+        rafId = requestAnimationFrame(loop);
+        return;
+      }
+
+      // 1. Overall Volume (Meter)
+      const db = globalMeter.getValue();
+      // clamp between -60 and 0, normalize to 0..1
+      const rawVol = typeof db === "number" && isFinite(db) ? db : -60;
+      const volMap = Math.max(0, Math.min(1, (rawVol + 60) / 60));
+
+      // 2. Bass Frequencies (FFT)
+      const fftData = globalFFT.getValue();
+      let bassAvg = -100;
+      if (fftData && fftData.length > 0) {
+        // Average first 4 bins (out of 32) for bass
+        let sum = 0;
+        for (let i = 0; i < 4; i++) {
+          sum += (isFinite(fftData[i]) ? fftData[i] : -100);
+        }
+        bassAvg = sum / 4;
+      }
+      const bassMap = Math.max(0, Math.min(1, (bassAvg + 80) / 80));
+
+      // 3. Smooth the values
+      const currentVol = parseFloat(document.documentElement.style.getPropertyValue("--vol") || 0);
+      const currentBass = parseFloat(document.documentElement.style.getPropertyValue("--bass") || 0);
+
+      // Lerp for smoothness (faster rise, slower fall)
+      const nextVol = currentVol + (volMap - currentVol) * (volMap > currentVol ? 0.4 : 0.1);
+      const nextBass = currentBass + (bassMap - currentBass) * (bassMap > currentBass ? 0.5 : 0.15);
+
+      document.documentElement.style.setProperty("--vol", nextVol);
+      document.documentElement.style.setProperty("--bass", nextBass);
+
+      rafId = requestAnimationFrame(loop);
+    };
+
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, [globalMeter, globalFFT]);
+
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <rect x="0"  y="7"  width="3" height="10" rx="1.5" fill="currentColor" opacity="0.2"/>
-      <rect x="5"  y="3"  width="3" height="18" rx="1.5" fill="currentColor" opacity="0.5"/>
-      <rect x="10" y="0"  width="4" height="24" rx="2"   fill="currentColor"/>
-      <rect x="17" y="3"  width="3" height="18" rx="1.5" fill="currentColor" opacity="0.5"/>
-      <rect x="22" y="7"  width="2" height="10" rx="1"   fill="currentColor" opacity="0.2"/>
-    </svg>
+    <div
+      ref={bgRef}
+      className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
+      style={{
+        // Base dark background
+        backgroundColor: "#000",
+      }}
+    >
+      {/* Bass-driven deep ambient glow */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: "radial-gradient(ellipse at 50% 50%, rgba(139,92,246,0.15) 0%, transparent 60%)",
+          opacity: "calc(0.3 + var(--bass) * 0.7)",
+          transform: "scale(calc(1 + var(--bass) * 0.2))",
+          transition: "transform 0.05s ease-out, opacity 0.05s ease-out",
+        }}
+      />
+      {/* Volume-driven top glow */}
+      <div
+        className="absolute top-0 left-1/2 -translate-x-1/2 w-[80vw] h-[50vh]"
+        style={{
+          background: "radial-gradient(ellipse at 50% 0%, rgba(167,139,250,0.2) 0%, transparent 70%)",
+          opacity: "calc(0.2 + var(--vol) * 0.8)",
+          transform: "translateY(calc(var(--vol) * 10px))",
+        }}
+      />
+      {/* Film grain / noise overlay for cinematic feel */}
+      <div
+        className="absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+        }}
+      />
+    </div>
   );
 }
 
-const navItems = [
-  {
-    to: "/library",
-    label: "Library",
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 6h18M3 12h18M3 18h18"/>
-        <circle cx="7" cy="6" r="1.5" fill="currentColor" stroke="none"/>
-        <circle cx="7" cy="12" r="1.5" fill="currentColor" stroke="none"/>
-        <circle cx="7" cy="18" r="1.5" fill="currentColor" stroke="none"/>
-      </svg>
-    ),
-    accent: { color: "#3b82f6", bg: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.2)" },
-  },
-  {
-    to: "/jukebox",
-    label: "Infinite Jukebox",
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="3"/>
-        <circle cx="12" cy="12" r="9"/>
-        <path d="M12 3v2M12 19v2M3 12h2M19 12h2"/>
-      </svg>
-    ),
-    accent: { color: "#10b981", bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)" },
-  },
-  {
-    to: "/transitions",
-    label: "Transitions",
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M5 8h14M5 16h14"/>
-        <path d="M14 4l4 4-4 4"/>
-        <path d="M10 12l-4 4 4 4"/>
-      </svg>
-    ),
-    accent: { color: "#8b5cf6", bg: "rgba(139,92,246,0.08)", border: "rgba(139,92,246,0.2)" },
-  },
-];
-
-const pageMeta = {
-  "/library":     { title: "Library",          subtitle: "Local playback",                          glow: "rgba(59,130,246,0.06)" },
-  "/jukebox":     { title: "Infinite Jukebox", subtitle: "Beat analysis & infinite looping",        glow: "rgba(16,185,129,0.06)" },
-  "/transitions": { title: "Transitions",      subtitle: "Find the perfect crossfade between tracks", glow: "rgba(139,92,246,0.06)" },
-};
-
 export default function Shell() {
+  const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
-  const meta = Object.entries(pageMeta).find(([k]) => location.pathname.startsWith(k))?.[1]
-    ?? { title: "Audio Orchestration Engine", subtitle: "", glow: "rgba(16,185,129,0.06)" };
 
   return (
-    <div style={{
-      display: "flex", height: "100vh",
-      background: "#060810", color: "#f3f4f6", overflow: "hidden",
-      fontFamily: "'Inter', system-ui, sans-serif",
-    }}>
+    <div className="flex h-screen w-screen bg-black overflow-hidden relative">
 
-      <aside style={{
-        width: "210px", flexShrink: 0,
-        display: "flex", flexDirection: "column",
-        background: "linear-gradient(180deg, #0c0f18 0%, #090c14 100%)",
-        borderRight: "1px solid rgba(255,255,255,0.055)",
-      }}>
-        <div style={{
-          padding: "18px 20px 16px",
-          display: "flex", alignItems: "center", gap: "11px",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-        }}>
-          <span style={{ color: "#10b981" }}><Logo /></span>
-          <div>
-            <div style={{
-              fontSize: "11px", fontWeight: 700, letterSpacing: "0.16em",
-              color: "#f9fafb", textTransform: "uppercase",
-            }}>
-              Audio Orchestration
-            </div>
-            <div style={{ fontSize: "10px", color: "#374151", marginTop: "2px" }}>
-              Engine
-            </div>
+      <ReactiveBackground />
+
+      {/* ── Sidebar ── */}
+      <aside
+        className={`
+          relative z-20 flex flex-col shrink-0 h-full
+          bg-zinc-950/80 backdrop-blur-xl border-r border-white/[0.06]
+          transition-all duration-300 ease-in-out
+          ${collapsed ? "w-[64px]" : "w-[220px]"}
+        `}
+      >
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-4 h-[60px] border-b border-white/[0.06]">
+          <div className="w-8 h-8 rounded-lg bg-purple-600/20 border border-purple-500/30 flex items-center justify-center shrink-0">
+            <AudioLines className="w-4 h-4 text-purple-400" />
           </div>
+          {!collapsed && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="overflow-hidden"
+            >
+              <div className="text-[13px] font-bold text-white tracking-wide">SAICS</div>
+              <div className="text-[9px] text-zinc-600 uppercase tracking-[0.15em] font-medium">Audio Engine</div>
+            </motion.div>
+          )}
         </div>
 
-        <nav style={{ flex: 1, padding: "14px 10px" }}>
-          <div style={{
-            fontSize: "10px", fontWeight: 600, color: "#1f2937",
-            textTransform: "uppercase", letterSpacing: "0.14em",
-            padding: "0 8px", marginBottom: "8px",
-          }}>
-            Tools
-          </div>
-
-          {navItems.map(({ to, label, icon, tag, accent }) => (
-            <NavLink key={to} to={to} style={{ textDecoration: "none", display: "block", marginBottom: "2px" }}>
+        {/* Nav Items */}
+        <nav className="flex flex-col gap-1 px-2 pt-4 flex-1">
+          {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) => `
+                relative group flex items-center gap-3 px-3 py-2.5 rounded-lg
+                transition-all duration-150 no-underline overflow-hidden
+                ${isActive
+                  ? "bg-purple-500/10 text-white border border-purple-500/20"
+                  : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03] border border-transparent"
+                }
+              `}
+            >
               {({ isActive }) => (
-                <div
-                  style={{
-                    display: "flex", alignItems: "center", gap: "9px",
-                    padding: "8px 10px", borderRadius: "8px",
-                    cursor: "pointer",
-                    background: isActive ? accent.bg : "transparent",
-                    border: `1px solid ${isActive ? accent.border : "transparent"}`,
-                    transition: "background 0.12s, border-color 0.12s",
-                  }}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
-                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
-                >
-                  <span style={{ color: isActive ? accent.color : "#4b5563", flexShrink: 0 }}>
-                    {icon}
-                  </span>
-                  <span style={{
-                    flex: 1, fontSize: "13px", fontWeight: 500,
-                    color: isActive ? "#f9fafb" : "#6b7280",
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  }}>
-                    {label}
-                  </span>
-                  {tag && (
-                    <span style={{
-                      fontSize: "9px", fontWeight: 700, textTransform: "uppercase",
-                      letterSpacing: "0.08em", padding: "2px 6px", borderRadius: "999px",
-                      background: isActive ? `${accent.color}18` : "rgba(255,255,255,0.04)",
-                      color: isActive ? accent.color : "#374151",
-                      border: `1px solid ${isActive ? accent.border : "rgba(255,255,255,0.06)"}`,
-                    }}>
-                      {tag}
-                    </span>
+                <>
+                  {/* Subtle pulsing glow for active item */}
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeNav"
+                      className="absolute inset-0 bg-gradient-to-r from-purple-500/10 to-transparent z-0"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.3 }}
+                    />
                   )}
-                </div>
+                  <Icon className={`relative z-10 w-[18px] h-[18px] shrink-0 transition-colors ${isActive ? "text-purple-400" : "text-zinc-600 group-hover:text-zinc-400"}`} />
+                  {!collapsed && (
+                    <span className="relative z-10 text-[12px] font-medium truncate">{label}</span>
+                  )}
+                </>
               )}
             </NavLink>
           ))}
         </nav>
 
-        <div style={{
-          padding: "12px 20px 16px",
-          borderTop: "1px solid rgba(255,255,255,0.05)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-            <span style={{
-              width: "6px", height: "6px", borderRadius: "50%",
-              background: "#10b981", boxShadow: "0 0 6px #10b981", flexShrink: 0,
-            }}/>
-            <span style={{ fontSize: "10px", color: "#059669", fontWeight: 500 }}>
-              Backend running
-            </span>
-          </div>
-          <div style={{ fontSize: "10px", color: "#1f2937" }}>
-            Python · librosa · FastAPI
-          </div>
-        </div>
+        {/* Collapse Toggle */}
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          className="
+            flex items-center justify-center h-10
+            border-t border-white/[0.06]
+            text-zinc-600 hover:text-zinc-400
+            transition-colors cursor-pointer bg-transparent
+          "
+        >
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
       </aside>
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <header style={{
-          flexShrink: 0,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "0 32px", height: "54px",
-          background: "rgba(6,8,16,0.92)",
-          backdropFilter: "blur(12px)",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-        }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "10px" }}>
-            <span style={{ fontSize: "14px", fontWeight: 600, color: "#f9fafb" }}>
-              {meta.title}
-            </span>
-            {meta.subtitle && (
-              <span style={{ fontSize: "11px", color: "#374151" }}>
-                {meta.subtitle}
-              </span>
-            )}
-          </div>
-          <div style={{
-            display: "flex", alignItems: "center", gap: "6px",
-            padding: "4px 12px", borderRadius: "999px",
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            fontSize: "11px", color: "#4b5563",
-          }}>
-            <span style={{
-              width: "5px", height: "5px", borderRadius: "50%",
-              background: "#10b981", boxShadow: "0 0 5px #10b981",
-            }}/>
-            v2.0
-          </div>
-        </header>
-
-        <main style={{ flex: 1, overflowY: "auto", position: "relative" }}>
-          <div style={{
-            position: "absolute", inset: 0, pointerEvents: "none",
-            backgroundImage: [
-              "linear-gradient(rgba(255,255,255,0.014) 1px, transparent 1px)",
-              "linear-gradient(90deg, rgba(255,255,255,0.014) 1px, transparent 1px)",
-            ].join(","),
-            backgroundSize: "48px 48px",
-          }}/>
-          <div style={{
-            position: "absolute", top: 0, left: "50%",
-            transform: "translateX(-50%)",
-            width: "700px", height: "300px",
-            pointerEvents: "none",
-            background: `radial-gradient(ellipse at 50% 0%, ${meta.glow} 0%, transparent 70%)`,
-          }}/>
-          <div style={{ position: "relative", padding: "32px" }}>
-            <Outlet />
-          </div>
-        </main>
-      </div>
+      {/* ── Main Content ── */}
+      <main className="flex-1 h-full overflow-y-auto overflow-x-hidden relative z-10">
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={location.pathname}>
+            <Route
+              path="/library"
+              element={
+                <PageWrapper>
+                  <Library />
+                </PageWrapper>
+              }
+            />
+            <Route
+              path="/jukebox"
+              element={
+                <PageWrapper>
+                  <InfiniteJukebox />
+                </PageWrapper>
+              }
+            />
+            <Route
+              path="/transitions"
+              element={
+                <PageWrapper>
+                  <TrackTransitions />
+                </PageWrapper>
+              }
+            />
+            <Route path="*" element={<Navigate to="/library" replace />} />
+          </Routes>
+        </AnimatePresence>
+      </main>
     </div>
+  );
+}
+
+// Wrapper for page transitions
+function PageWrapper({ children }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -15 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      className="h-full w-full"
+    >
+      {children}
+    </motion.div>
   );
 }
