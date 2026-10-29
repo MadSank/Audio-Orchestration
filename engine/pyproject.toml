@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saics"
+version = "6.0.0.dev0"
+description = "SAICS analysis engine: triage, analysis bundles, jumps, transitions, versions"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "librosa==0.11.0",
+    "soundfile>=0.12",
+    "pydub==0.25.1",
+    "pydantic>=2.7",
+    "pyloudnorm>=0.1.1",
+]
+
+[project.optional-dependencies]
+# Heavy ML analysis (P1). Install torch/torchaudio from the CPU index first:
+#   uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+analysis = ["torch>=2.3", "torchaudio>=2.3", "beat-this", "demucs>=4.0"]
+server = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
+dev = ["pytest>=8", "ruff>=0.5", "httpx>=0.27"]
+
+[project.scripts]
+saics = "saics.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["saics*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: needs real audio or heavy models"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Frozen code: legacy is the verbatim v5 baseline, versions.py is sound-frozen.
+extend-exclude = ["saics/legacy", "saics/versions.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
