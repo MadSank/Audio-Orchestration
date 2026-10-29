@@ -98,6 +98,7 @@ References are to local `backend/` and `frontend/` at `987ae60`.
 | D18 | **new** | `:455-457`, `:625-627`, `version_renderer.py:463-469` | Peak normalisation to −1 dBFS everywhere, with no loudness normalisation. Versions and tracks differ by several LU (violates hard rule 10). | Per-track LUFS gain in the bundle (P1); per-version loudness compensation measured offline and applied on-device (P6) |
 | D19 | **new** | `find_best_crossfade_point` `:495-521` | Cue search is "most similar beat pair" within A's last 40% × B's first 40%, so B can enter 60+ s in (skipping intro and verse), and A can exit mid-section. Tempo penalty `|Δbpm|/20` ignores half/double time (unlike `library_analyzer`). | Phrase/section-aware cue points (P4) |
 | D20 | **new, minor** | `find_playback_path` `:369`; `useJukeboxEngine.js:124-127` | Reaching the last beat wraps hard to beat 0 (offline), or restarts at 0 with the dip-and-sweep (web). | Graph must guarantee a good exit before the end (P3) |
+| D22 | **new, minor** | `legacy/audio_processor.py:91` | `load_and_extract` crashes (`np.max` of empty array) when librosa finds 0 beats (sparse clicks, sound effects). Left as-is in `legacy/`. | Moot after P1 (Beat This! + triage) |
 | D21 | **new, minor** | `TrackTransitionProcessor.find_best_crossfade_point` `:488-491`; `load_and_extract` `:72`, `:132` | A transition analyses both tracks fully, including unused jump graphs; `chroma_cqt` is computed twice per track. | Moot after P1 (bundles are cached per `track_id`) |
 
 **Keep as-is: the version renderer** (`backend/version_renderer.py` → `engine/saics/versions.py`). Freeze its output with golden tests (seeded via `np.random.seed`) before any refactor, then port it to real-time native DSP (P6).
@@ -236,24 +237,24 @@ A single press waits for the multi-press window (≤ 700 ms), which is acceptabl
 Each phase lists deliverables and the acceptance check that closes it. P5 does not depend on P3/P4 and can run in parallel with them.
 
 ### P0 — Repo cleanup and foundations
-- [ ] Copy `CLAUDE.md` into the repo root.
-- [ ] Fix `.gitignore`:
+- [x] Copy `CLAUDE.md` into the repo root.
+- [x] Fix `.gitignore`:
   - add `venv/`, `.venv/`, `.vite/`, `__pycache__/`, `node_modules/`, `dist/`;
   - add `*.wav`, `*.mp3`, `*.flac`, `*.ogg`, `*.m4a`;
   - add `.saics/`, `_set_aside/`, `eval/results/`, `triage_report.csv`.
-- [ ] `git rm -r --cached frontend/.vite`.
-- [ ] Restructure into the layout above **without behaviour changes**:
+- [x] `git rm -r --cached frontend/.vite`.
+- [x] Restructure into the layout above **without behaviour changes**:
   - `frontend/` → `web/`;
   - `backend/main.py` → `server/`;
   - `version_renderer.py` → `engine/saics/versions.py`;
   - `audio_processor.py` + `models.py` → `engine/saics/legacy/` verbatim; `library_analyzer.py` → `engine/saics/legacy/` for now.
-- [ ] Create `engine/.venv` (Python 3.12) with CPU PyTorch (owner's choice; CUDA optional later).
-- [ ] Add `pyproject.toml` with pinned dependencies, pytest + ruff, and the `saics` CLI skeleton.
-- [ ] Golden tests for `versions.py` (scope per Q2):
+- [x] Create `engine/.venv` (Python 3.12) with CPU PyTorch (owner's choice; CUDA optional later).
+- [x] Add `pyproject.toml` with pinned dependencies, pytest + ruff, and the `saics` CLI skeleton.
+- [x] Golden tests for `versions.py` (scope per Q2):
   - render 10 s of a fixed test signal (sine sweep + click track + noise burst, stereo, 44.1 and 48 kHz) through every mode under `np.random.seed(1234)`;
   - store SHA-256 of the float output plus a coarse spectral fingerprint (1/3-octave band energies) with a tolerance.
-- [ ] Smoke test: the server's endpoints respond on a short synthetic file.
-- [ ] Install `fpcalc` (Chromaprint) and confirm it is on PATH.
+- [x] Smoke test: the server's endpoints respond on a short synthetic file.
+- [x] ~~Install `fpcalc`~~ not needed: ffmpeg 8.1 has `--enable-chromaprint`; triage uses `ffmpeg -f chromaprint`.
 
 **Done when:**
 - pytest and ruff pass;
@@ -261,6 +262,11 @@ Each phase lists deliverables and the acceptance check that closes it. P5 does n
 - no caches or venvs are tracked.
 
 ### P1 — Library triage and analysis v6
+- [x] `engine/.venv` set up: Python 3.12, torch CPU, beat-this, demucs, librosa, pyloudnorm (smoke-tested).
+- [x] `saics triage` **report-only**: real-codec probing, fixed-rate decode, Chromaprint duplicates with keep recommendation, unreadable/short/sfx/speech/variant, review notes. Run on the real folder → `triage_report.csv` (see `AUDIT.md`).
+- [ ] Owner reviews the CSV; then `--apply`/`--undo` with manifest.
+- [ ] `saics analyze` and the bundle schema.
+
 **Triage (`saics triage <folder>`).** It classifies every file. Classes and rules:
 - **`unreadable`:** ffprobe/ffmpeg fails, or the decoded length is under 1 s (catches the three 2-byte `Y2meta.app …` files and the 0.16 s `au_uu_…` file).
 - **`short`:** under 45 s (10 files today: ringtones, BGM clips, meme snippets).

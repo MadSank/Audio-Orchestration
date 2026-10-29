@@ -1,7 +1,42 @@
 # SAICS v6 — A0 Audit and overnight run log
 
 ## Summary: done / needs me
-_(filled in at the end of the run)_
+
+### Done (branch `v6`, 8 commits, not pushed; `main` untouched)
+- **A0:** audit written (below) and `PLAN.md` rewritten to match the local code.
+- **P0:**
+  - repo cleaned (`.gitignore`, `.vite` untracked) and restructured into `engine/`, `server/`, `web/`;
+  - `saics` package + CLI skeleton, pytest + ruff;
+  - **golden tests freeze all 9 version chains**;
+  - smoke tests for the old server endpoints;
+  - **52 tests pass**, and ruff is clean.
+- **P1 setup:** `engine/.venv` on Python 3.12 with **CPU** torch, beat-this, demucs, librosa and pyloudnorm, all working. ffmpeg/ffprobe are OK. `fpcalc` is missing but not needed: ffmpeg has Chromaprint built in.
+- **`saics triage` (report-only):**
+  - probes the real codec with ffprobe;
+  - decodes every file at one fixed rate;
+  - uses Chromaprint for duplicates, with a keep recommendation;
+  - flags unreadable, short, sound-effect, speech and variant files;
+  - refuses to write inside the music folder; `--apply`/`--undo` are refused.
+- **Ran it on `C:\Users\ASUS\Music\songs`:** 370 files in ~2.5 min → **`C:\saics\triage_report.csv`** (git-ignored, outside the music folder).
+  - Result: **347 music, 11 duplicate, 1 variant, 6 short, 4 unreadable, 1 sfx, 0 speech.**
+  - **The music folder is verified unchanged:** all 371 entries have identical sizes and modification times before and after both runs. Nothing was moved, renamed, deleted or modified.
+
+### Needs me
+1. **Review `triage_report.csv`** before any `--apply` (which isn't built yet anyway). Sort by `class` and read the `notes` column. Specifically:
+   - **Two "duplicate" pairs may be language versions** sharing an instrumental, which Chromaprint can't tell apart:
+     - *YOASOBI Biri Biri English Version* ↔ *Biri Biri Official*;
+     - *YOASOBI 勇者 Official* ↔ *The Brave 勇者 English Ver.*
+   - **Borderline match:** *WhatsApp Audio …9.43.03 PM* ↔ *…9.43.01 PM* (BER 0.19, just under the 0.20 threshold).
+   - **Check the keep choice** for *Dilbara* (keep the 309 s copy over the 246 s one?) and *Rick Astley DJ Barbecue Remix* (keep the full copy over the `mp3cut` one).
+   - **24 rows have `review:` notes:**
+     - 16 long files (1-hour loops, playlists, compilations such as the 40-min YOASOBI playlist and the 66-min Johan Liebert playlist). Decide whether they belong in a ride library.
+     - 9 "contains/overlaps" notes for excerpts and compilations.
+2. **Q2 — which vinyl is "the" vinyl?** The golden tests froze `versions.py` (the downloadable render), not the Library page's live Tone.js vinyl, which sounds different. Tell me if it's the live one.
+3. **Q1 — design export:** `design/` still isn't in the repo.
+4. **Q3 — variants:** 45 files carry a variant tag (8D, slowed, nightcore, sped up …). Only 1 matched its original exactly (the 8D *Dancin*); the rest are separate renders and stay `music` with the hint column filled. Should they stay in the library?
+5. **CPU vs GPU:** CPU Demucs is roughly real-time, so `saics analyze` over ~350 songs ≈ **15–20 h on CPU**. Installing CUDA torch for the RTX 4070 (a ~2.5 GB download) would make it well under an hour. You asked for CPU, so I left it.
+6. **Old venv:** `backend/` now holds only the old `venv/` and `__pycache__/` (untracked). It's safe to delete once you're happy with `engine/.venv`. I didn't delete it.
+7. **Not verified tonight:** the old `web/` app against the moved server in a browser (you asked me to close it). The endpoints pass the smoke tests, and `web/` is unchanged except for the folder rename.
 
 ---
 
@@ -84,5 +119,20 @@ All work is on branch **`v6`**. Nothing was pushed, and `main` was not touched.
    - ⇒ **CPU Demucs is roughly real-time, so a full first analysis of ~370 songs is ~15–20 h on CPU.** The RTX 4070 with CUDA torch would cut this to well under an hour. Your call (see "needs me").
    - Model weights are cached under the user profile; HF hub warns that symlinks need Developer Mode. This is harmless; it just uses more disk.
 
+6. **Triage** (`2181ac7`, tuned in `cb79cad`): `saics.io` + `saics.triage`, 11 tests on a synthetic library (AAC-in-.mp3, 48 kHz, corrupt, short, white/brown noise, duplicates, excerpt, 8D variant, folder byte-identical afterwards).
+   - **First real run** produced bad keep choices:
+     - a 40-min YOASOBI playlist was chosen as the copy to keep over single songs;
+     - the 8D *Dancin* was counted as a duplicate;
+     - a "Lyrics" copy beat the clean name.
+     - The white-noise track (brown/pink, not spectrally flat) was missed.
+   - **Fixes:**
+     - a duplicate now needs a ≥ 75% duration ratio; otherwise the match is a note;
+     - an effect-named copy becomes `variant`;
+     - the keep rule ranks bitrate, then clean name, then length;
+     - a "noise bed" rule (pulse < 0.04 and chroma < 0.15; the minimum among songs was 0.079 / 0.166).
+7. **Real run #2:** 145 s with 8 workers. Codecs confirmed: 221 MP3 @ 44.1 kHz, 91 MP3 @ 48 kHz, **50 AAC inside `.mp3` (MP4 container)**, 5 Vorbis, 3 unreadable 2-byte files plus a 0.16 s file. 6 short clips: the ringtone, meme snippets, `Monster 3(mp3cut.net)` and the 45.0 s `Jabardasth bgm`.
+
 ## Blocked
-_(none yet)_
+Nothing blocked the run. Two points to note:
+- `fpcalc` isn't installed; I used ffmpeg's built-in Chromaprint muxer instead (same algorithm, raw fingerprints).
+- The speech detector is a heuristic with no real speech file in the library to validate against. It flagged nothing, and on this library's features no song comes close to its thresholds.
