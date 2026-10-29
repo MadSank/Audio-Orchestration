@@ -50,14 +50,19 @@ def library(tmp_path_factory) -> Path:
     song = _song(70, SR, seed=1)
     _encode(song, SR, d / "Song A.mp3", ["-b:a", "320k"])
     _encode(song, SR, d / "Song A (Lyrics) low.mp3", ["-b:a", "96k"])  # duplicate, worse copy
+    _encode(song, SR, d / "Song A - Lyrics.mp3", ["-b:a", "320k"])  # same quality, junkier name
+    _encode(song[: 50 * SR], SR, d / "Song A but only the good part.mp3", ["-b:a", "320k"])
     other = _song(65, 48000, seed=7, bpm=97)
     _encode(other, 48000, d / "Song B 48k.mp3", ["-b:a", "192k"])  # different song, 48 kHz
-    _encode(other, 48000, d / "Song B (8D Audio).mp3", ["-b:a", "192k"])  # variant hint name
+    _encode(other, 48000, d / "Song B (8D Audio).mp3", ["-b:a", "192k"])  # variant by name
     _encode(_song(60, SR, seed=3, bpm=140), SR, d / "Mislabelled.mp3", ["-c:a", "aac", "-f", "mp4"])
     _encode(_song(12, SR, seed=4), SR, d / "Ringtone.mp3", ["-b:a", "128k"])
     noise = np.random.default_rng(5).standard_normal(60 * SR).astype(np.float32)
     noise *= np.linspace(0.1, 0.4, len(noise), dtype=np.float32)  # wind/whoosh-like sfx
     _encode(noise, SR, d / "Wind sfx.mp3", ["-b:a", "128k"])
+    brown = np.cumsum(np.random.default_rng(6).standard_normal(60 * SR)).astype(np.float32)
+    brown -= np.convolve(brown, np.ones(4410) / 4410, mode="same")  # drift removal
+    _encode(brown / np.abs(brown).max() * 0.5, SR, d / "Brown noise sleep.mp3", ["-b:a", "128k"])
     (d / "Broken download.mp3").write_bytes(b"{}")
     (d / "notes.txt").write_text("hi")
     return d
@@ -98,6 +103,7 @@ def test_junk_classes(report):
     assert rows["Broken download.mp3"]["class"] == "unreadable"
     assert rows["Ringtone.mp3"]["class"] == "short"
     assert rows["Wind sfx.mp3"]["class"] == "sfx"
+    assert rows["Brown noise sleep.mp3"]["class"] == "sfx"
     assert rows["notes.txt"]["class"] == "not_audio"
 
 
@@ -110,9 +116,25 @@ def test_duplicates_keep_better_copy(report):
     assert rows["Song B 48k.mp3"]["class"] == "music"  # a different song is not a duplicate
 
 
-def test_variant_hint(report):
+def test_clean_name_wins_tie(report):
     rows, *_ = report
-    assert rows["Song B (8D Audio).mp3"]["variant_hint"] == "8d"
+    assert rows["Song A - Lyrics.mp3"]["class"] == "duplicate"
+    assert rows["Song A - Lyrics.mp3"]["duplicate_of"] == "Song A.mp3"
+
+
+def test_excerpt_is_a_note_not_a_duplicate(report):
+    rows, *_ = report
+    r = rows["Song A but only the good part.mp3"]
+    assert r["class"] == "music" and r["keep"] == "yes"
+    assert "excerpt" in r["notes"]
+
+
+def test_effect_version_is_variant(report):
+    rows, *_ = report
+    r = rows["Song B (8D Audio).mp3"]
+    assert r["variant_hint"] == "8d"
+    assert r["class"] == "variant" and r["keep"] == "review"
+    assert r["duplicate_of"] == "Song B 48k.mp3"
 
 
 def test_songs_not_flagged(report):

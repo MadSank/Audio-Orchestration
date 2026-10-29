@@ -5,7 +5,7 @@ renames, deletes or modifies anything in the music folder, and refuses to write 
 report inside it. `--apply` / `--undo` are not implemented yet (hard rule 3: the owner
 reviews the report first).
 
-Classes (first match wins): not_audio, unreadable, short, duplicate, speech, sfx, music.
+Classes: not_audio, unreadable, short, duplicate, variant, speech, sfx, music.
 The sfx/speech rules are heuristics on cheap features and are tuned to be conservative:
 a real song must never be flagged (P1 acceptance). Borderline files get `review` notes.
 """
@@ -24,6 +24,8 @@ from saics.io import AUDIO_EXTS, chromaprint, decode, probe
 
 SR = 22050
 MIN_SONG_S = 45.0
+LONG_S = 600.0
+DUP_MIN_DURATION_RATIO = 0.75  # below this, a fingerprint match is an excerpt/compilation
 MAX_DECODE_S = 600.0
 FP_SECONDS = 120.0
 DUP_BER = 0.20  # Chromaprint bit-error rate at or below this = same recording
@@ -126,8 +128,21 @@ def classify_features(row: Row) -> None:
     weak_grid = row.beats < 16 or row.beat_cv > 0.20 or row.pulse_clarity < 0.10
     noisy = row.flatness > 0.30 or row.chroma_clarity < 0.12
     speechy = row.low_energy_ratio > 0.45 and row.pulse_clarity < 0.15
+    # Coloured (pink/brown) noise beds are not spectrally flat, but they have no pulse and
+    # almost no pitch class. On the real library, songs had pulse >= 0.079, chroma >= 0.166.
+    noise_bed = row.pulse_clarity < 0.04 and row.chroma_clarity < 0.15
 
-    if speechy and weak_grid:
+    if row.duration_s > LONG_S:
+        row.notes.append(
+            f"review: long file ({row.duration_s / 60:.0f} min): compilation, extended loop or mix?"
+        )
+    if noise_bed:
+        row.cls = "sfx"
+        row.reasons.append(
+            f"noise bed: no pulse ({row.pulse_clarity:.3f}) and no pitch content "
+            f"(chroma {row.chroma_clarity:.3f})"
+        )
+    elif speechy and weak_grid:
         row.cls = "speech"
         row.reasons.append(
             f"speech-like: many pauses (low-energy {row.low_energy_ratio:.2f}) and no steady pulse"
@@ -216,16 +231,28 @@ def min_ber(a: np.ndarray, b: np.ndarray, min_overlap: int = MIN_FP_OVERLAP) -> 
 
 
 def _quality(r: dict) -> tuple:
-    """Higher is better: effective bitrate, then completeness, rate, cleaner filename."""
+    """Higher is better: effective bitrate, cleaner filename, completeness, rate."""
     if r["codec"] in LOSSLESS:
         eff = 10_000.0
     else:
         eff = r["bitrate_kbps"] * CODEC_EFFICIENCY.get(r["codec"], 1.0)
-    return (round(eff, -1), round(r["duration_s"]), r["sample_rate"],
-            -len(JUNK_NAME_RE.findall(r["file"])), -len(r["file"]))  # fmt: skip
+    return (round(eff, -1), -len(JUNK_NAME_RE.findall(r["file"])), round(r["duration_s"]),
+            r["sample_rate"], -len(r["file"]))  # fmt: skip
+
+
+def _duration_ratio(a: dict, b: dict) -> float:
+    lo, hi = sorted((a["duration_s"], b["duration_s"]))
+    return lo / hi if hi > 0 else 0.0
 
 
 def mark_duplicates(rows: list, fps: list, progress=None) -> None:
+    """Group same-recording copies (Chromaprint match + similar length).
+
+    In each group the best copy is kept. Members whose filename marks an effect version
+    (8D, slowed, nightcore…) become `variant` (for review) rather than `duplicate`.
+    Matches with very different lengths are excerpts, compilations or long loops: they
+    only get a note.
+    """
     idx = [i for i, fp in enumerate(fps) if len(fp) >= MIN_FP_OVERLAP]
     parent = {i: i for i in idx}
 
@@ -236,12 +263,24 @@ def mark_duplicates(rows: list, fps: list, progress=None) -> None:
         return i
 
     best_match: dict = {}
+    ber_of: dict = {}
     for pos, i in enumerate(idx):
         for j in idx[pos + 1 :]:
             ber = min_ber(fps[i], fps[j])
-            if ber <= DUP_BER:
+            if ber > SIMILAR_BER:
+                continue
+            ratio = _duration_ratio(rows[i], rows[j])
+            if ber <= DUP_BER and ratio >= DUP_MIN_DURATION_RATIO:
                 parent[find(j)] = find(i)
-            if ber <= SIMILAR_BER:
+                ber_of[(i, j)] = ber_of[(j, i)] = ber
+            elif ber <= DUP_BER:
+                for a, b in ((i, j), (j, i)):
+                    rows[a]["notes"].append(
+                        f"review: contains/overlaps {rows[b]['file']} (BER {ber:.2f}, "
+                        f"{rows[a]['duration_s']:.0f} s vs {rows[b]['duration_s']:.0f} s): "
+                        "excerpt, compilation or loop?"
+                    )
+            else:
                 for a, b in ((i, j), (j, i)):
                     if ber < best_match.get(a, (1.0, None))[0]:
                         best_match[a] = (ber, b)
@@ -254,24 +293,37 @@ def mark_duplicates(rows: list, fps: list, progress=None) -> None:
     for members in groups.values():
         if len(members) < 2:
             continue
-        keep = max(members, key=lambda k: _quality(rows[k]))
+        plain = [m for m in members if not rows[m]["variant_hint"]] or members
+        keep = max(plain, key=lambda k: _quality(rows[k]))
         others = ", ".join(rows[m]["file"] for m in members if m != keep)
-        rows[keep]["notes"].append(f"best copy among duplicates (also: {others})")
+        rows[keep]["notes"].append(f"best copy among same-recording files (also: {others})")
+        kept = rows[keep]
         for m in members:
             if m == keep:
                 continue
             r = rows[m]
+            ber = ber_of.get((m, keep)) or min_ber(fps[m], fps[keep])
+            r["duplicate_of"] = kept["file"]
+            if r["variant_hint"] and not kept["variant_hint"]:
+                if r["cls"] == "music":
+                    r["cls"] = "variant"
+                r["keep"] = "review"
+                r["reasons"].append(
+                    f"'{r['variant_hint']}' version of {kept['file']} (Chromaprint BER "
+                    f"{ber:.2f}); the app can render this version itself"
+                )
+                continue
             if r["cls"] in ("music", "speech", "sfx"):
                 r["cls"] = "duplicate"
-            r["keep"], r["duplicate_of"] = "no", rows[keep]["file"]
+            r["keep"] = "no"
             r["reasons"].append(
-                f"same recording as {rows[keep]['file']} "
-                f"(Chromaprint BER {min_ber(fps[m], fps[keep]):.2f}); keep that copy: "
-                f"{rows[keep]['codec']} {rows[keep]['bitrate_kbps']:.0f} kbps vs "
-                f"{r['codec']} {r['bitrate_kbps']:.0f} kbps"
+                f"same recording as {kept['file']} (Chromaprint BER {ber:.2f}); keep that "
+                f"copy: {kept['codec']} {kept['bitrate_kbps']:.0f} kbps, "
+                f"{kept['duration_s']:.0f} s vs {r['codec']} {r['bitrate_kbps']:.0f} kbps, "
+                f"{r['duration_s']:.0f} s"
             )
     for i, (ber, j) in best_match.items():
-        if rows[i]["cls"] != "duplicate" and find(i) != find(j):
+        if rows[i]["cls"] not in ("duplicate", "variant") and find(i) != find(j):
             rows[i]["notes"].append(f"similar to {rows[j]['file']} (BER {ber:.2f}; variant?)")
 
 
