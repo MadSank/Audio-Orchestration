@@ -9,7 +9,7 @@ profile correlation.
 import logging
 import numpy as np
 from typing import List, Dict, Tuple
-from models import TrackFingerprint
+from .models import TrackFingerprint
 
 log = logging.getLogger(__name__)
 

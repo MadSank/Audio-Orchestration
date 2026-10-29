@@ -17,7 +17,7 @@ from scipy.spatial.distance import cdist
 from scipy import signal as scipy_signal
 from scipy.signal import sosfilt, sosfilt_zi
 
-from models import (
+from .models import (
     Beat, TransitionEdge, JumpCandidate, JumpPoint,
     CandidateTransition, TransitionResult, TrackFingerprint,
 )

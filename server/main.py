@@ -15,10 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from audio_processor import AudioContinuityProcessor, TrackTransitionProcessor
-from library_analyzer import score_pair, score_all_pairs
-from models import TrackFingerprint
-from version_renderer import render_audio_version, VALID_MODES
+from saics.legacy.audio_processor import AudioContinuityProcessor, TrackTransitionProcessor
+from saics.legacy.library_analyzer import score_pair, score_all_pairs
+from saics.legacy.models import TrackFingerprint
+from saics.versions import render_audio_version, VALID_MODES
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("saics.api")
@@ -377,4 +377,4 @@ def _run_library_scores(paths: list, names: list) -> dict:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=True)
