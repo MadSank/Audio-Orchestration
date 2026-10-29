@@ -106,7 +106,7 @@ def render_audio_version(filepath: str, mode: str) -> str:
 
 
 def _apply_speed_change(y: np.ndarray, sr: int, factor: float) -> np.ndarray:
-    """Time-stretch without pitch change, then resample for speed effect."""
+    """Varispeed: resample so playback is `factor`x faster (pitch changes with speed)."""
     return librosa.resample(y, orig_sr=sr, target_sr=int(sr / factor), axis=-1)
 
 
