@@ -1,10 +1,28 @@
-# Python Backend
+# Python
 .venv/
+venv/
 __pycache__/
 *.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
 .env
 
-# React Frontend
+# Node / web
 node_modules/
 dist/
+.vite/
 .DS_Store
+
+# Audio, analysis bundles, reports and eval output — never commit
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.aac
+.saics/
+_set_aside/
+eval/results/
+triage_report.csv
+reports/
