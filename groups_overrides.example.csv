@@ -1,0 +1,11 @@
+# Song-group overrides for `saics triage` / `saics analyze`.
+# Save as <MusicFolder>/.saics/groups_overrides.csv (or pass --groups-file).
+# One action per line: action,file (relative to the music folder),value
+#   merge,<file>,<other file>   put <file> in the same group as <other file>
+#   split,<file>,               give <file> its own group
+#   name,<group id>,<name>      display name for a group (group id from the review CSV)
+#   version,<file>,<label>      fix a version label (original, slowed+reverb, english …)
+# Examples:
+# merge,Nightcore - Dancin.mp3,Aaron Smith - Dancin (KRONO Remix).mp3
+# split,yt1s.com - night dancer x racing into the night_320kbps.mp3,
+# name,racing-into-the-night,YOASOBI - Racing into the Night
