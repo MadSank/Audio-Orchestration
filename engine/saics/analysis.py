@@ -403,6 +403,8 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
     lib_path = out_dir / "library.json"
     old = json.loads(lib_path.read_text(encoding="utf-8")) if lib_path.exists() else {}
     cache = {t["file"]: t for t in old.get("tracks", [])}
+    # Bundles written by a run that was stopped before library.json: reuse them too.
+    on_disk = _bundles_by_file(tracks_dir)
 
     todo, keep = [], []
     for p in sorted(folder.rglob("*")):
@@ -426,6 +428,11 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
         ):
             keep.append((rel, c, meta))  # unchanged: reuse the bundle, refresh group labels
             continue
+        if c is None and rel in on_disk:
+            c = {"id": on_disk[rel], "size": st.st_size, "mtime_ns": st.st_mtime_ns,
+                 "group": "", "version": ""}  # fmt: skip
+            keep.append((rel, c, meta))
+            continue
         todo.append((p, rel, meta, st))
     todo = todo[: limit or None]
     log(f"analyze: {len(todo)} to analyse, {len(keep)} cached, device={_device()}")
@@ -439,6 +446,8 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
                                     group=meta.get("group") or c["group"],
                                     version=meta.get("version") or c["version"],
                                     **{"class": meta.get("class", "music")}))  # fmt: skip
+    if upgraded:
+        log(f"  upgraded {upgraded} cached bundles to {SCHEMA}")
     with ProcessPoolExecutor(max_workers=workers, initializer=_init) as ex:
         futs = {ex.submit(_worker, str(p), rel, meta): (rel, st) for p, rel, meta, st in todo}
         for n, fut in enumerate(as_completed(futs), 1):
@@ -471,9 +480,26 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
         (out_dir / "analyze_errors.csv").write_text(
             "file,error\n" + "".join(f'"{f}","{e}"\n' for f, e in errors), encoding="utf-8"
         )
+    stale = {f.stem for f in tracks_dir.glob("*.json")} - {e.id for e in entries}
+    for tid in stale:  # e.g. files now classed long/sfx, or removed from the library
+        (tracks_dir / f"{tid}.json").unlink()
+    if stale:
+        log(f"  removed {len(stale)} bundles of files no longer in the library")
     took = time.time() - t0
     log(f"done: {len(entries)} bundles ({len(errors)} errors) in {took:.0f} s -> {lib_path}")
     return {"bundles": len(entries), "errors": errors}
+
+
+def _bundles_by_file(tracks_dir: Path) -> dict:
+    """file (relative, forward slashes) -> track id, read from the bundles themselves."""
+    out = {}
+    for f in tracks_dir.glob("*.json"):
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            out[d["track"]["file"]] = d["track"]["id"]
+        except (ValueError, KeyError):
+            continue
+    return out
 
 
 def _upgrade(path: Path, audio: Path) -> int:

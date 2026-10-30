@@ -46,8 +46,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="group overrides CSV (default: <folder>/.saics/groups_overrides.csv)",
     )
-    t.add_argument("--apply", action="store_true", help="move flagged files (not implemented)")
-    t.add_argument("--undo", action="store_true", help="restore moved files (not implemented)")
+    t.add_argument(
+        "--apply",
+        action="store_true",
+        help="move files of --classes (read from --out report) into _set_aside/",
+    )
+    t.add_argument("--classes", default="", help="comma list for --apply, e.g. long,duplicate")
+    t.add_argument("--undo", action="store_true", help="restore everything --apply moved")
     t.set_defaults(func=_triage)
 
     u = sub.add_parser("undo-moves", help="put files recorded in a move manifest back")

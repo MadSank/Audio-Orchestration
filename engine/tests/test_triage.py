@@ -213,3 +213,32 @@ def test_apply_is_refused(library, tmp_path):
     from saics.cli import main
 
     assert main(["triage", str(library), "--apply", "--out", str(tmp_path / "r.csv")]) == 2
+
+
+def test_long_class_apply_and_undo(tmp_path, monkeypatch):
+    lib = tmp_path / "songs"
+    (lib / "sub").mkdir(parents=True)
+    _encode(_song(70, SR, seed=8), SR, lib / "sub" / "Hour Loop.mp3", ["-b:a", "64k"])
+    _encode(_song(50, SR, seed=9), SR, lib / "Real Song.mp3", ["-b:a", "64k"])
+    monkeypatch.setattr(tr, "LONG_CLASS_S", 60.0)  # stand-in for the 15-minute threshold
+    out = tmp_path / "triage_report.csv"
+    tr.triage(lib, out, workers=1, log=lambda *_: None)
+    with out.open(encoding="utf-8-sig") as f:
+        rows = {r["file"]: r for r in csv.DictReader(f)}
+    long_row = rows["sub/Hour Loop.mp3"]
+    assert long_row["class"] == "long" and long_row["group"] == ""  # no group, no analysis
+    assert rows["Real Song.mp3"]["class"] == "music"
+
+    from saics.cli import main
+
+    with pytest.raises(ValueError):
+        tr.set_aside(lib, out, {"music"}, log=lambda *_: None)  # songs are never moved
+    assert main(["triage", str(lib), "--apply", "--out", str(out)]) == 2  # needs --classes
+    assert main(["triage", str(lib), "--apply", "--classes", "long", "--out", str(out)]) == 0
+    assert not (lib / "sub" / "Hour Loop.mp3").exists()
+    assert (lib / "_set_aside" / "long" / "sub" / "Hour Loop.mp3").exists()
+    assert (lib / "Real Song.mp3").exists()
+    assert (lib / ".saics" / "set_aside_manifest.json").exists()
+    assert main(["triage", str(lib), "--undo"]) == 0
+    assert (lib / "sub" / "Hour Loop.mp3").exists()
+    assert not (lib / "_set_aside" / "long" / "sub" / "Hour Loop.mp3").exists()
