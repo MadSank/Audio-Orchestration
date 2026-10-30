@@ -65,6 +65,7 @@ def rate(r: Rating):
     data = json.loads(out.read_text("utf-8")) if out.exists() else {"ratings": []}
     rec = r.model_dump()
     rec["jittery"] = rec["jittery"] or r.rating == 1  # 1 means jittery by definition
+    rec["scale"] = "v2"  # owner's 1-5 scale with the jittery flag (eval/README.md); v1 had no tag
     data["ratings"].append({**rec, "at": time.strftime("%Y-%m-%dT%H:%M:%S")})
     out.write_text(json.dumps(data, indent=1), "utf-8")
     return {"ok": True}
