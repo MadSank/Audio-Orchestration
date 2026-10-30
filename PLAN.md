@@ -297,7 +297,12 @@ Each phase lists deliverables and the acceptance check that closes it. P5 does n
 - [x] `saics analyze` + bundle schema (`saics.schema`, validated on write): Beat This! (CUDA), meter from downbeats, Krumhansl key → Camelot, bar-SSM sections + repeat groups, bar energy, Demucs vocal activity (5-min chunks), loudness gain, decoder start offset; cached by size/mtime; writes only in `.saics/`.
   - Throughput on the RTX 4070: ~13 s/song warm; Demucs (incl. its inverse STFT) is ~75% of that. One worker only: three workers overflowed the 8 GB VRAM.
   - **Vocal activity is provisional:** the vocal-energy share barely separates instrumental tracks with vocal chops from sung songs. Validate in P3 against rated seams before relying on it.
-- [ ] Full-library run finished and spot-checked (beat/downbeat F-measure on 10 hand-labelled songs).
+- [x] Full-library run finished (2026-10-30): 376 bundles, 0 errors, all `saics.analysis/7`; 11 long files set aside first (`_set_aside/long/`, undo: `saics triage <folder> --undo`).
+- [ ] Spot-check findings to fix before P3 relies on them:
+  - **D23 (key):** 307 of 376 tracks come out minor. Likely a relative-minor bias from mean-chroma Krumhansl (it barely matters for Camelot mixing, since 8A/8B are compatible, but labels are wrong). Fix with key-strength over beat-synchronous harmonic chroma, and check against labelled songs.
+  - **D24 (meter):** 343 tracks 4/4, but 97 have meter confidence < 0.7, including impossible "1 beat per bar" results (4 tracks) and likely half-bar "2" (20 tracks). Fix: reject meters < 2, prefer 4 over 2 when bars of 4 explain the downbeats nearly as well, and fall back to Beat This! with DBN on low-confidence tracks.
+  - **D25 (tempo stability):** only 178 of 376 marked stable; the 2% 8-beat drift test is too strict for live/rubato recordings. Recalibrate on labelled songs.
+- [ ] P1 acceptance: beat/downbeat F-measure ≥ 0.9 on 10 hand-labelled songs (owner labels, or tap-along on the eval page).
 
 **Triage (`saics triage <folder>`).** It classifies every file. Classes and rules:
 - **`unreadable`:** ffprobe/ffmpeg fails, or the decoded length is under 1 s (catches the three 2-byte `Y2meta.app …` files and the 0.16 s `au_uu_…` file).

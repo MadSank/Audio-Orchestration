@@ -1,5 +1,16 @@
 # SAICS v6 — A0 Audit and overnight run log
 
+## Evening (2026-10-30): long files set aside, full analysis done
+- **Long class:** new triage class for files over 15 minutes. The owner approved the list; the 11 files were moved to `Music\songs\_set_aside\long\` (undo: `saics triage "C:\Users\ASUS\Music\songs" --undo`). Files of 8–15 minutes stay in the library.
+- **Library now:** 370 music + 6 short, 290 song groups, 6 duplicates, 4 unreadable (still in place; nothing else was moved).
+- **Analysis complete:** 376 bundles, schema `/7`, 0 errors. 323 cached bundles were upgraded in place with breaks, 53 songs analysed fresh, 10 stale bundles from the long files removed.
+- **Spot-check:**
+  - *Racing into the Night* gap found (190.7–191.3 s, silence, music returns).
+  - 817 breaks in total: 192 silences and 625 breakdowns; 147 songs have none.
+  - Decoder offsets: 25.1 ms (LAME MP3) on 223 tracks, 0 on AAC.
+  - Three weak spots are logged as D23–D25 in PLAN P1: a minor-key bias (307 of 376 minor), low-confidence and impossible meters (97 below 0.7, 4 reporting "1 beat per bar"), and a too-strict tempo-stability flag (178 of 376 stable).
+- **Housekeeping:** `song_groups_review.csv` and `groups_overrides.example.csv` (generated reports) had been committed by mistake. They're now git-ignored and untracked; the files stay on disk.
+
 ## Late afternoon (2026-10-30): rating scale, breaks, Mix Web plan, Context7
 - **Vinyl blind pair:** `listen/vinyl_racing_1.wav` / `listen/vinyl_racing_2.wav`. Same 30 s (60–90 s) of *Racing into the Night*, original, through the live Library-page chain and the download renderer, loudness-matched. Which is which is recorded outside the repo until the owner picks.
 - **Library finding:** the "1 HOUR LOOP" *Racing into the Night* file repeats only the first 190 s of the song; it cuts at the silent gap and never plays the final section. The full original is in the "Split Audio (Japanese vs English)" file (L = Japanese).
