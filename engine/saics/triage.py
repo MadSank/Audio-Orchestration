@@ -427,7 +427,7 @@ def triage(folder: Path, out: Path, workers: int = 4, limit: int = 0, log=print,
     results: dict = {}
     with ProcessPoolExecutor(max_workers=workers) as ex:
         futs = {
-            ex.submit(analyse_file, str(p), str(p.relative_to(folder))): k
+            ex.submit(analyse_file, str(p), p.relative_to(folder).as_posix()): k
             for k, p in enumerate(files)
         }
         for n, fut in enumerate(as_completed(futs), 1):
@@ -435,7 +435,7 @@ def triage(folder: Path, out: Path, workers: int = 4, limit: int = 0, log=print,
             try:
                 results[k] = fut.result()
             except Exception as exc:
-                row = Row(file=str(files[k].relative_to(folder)), cls="unreadable", keep="no")
+                row = Row(file=files[k].relative_to(folder).as_posix(), cls="unreadable", keep="no")
                 row.reasons.append(f"analysis crashed: {exc}")
                 results[k] = (asdict(row), NO_FP, NO_SIG)
             if n % 10 == 0 or n == len(files):

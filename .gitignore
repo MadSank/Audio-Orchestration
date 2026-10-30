@@ -26,3 +26,6 @@ _set_aside/
 eval/results/
 triage_report.csv
 reports/
+
+# eval clips are rendered audio; ratings stay local
+eval/clips/

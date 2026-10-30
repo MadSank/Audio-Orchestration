@@ -1,0 +1,20 @@
+# P2 evaluation set: one song per line, path relative to the music folder.
+# Mix of tempos, keys, codecs (mp3/aac/vorbis), 44.1/48 kHz and versions. Edit freely.
+TheFatRat - Electrified.mp3
+Aaron Smith - Dancin (KRONO Remix).mp3
+Fujii Kaze - Kirari (Official Video).mp3
+Racing into the Night - YOASOBI (Hatsune Miku ver.).mp3
+Y2meta.app - 夜に駆ける racing into the night - YOASOBI (𝙨𝙡𝙤𝙬𝙚𝙙 + 𝙧𝙚𝙫𝙚𝙧𝙗) (320 kbps).mp3
+TheFatRat - Monody (feat. Laura Brehm).mp3
+Indila - Dernière Danse.mp3
+Passenger - Let Her Go (Feat. Ed Sheeran - Anniversary Edition) [Official Video].mp3
+Maroon 5 - Memories (Lyrics).mp3
+Earth, Wind & Fire - September (Lyrics).mp3
+Rick Astley - Never Gonna Give You Up (Video).mp3
+MGMT - Little Dark Age (𝚂𝚕𝚘𝚠𝚎𝚍  𝚁𝚎𝚟𝚎𝚛𝚋).mp3
+Michael Jackson - Smooth Criminal Lyrics.mp3
+from-downloads/Arctic Monkeys - 505.mp3
+from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3
+The Kid LAROI, Justin Bieber - Stay (Lyrics).mp3
+y2mate.is - YOASOBI Biri Biri Official Music Video-shZyg5VFI1Y-192k-1702529958.mp3
+mus_mettaton_ex.ogg
