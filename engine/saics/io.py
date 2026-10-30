@@ -39,6 +39,7 @@ class Probe:
     channels: int = 0
     bitrate_kbps: float = 0.0
     duration_s: float = 0.0
+    start_time_s: float = 0.0  # stream start (encoder delay / AAC priming as ffmpeg sees it)
     tags: dict = field(default_factory=dict)
 
     def ext_mismatch(self, path: Path) -> bool:
@@ -73,6 +74,7 @@ def probe(path: Path) -> Probe:
         channels=int(s.get("channels") or 0),
         bitrate_kbps=round(float(br) / 1000.0, 1),
         duration_s=float(dur),
+        start_time_s=float(s.get("start_time") or 0.0),
         tags={k: tags[k] for k in ("title", "artist") if k in tags},
     )
 

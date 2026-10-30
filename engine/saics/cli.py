@@ -18,6 +18,12 @@ def _triage(args) -> int:
     return run_triage(args)
 
 
+def _analyze(args) -> int:
+    from saics.analysis import run_analyze
+
+    return run_analyze(args)
+
+
 def _undo_moves(args) -> int:
     from saics.consolidate import undo
 
@@ -50,7 +56,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("analyze", help="write <folder>/.saics/ analysis bundles")
     a.add_argument("folder")
-    a.set_defaults(func=_not_yet("P1"))
+    a.add_argument(
+        "--triage",
+        default="triage_report.csv",
+        help="triage report: classes + song groups (default: ./triage_report.csv)",
+    )
+    a.add_argument("--workers", type=int, default=3, help="processes (each loads the models)")
+    a.add_argument("--limit", type=int, default=0)
+    a.set_defaults(func=_analyze)
 
     r = sub.add_parser("render", help="offline render (eval clips, exports)")
     r.set_defaults(func=_not_yet("P2/P3"))
