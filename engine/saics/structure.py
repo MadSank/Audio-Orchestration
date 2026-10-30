@@ -141,7 +141,8 @@ def key_from_chroma(chroma_beats: np.ndarray, bass_beats: np.ndarray | None = No
     if bass_beats is not None and best - rel[0] < 0.08:
         bb = np.asarray(bass_beats, dtype=float)
         if bar_start_mask is not None and bar_start_mask.any():
-            bb = bb[:, bar_start_mask]
+            m = bar_start_mask[: bb.shape[1]]
+            bb = bb[:, np.r_[m, np.zeros(bb.shape[1] - len(m), bool)]] if m.any() else bb
         bp = bb.mean(axis=1)
         if bp[rel_tonic] > bp[tonic] * 1.15:  # the bass leans on the other tonic
             best, tonic, mode = rel
