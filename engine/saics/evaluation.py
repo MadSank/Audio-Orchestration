@@ -528,11 +528,15 @@ def report_full(full_dir: Path, results_dir: Path) -> str:
 
 
 def write_jump_feedback(folder: Path, eval_dir: Path, rater: str = "owner", log=print) -> int:
-    """Round-2 seam ratings -> `<folder>/.saics/jump_feedback.csv` (5 -> keep, <= 2 -> ban)."""
+    """Seam ratings from round 2 onward (15 s context, real jumps) ->
+    `<folder>/.saics/jump_feedback.csv` (5 -> keep, <= 2 -> ban)."""
     import csv as _csv
 
-    m2 = json.loads((Path(eval_dir) / "round2" / "manifest.json").read_text("utf-8"))
-    man = {c["id"]: c for c in m2["clips"]}
+    man = {}
+    for sub in ("round2", "round2b"):
+        p = Path(eval_dir) / sub / "manifest.json"
+        if p.exists():
+            man.update({c["id"]: c for c in json.loads(p.read_text("utf-8"))["clips"]})
     rows = []
     for r in load_ratings(Path(eval_dir) / "results"):
         c = man.get(r["clip_id"])

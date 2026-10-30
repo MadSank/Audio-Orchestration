@@ -304,5 +304,191 @@
   "from_s": 31.7,
   "to_s": 110.38,
   "label": "D1:1 → D2:1"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 120.4,
+  "to_s": 39.74,
+  "label": "G1:8 → D1:4"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 108.3,
+  "to_s": 188.98,
+  "label": "G1:2 → L1:2"
+ },
+ {
+  "song": "TheFatRat - Electrified.mp3",
+  "from_s": 39.56,
+  "to_s": 118.24,
+  "label": "D1:5 → D2:5"
+ },
+ {
+  "song": "Aaron Smith - Dancin (KRONO Remix).mp3",
+  "from_s": 80.2,
+  "to_s": 120.22,
+  "label": "D1:10 → D2:6"
+ },
+ {
+  "song": "Indila - Dernière Danse.mp3",
+  "from_s": 123.76,
+  "to_s": 190.54,
+  "label": "F1:12 → F2:12"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 61.92,
+  "to_s": 142.58,
+  "label": "D1:15 → I1:3"
+ },
+ {
+  "song": "Maroon 5 - Memories (Lyrics).mp3",
+  "from_s": 132.22,
+  "to_s": 67.6,
+  "label": "B3:2 → B2:2"
+ },
+ {
+  "song": "Aaron Smith - Dancin (KRONO Remix).mp3",
+  "from_s": 48.22,
+  "to_s": 96.22,
+  "label": "B1:9 → C2:8"
+ },
+ {
+  "song": "TheFatRat - Monody (feat. Laura Brehm).mp3",
+  "from_s": 244.98,
+  "to_s": 72.26,
+  "label": "E2:9 → E1:9"
+ },
+ {
+  "song": "TheFatRat - Electrified.mp3",
+  "from_s": 23.84,
+  "to_s": 102.52,
+  "label": "C1:1 → C2:1"
+ },
+ {
+  "song": "Michael Jackson - Smooth Criminal Lyrics.mp3",
+  "from_s": 127.52,
+  "to_s": 62.56,
+  "label": "D2:1 → D1:1"
+ },
+ {
+  "song": "TheFatRat - Electrified.mp3",
+  "from_s": 47.44,
+  "to_s": 126.12,
+  "label": "E1:1 → J1:1"
+ },
+ {
+  "song": "Michael Jackson - Smooth Criminal Lyrics.mp3",
+  "from_s": 111.3,
+  "to_s": 46.32,
+  "label": "C3:1 → C1:1"
+ },
+ {
+  "song": "Maroon 5 - Memories (Lyrics).mp3",
+  "from_s": 67.6,
+  "to_s": 132.22,
+  "label": "B2:2 → B3:2"
+ },
+ {
+  "song": "TheFatRat - Electrified.mp3",
+  "from_s": 153.66,
+  "to_s": 59.24,
+  "label": "J1:15 → F1:3"
+ },
+ {
+  "song": "Aaron Smith - Dancin (KRONO Remix).mp3",
+  "from_s": 166.22,
+  "to_s": 118.22,
+  "label": "F1:4 → D2:5"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 140.56,
+  "to_s": 59.9,
+  "label": "I1:2 → D1:14"
+ },
+ {
+  "song": "Michael Jackson - Smooth Criminal Lyrics.mp3",
+  "from_s": 46.32,
+  "to_s": 111.3,
+  "label": "C1:1 → C3:1"
+ },
+ {
+  "song": "TheFatRat - Monody (feat. Laura Brehm).mp3",
+  "from_s": 72.26,
+  "to_s": 244.98,
+  "label": "E1:9 → E2:9"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 39.74,
+  "to_s": 120.4,
+  "label": "D1:4 → G1:8"
+ },
+ {
+  "song": "TheFatRat - Electrified.mp3",
+  "from_s": 102.52,
+  "to_s": 23.84,
+  "label": "C2:1 → C1:1"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 188.98,
+  "to_s": 108.3,
+  "label": "L1:2 → G1:2"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 172.84,
+  "to_s": 92.18,
+  "label": "K1:3 → F1:10"
+ },
+ {
+  "song": "TheFatRat - Monody (feat. Laura Brehm).mp3",
+  "from_s": 262.92,
+  "to_s": 90.22,
+  "label": "L1:2 → F1:1"
+ },
+ {
+  "song": "Indila - Dernière Danse.mp3",
+  "from_s": 190.54,
+  "to_s": 123.76,
+  "label": "F2:12 → F1:12"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 92.18,
+  "to_s": 172.84,
+  "label": "F1:10 → K1:3"
+ },
+ {
+  "song": "TheFatRat - Monody (feat. Laura Brehm).mp3",
+  "from_s": 90.22,
+  "to_s": 262.92,
+  "label": "F1:1 → L1:2"
+ },
+ {
+  "song": "Michael Jackson - Smooth Criminal Lyrics.mp3",
+  "from_s": 62.56,
+  "to_s": 127.52,
+  "label": "D1:1 → D2:1"
+ },
+ {
+  "song": "Aaron Smith - Dancin (KRONO Remix).mp3",
+  "from_s": 64.22,
+  "to_s": 112.22,
+  "label": "D1:2 → D2:2"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 275.7,
+  "to_s": 178.9,
+  "label": "O1:4 → K1:6"
+ },
+ {
+  "song": "Aaron Smith - Dancin (KRONO Remix).mp3",
+  "from_s": 112.22,
+  "to_s": 64.22,
+  "label": "D2:2 → D1:2"
  }
 ]

@@ -1,4 +1,4 @@
-"""The 51 jumps the owner rated 5 in eval round 2 must stay selected (owner, 2026-10-30).
+"""Every jump the owner rated 5 in eval rounds 2 and 2b must stay selected (owner, 2026-10-30/31).
 
 Runs against the real library's bundles (skipped elsewhere). Refresh the bundles first with
 `saics jumps <MusicFolder>` after any change to jump finding.
