@@ -102,6 +102,15 @@ def test_analyze_end_to_end(tmp_path):
     again = an.analyze(lib, None, workers=1, log=lambda *_: None)  # cached: nothing re-analysed
     assert again["bundles"] == 1
 
+    # A run stopped before library.json was written: bundles on disk are still reused,
+    # and bundles of files that left the library are pruned.
+    (lib / ".saics" / "library.json").unlink()
+    (lib / ".saics" / "tracks" / "deadbeef.json").write_text("{}", encoding="utf-8")
+    logs = []
+    third = an.analyze(lib, None, workers=1, log=logs.append)
+    assert third["bundles"] == 1 and "0 to analyse" in logs[0]
+    assert not (lib / ".saics" / "tracks" / "deadbeef.json").exists()
+
 
 def _song_with_gaps(sr=22050):
     t = np.arange(40 * sr) / sr

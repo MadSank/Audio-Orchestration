@@ -6,7 +6,7 @@ renames, deletes or modifies anything in the music folder, and refuses to write 
 report inside it. `--apply` / `--undo` are not implemented yet (hard rule 3: the owner
 reviews the report first).
 
-Classes: not_audio, unreadable, short, duplicate, speech, sfx, music.
+Classes: not_audio, unreadable, long (> 15 min), short, duplicate, speech, sfx, music.
 Versions (slowed, nightcore, 8D, lyric video, covers, language versions …) are NEVER
 duplicates: they get a `group` and a `version` label. A duplicate is a byte-identical
 file, or the same version of the same song in another encoding (same group + same
@@ -32,6 +32,7 @@ from saics.io import AUDIO_EXTS, chromaprint, decode, probe
 
 SR = 22050
 MIN_SONG_S = 45.0
+LONG_CLASS_S = 900.0  # over 15 min: compilation / playlist / loop -> class "long"
 LONG_S = 600.0
 DUP_MAX_LENGTH_DIFF_S = 2.0  # same version in another encoding: lengths within 2 s / 1 %
 MAX_DECODE_S = 600.0
@@ -179,7 +180,7 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def analyse_file(path_str: str, rel: str) -> tuple:
+def analyse_file(path_str: str, rel: str, long_s: float = LONG_CLASS_S) -> tuple:
     """Worker: probe + features + fingerprint + group signature.
 
     Returns (Row as dict, Chromaprint fingerprint, beat-chroma signature)."""
@@ -214,6 +215,11 @@ def analyse_file(path_str: str, rel: str) -> tuple:
     if len(y) < SR or float(np.max(np.abs(y))) < 1e-4:
         row.cls, row.keep = "unreadable", "no"
         row.reasons.append("decodes to <1 s of audio" if len(y) < SR else "digital silence")
+        return asdict(row), NO_FP, NO_SIG
+    if row.duration_s > long_s:
+        # Compilations, playlists, hour-long loops: not analysed, grouped, or used by stations.
+        row.cls, row.keep = "long", "no"
+        row.reasons.append(f"duration {row.duration_s / 60:.1f} min > {long_s / 60:.0f} min")
         return asdict(row), NO_FP, NO_SIG
 
     try:
@@ -334,7 +340,7 @@ def mark_duplicates(rows: list, fps: list) -> None:
 
 def assign_groups(rows: list, sigs: list, overrides: list, workers: int, log=print):
     """Fill group / version / group_evidence on every decodable row."""
-    idx = [i for i, r in enumerate(rows) if r["cls"] not in ("not_audio", "unreadable")]
+    idx = [i for i, r in enumerate(rows) if r["cls"] not in ("not_audio", "unreadable", "long")]
     names = [parse_name(Path(rows[i]["file"]).stem, rows[i]["tag_title"]) for i in idx]
     sub = [sigs[i] for i in idx]
     log(f"  grouping {len(idx)} files (audio similarity on {workers} processes)…")
@@ -427,7 +433,7 @@ def triage(folder: Path, out: Path, workers: int = 4, limit: int = 0, log=print,
     results: dict = {}
     with ProcessPoolExecutor(max_workers=workers) as ex:
         futs = {
-            ex.submit(analyse_file, str(p), p.relative_to(folder).as_posix()): k
+            ex.submit(analyse_file, str(p), p.relative_to(folder).as_posix(), LONG_CLASS_S): k
             for k, p in enumerate(files)
         }
         for n, fut in enumerate(as_completed(futs), 1):
@@ -467,12 +473,55 @@ def triage(folder: Path, out: Path, workers: int = 4, limit: int = 0, log=print,
     return rows
 
 
+SET_ASIDE_MANIFEST = Path(".saics") / "set_aside_manifest.json"
+NEVER_SET_ASIDE = {"music"}  # versions and real songs are never moved
+
+
+def set_aside(folder: Path, report: Path, classes: set, log=print) -> list:
+    """Move files of the given triage classes into <folder>/_set_aside/<class>/ (moves only).
+
+    Reads the classes from an existing report, keeps sub-folders, and records every move in
+    <folder>/.saics/set_aside_manifest.json so `--undo` restores them exactly."""
+    from saics.consolidate import move_files
+
+    bad = classes & NEVER_SET_ASIDE
+    if bad:
+        raise ValueError(f"refusing to set aside class(es) {sorted(bad)}")
+    folder = folder.resolve()
+    with Path(report).open(encoding="utf-8-sig", newline="") as f:
+        rows = [r for r in csv.DictReader(f) if r["class"] in classes]
+    by_dest: dict = {}
+    for r in rows:
+        rel = Path(r["file"].replace("\\", "/"))
+        dest = folder / "_set_aside" / r["class"] / rel.parent
+        by_dest.setdefault(dest, []).append(folder / rel)
+    moved = []
+    note = f"saics triage --apply ({', '.join(sorted(classes))})"
+    for dest, srcs in by_dest.items():
+        moved += move_files(srcs, dest, folder / SET_ASIDE_MANIFEST, note=note)
+    for m in moved:
+        log(f"  set aside: {m['source']} -> {m['dest']}")
+    log(f"{len(moved)} files moved; undo with: saics triage {folder} --undo")
+    return moved
+
+
 def run_triage(args) -> int:
-    if args.apply or args.undo:
-        print("--apply/--undo are not implemented yet: triage is report-only.", file=sys.stderr)
-        return 2
+    from saics.consolidate import undo
+
+    folder = Path(args.folder)
     try:
-        triage(Path(args.folder), Path(args.out), workers=args.workers, limit=args.limit,
+        if args.undo:
+            for rec in undo(folder / SET_ASIDE_MANIFEST):
+                print(f"restored {rec['source']}")
+            return 0
+        if args.apply:
+            if not args.classes:
+                print("--apply needs --classes, e.g. --classes long", file=sys.stderr)
+                return 2
+            classes = {c.strip() for c in args.classes.split(",") if c.strip()}
+            set_aside(folder, Path(args.out), classes)
+            return 0
+        triage(folder, Path(args.out), workers=args.workers, limit=args.limit,
                groups_file=args.groups_file)  # fmt: skip
     except ValueError as exc:
         print(exc, file=sys.stderr)
