@@ -63,3 +63,10 @@ def test_render_version_returns_mp3():
     )
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "audio/mpeg" and len(r.content) > 10_000
+
+
+def test_eval_page_and_validation():
+    r = client.get("/eval/")
+    assert r.status_code == 200 and "Seam test" in r.text
+    assert client.post("/eval/rate", json={"clip_id": "../etc", "rating": 3}).status_code == 422
+    assert client.post("/eval/rate", json={"clip_id": "a" * 12, "rating": 9}).status_code == 422

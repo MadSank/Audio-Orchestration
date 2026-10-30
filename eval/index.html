@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAICS Seam Test</title>
+<style>
+  :root {
+    --bg: #0A0A0C; --fg: #F3EFE7; --muted: #8E8A82; --amber: #FFB547; --cyan: #6FD3FF;
+    --card: #15151A; --line: #2A2A31;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.5 "Archivo", system-ui, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 22px; letter-spacing: .02em; margin: 0 0 4px; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); font-size: 13px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 20px; margin-top: 20px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 12px 0; }
+  .bar > div { height: 100%; background: var(--cyan); width: 0; transition: width .3s; }
+  .seam { color: var(--cyan); }
+  button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line);
+           border-radius: 10px; padding: 12px 0; cursor: pointer; }
+  button:hover { border-color: var(--amber); }
+  .play { width: 100%; background: var(--amber); color: #111; border: 0; font-weight: 600; }
+  .rates { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 16px; }
+  .rates button:disabled { opacity: .35; cursor: default; }
+  p.help { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Seam test</h1>
+  <div class="mono" id="progress">loading…</div>
+  <div class="bar"><div id="fill"></div></div>
+  <div class="card">
+    <p class="help">Each clip has one jump about <span class="seam">5 seconds in</span>.
+      Listen across it and rate how seamless it sounds. Clips are shuffled and unlabeled.</p>
+    <button class="play" id="play">▶ Play clip</button>
+    <div class="rates" id="rates"></div>
+    <p class="help mono">1 = obvious glitch · 3 = noticeable but musical · 5 = can't hear it</p>
+  </div>
+</main>
+<script>
+  const rater = new URLSearchParams(location.search).get("rater") || "owner";
+  const audio = new Audio();
+  let todo = [], total = 0, rated = 0, heard = false;
+  const $ = (id) => document.getElementById(id);
+  for (let r = 1; r <= 5; r++) {
+    const b = document.createElement("button");
+    b.textContent = r; b.disabled = true; b.onclick = () => rate(r);
+    $("rates").appendChild(b);
+  }
+  function show() {
+    $("progress").textContent = `${rated} / ${total} rated` + (todo.length ? "" : " · all done, thank you");
+    $("fill").style.width = total ? `${100 * rated / total}%` : "0";
+    $("play").disabled = !todo.length;
+    [...$("rates").children].forEach((b) => (b.disabled = !heard || !todo.length));
+  }
+  async function load() {
+    const r = await fetch(`clips?rater=${encodeURIComponent(rater)}`);
+    if (!r.ok) { $("progress").textContent = (await r.json()).detail; return; }
+    ({ todo, total, rated } = await r.json());
+    show();
+  }
+  $("play").onclick = () => {
+    if (!todo.length) return;
+    audio.src = `clip/${todo[0]}.wav`; audio.currentTime = 0; audio.play();
+    heard = true; show();
+  };
+  async function rate(r) {
+    const id = todo[0];
+    const res = await fetch("rate", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clip_id: id, rating: r, rater }) });
+    if (!res.ok) { alert("could not save rating"); return; }
+    audio.pause(); todo.shift(); rated++; heard = false; show();
+  }
+  load();
+</script>
+</body>
+</html>

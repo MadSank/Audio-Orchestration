@@ -19,12 +19,14 @@ from saics.legacy.audio_processor import AudioContinuityProcessor, TrackTransiti
 from saics.legacy.library_analyzer import score_pair, score_all_pairs
 from saics.legacy.models import TrackFingerprint
 from saics.versions import render_audio_version, VALID_MODES
+from server.eval_routes import router as eval_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("saics.api")
 
 app = FastAPI(title="SAICS API", description="Structure-Aware Intelligent Audio Continuity System", version="5.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.include_router(eval_router)
 
 ALLOWED_EXT = {".mp3", ".wav", ".flac", ".ogg", ".aac", ".aif", ".aiff", ".m4a"}
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024

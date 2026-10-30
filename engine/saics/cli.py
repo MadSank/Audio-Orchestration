@@ -66,12 +66,22 @@ def build_parser() -> argparse.ArgumentParser:
     a.set_defaults(func=_analyze)
 
     r = sub.add_parser("render", help="offline render (eval clips, exports)")
-    r.set_defaults(func=_not_yet("P2/P3"))
+    r.set_defaults(func=_not_yet("P3"))
 
     e = sub.add_parser("eval", help="listening-test harness")
     e.add_argument("action", choices=["build", "report"])
-    e.set_defaults(func=_not_yet("P2"))
+    e.add_argument("folder", nargs="?", default="", help="music folder (build)")
+    e.add_argument("--set", default="eval/set.txt", help="songs to evaluate, one per line")
+    e.add_argument("--eval-dir", default="eval", help="clips/, results/, report.md live here")
+    e.add_argument("--per-song", type=int, default=10)
+    e.set_defaults(func=_eval)
     return p
+
+
+def _eval(args) -> int:
+    from saics.evaluation import run_eval
+
+    return run_eval(args)
 
 
 def main(argv=None) -> int:
