@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SCHEMA = "saics.analysis/7"  # /7 (2026-10-30): + breaks
+SCHEMA = "saics.analysis/8"  # /7: + breaks; /8: structural jumps (P3)
 LIBRARY_SCHEMA = "saics.library/7"
 
 
@@ -84,11 +84,19 @@ class Break(_M):
 
 
 class Jump(_M):
+    """Instead of playing bar `from_bar`, continue at bar `to_bar` (both start on downbeats)."""
+
     from_beat: int
     to_beat: int
+    from_bar: int  # == number of bars for a song-end jump
+    to_bar: int
     score: float
-    kind: str
+    kind: Literal["repeat", "break", "end"]
     xfade_ms: float
+    label: str  # e.g. "B2:5 → B1:5" (repeat group letter, instance, bar in section)
+    context: float  # mean bar similarity over the 4 bars before and after the seam
+    lyric: float  # vocal-stem chroma continuity across the seam (1 = instrumental both sides)
+    distance_s: float
 
 
 class Cue(_M):
@@ -103,7 +111,7 @@ class Cues(_M):
 
 
 class TrackBundle(_M):
-    schema_: Literal["saics.analysis/7"] = Field(SCHEMA, alias="schema")
+    schema_: Literal["saics.analysis/8"] = Field(SCHEMA, alias="schema")
     track: Track
     triage: Triage = Triage()
     group: Group
@@ -117,7 +125,7 @@ class TrackBundle(_M):
     bar_energy: list[float]  # per bar, 0..1
     vocal_activity: list[float]  # per beat, 0..1
     breaks: list[Break] = []  # silences / near-silent breakdowns (since /7)
-    jumps: list[Jump] = []  # P3
+    jumps: list[Jump] = []  # P3 structural jumps (since /8)
     cues: Cues = Cues()  # P4
 
     def dump(self) -> str:

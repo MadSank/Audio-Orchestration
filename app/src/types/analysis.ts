@@ -6,7 +6,7 @@
  * the app falls back to plain playback for that track.
  */
 
-export const ANALYSIS_SCHEMA = "saics.analysis/7" as const;
+export const ANALYSIS_SCHEMA = "saics.analysis/8" as const;
 export const LIBRARY_SCHEMA = "saics.library/7" as const;
 
 export type TriageClass =
@@ -47,12 +47,19 @@ export interface Break {
   return_db: number;
 }
 
+/** Instead of playing bar from_bar, continue at bar to_bar (both on downbeats). Since /8. */
 export interface Jump {
   from_beat: number;
   to_beat: number;
+  from_bar: number; // == number of bars for a song-end jump
+  to_bar: number;
   score: number;
-  kind: string;
+  kind: "repeat" | "break" | "end";
   xfade_ms: number;
+  label: string; // e.g. "B2:5 → B1:5"
+  context: number;
+  lyric: number;
+  distance_s: number;
 }
 
 export interface Cue {

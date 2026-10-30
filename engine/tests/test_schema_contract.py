@@ -30,3 +30,8 @@ def test_bundle_fields_match():
 def test_break_fields_match():
     ts_fields = set(re.findall(r"^\s+(\w+)\??:", _ts_block("Break"), re.M))
     assert ts_fields == set(schema.Break.model_fields)
+
+
+def test_jump_fields_match():
+    ts_fields = set(re.findall(r"^\s+(\w+)\??:", _ts_block("Jump"), re.M))
+    assert ts_fields == set(schema.Jump.model_fields)

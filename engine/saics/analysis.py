@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from saics.io import AUDIO_EXTS, decode, probe
+from saics.jumps import MIN_JUMP_BARS, BarInfo, find_jumps
 from saics.schema import (
     SCHEMA,
     Break,
@@ -33,7 +34,6 @@ from saics.schema import (
     LibraryTrack,
     Loudness,
     Meter,
-    Section,
     Tempo,
     Track,
     TrackBundle,
@@ -46,14 +46,23 @@ TARGET_LUFS = -14.0
 ID_SECONDS = 30.0
 PLAYABLE = {"music", "short"}  # classes that get a bundle
 
-PITCHES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
-# Krumhansl-Kessler key profiles.
-MAJOR = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
-MINOR = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
-# Camelot number per tonic pitch class.
-CAMELOT_MAJOR = [8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6, 1]
-CAMELOT_MINOR = [5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10]
+from saics.structure import (  # noqa: E402  (re-exported)
+    CAMELOT_MAJOR,
+    CAMELOT_MINOR,
+    PITCHES,
+    bar_slot_features,
+    key_from_chroma,
+    meter_from_downbeats,
+    regularize_downbeats,
+    sections_from_bars,
+    tempo_from_beats,
+)
+from saics.structure import KK_MAJOR as MAJOR  # noqa: E402
+from saics.structure import KK_MINOR as MINOR  # noqa: E402
 
+__all__ = ["CAMELOT_MAJOR", "CAMELOT_MINOR", "MAJOR", "MINOR", "PITCHES", "bar_slot_features",
+           "key_from_chroma", "meter_from_downbeats", "regularize_downbeats",
+           "sections_from_bars", "tempo_from_beats"]  # fmt: skip
 
 # ── pure helpers (unit-tested) ────────────────────────────────────────────────
 
@@ -78,90 +87,11 @@ def downbeat_indices(beats: np.ndarray, downbeat_times: np.ndarray, tol: float =
     return out
 
 
-def meter_from_downbeats(downbeats: list) -> tuple:
-    """(beats_per_bar, confidence) from the spacing of downbeat indices. Never assumes 4/4."""
-    gaps = np.diff(downbeats)
-    if len(gaps) < 2:
-        return 4, 0.0
-    vals, counts = np.unique(gaps, return_counts=True)
-    k = int(np.argmax(counts))
-    return int(vals[k]), round(float(counts[k] / len(gaps)), 3)
-
-
-def tempo_from_beats(beats: np.ndarray) -> tuple:
-    """(bpm, stable, confidence) from inter-beat intervals."""
-    ibi = np.diff(beats)
-    if len(ibi) < 4:
-        return 0.0, False, 0.0
-    bpm = 60.0 / float(np.median(ibi))
-    # Local tempo drift: compare 8-beat windows rather than raw jitter.
-    w = np.convolve(ibi, np.ones(8) / 8, mode="valid") if len(ibi) >= 8 else ibi
-    drift = float(np.std(w) / np.mean(w))
-    cv = float(np.std(ibi) / np.mean(ibi))
-    return round(bpm, 2), drift < 0.02, round(max(0.0, 1.0 - 5 * cv), 3)
-
-
-def key_from_chroma(chroma_mean: np.ndarray) -> tuple:
-    """(tonic, mode, camelot, confidence) by correlating with major/minor profiles."""
-    scores = []
-    for mode, prof in (("major", MAJOR), ("minor", MINOR)):
-        for t in range(12):
-            r = np.corrcoef(chroma_mean, np.roll(prof, t))[0, 1]
-            scores.append((float(r), t, mode))
-    scores.sort(reverse=True)
-    (best, tonic, mode), (second, *_rest) = scores[0], scores[1]
-    num = (CAMELOT_MAJOR if mode == "major" else CAMELOT_MINOR)[tonic]
-    camelot = f"{num}{'B' if mode == 'major' else 'A'}"
-    conf = round(max(0.0, min(1.0, (best - second) * 5 + max(0.0, best) * 0.5)), 3)
-    return PITCHES[tonic], mode, camelot, conf
-
-
-def sections_from_bars(bar_feats: np.ndarray, min_len: int = 4, kernel: int = 8) -> list:
-    """Novelty-based segmentation of bar-level features + repeat groups by clustering."""
-    n = len(bar_feats)
-    if n < 2 * min_len:
-        return [Section(start_bar=0, end_bar=max(1, n), group=0)]
-    x = (bar_feats - bar_feats.mean(0)) / (bar_feats.std(0) + 1e-9)
-    x /= np.linalg.norm(x, axis=1, keepdims=True) + 1e-9
-    ssm = x @ x.T
-    k = min(kernel, n // 2)
-    half = k // 2
-    sign = np.sign(np.arange(-half, half) + 0.5)
-    check = np.outer(sign, sign) * np.exp(
-        -((np.arange(-half, half) + 0.5) ** 2) / (2 * (half / 2) ** 2)
-    )
-    pad = np.pad(ssm, half, mode="edge")
-    nov = np.array([np.sum(pad[i : i + 2 * half, i : i + 2 * half] * check) for i in range(n)])
-    nov = np.maximum(nov, 0)
-    bounds = [0]
-    thr = np.percentile(nov, 70)
-    for i in np.argsort(-nov):
-        if nov[i] < thr:
-            break
-        if all(abs(i - b) >= min_len for b in bounds) and n - i >= min_len:
-            bounds.append(int(i))
-    bounds = sorted(bounds) + [n]
-    segs = [(a, b) for a, b in zip(bounds[:-1], bounds[1:], strict=True) if b > a]
-    means = np.array([x[a:b].mean(0) for a, b in segs])
-    means /= np.linalg.norm(means, axis=1, keepdims=True) + 1e-9
-    groups, protos = [], []
-    for m in means:  # greedy clustering: same group if cosine >= 0.6 with a prototype
-        sims = [float(m @ p) for p in protos]
-        if sims and max(sims) >= 0.6:
-            groups.append(int(np.argmax(sims)))
-        else:
-            protos.append(m)
-            groups.append(len(protos) - 1)
-    return [
-        Section(start_bar=a, end_bar=b, group=g) for (a, b), g in zip(segs, groups, strict=True)
-    ]
-
-
 BREAK_DB = -15.0  # a break is at least this far below the track's typical level …
 SILENCE_DB = -30.0  # … and a "silence" at least this far
 BREAK_MIN_S = 0.25
-RETURN_DB = -8.0  # music counts as back once the 4 s after a break average above this
 EDGE_S = 1.0  # leading/trailing silence is not a break
+RETURN_DB = -8.0  # music counts as back once the 4 s after a break average above this
 
 
 def short_term_db(y: np.ndarray, sr: int, win_s: float = 0.4, hop_s: float = 0.05) -> tuple:
@@ -251,8 +181,8 @@ def _demucs():
     return _MODELS["demucs"]
 
 
-def vocal_ratio_per_beat(stereo44: np.ndarray, beats: np.ndarray) -> np.ndarray:
-    """Vocal-stem RMS / mix RMS per beat interval (Demucs htdemucs)."""
+def vocal_ratio_per_beat(stereo44: np.ndarray, beats: np.ndarray) -> tuple:
+    """(vocal-stem RMS / mix RMS per beat interval, vocal stem mono) via Demucs htdemucs."""
     import torch
     from demucs.apply import apply_model
 
@@ -276,14 +206,13 @@ def vocal_ratio_per_beat(stereo44: np.ndarray, beats: np.ndarray) -> np.ndarray:
         v = float(np.sqrt(np.mean(voc[a:b] ** 2)))
         m = float(np.sqrt(np.mean(mix[a:b] ** 2))) + 1e-6
         out.append(v / m)
-    return np.array(out)
+    return np.array(out), voc
 
 
 # ── per-track analysis ────────────────────────────────────────────────────────
 
 
 def analyse_track(path: Path, rel: str, meta: dict) -> TrackBundle:
-    import librosa
     import pyloudnorm as pyln
 
     p = probe(path)
@@ -296,32 +225,68 @@ def analyse_track(path: Path, rel: str, meta: dict) -> TrackBundle:
     duration = len(y) / SR
     tid = track_id(y, duration)
 
+    import librosa
+
     beats, dbt = _beat_model()(y, SR)
     beats = np.asarray(beats, dtype=float)
-    downbeats = downbeat_indices(beats, np.asarray(dbt, dtype=float))
-    bpb, meter_conf = meter_from_downbeats(downbeats)
+    raw_db = downbeat_indices(beats, np.asarray(dbt, dtype=float))
     bpm, stable, tconf = tempo_from_beats(beats)
 
     yf = librosa.resample(y, orig_sr=SR, target_sr=FEAT_SR)
     hop = 512
-    cqt = np.abs(librosa.cqt(yf, sr=FEAT_SR, hop_length=hop, n_bins=84, bins_per_octave=12))
-    chroma = librosa.feature.chroma_cqt(C=cqt, sr=FEAT_SR, hop_length=hop)
-    tonic, mode, camelot, kconf = key_from_chroma(chroma.mean(1))
-
-    # Bar-level features for sections and energy (bars = downbeat to downbeat).
-    bar_times = beats[downbeats] if len(downbeats) >= 2 else beats[::4]
-    bar_frames = librosa.time_to_frames(bar_times, sr=FEAT_SR, hop_length=hop)
+    # 36 bins/octave: 12-bin CQT smears energy into neighbouring semitones (D23).
+    cqt = np.abs(librosa.cqt(yf, sr=FEAT_SR, hop_length=hop, n_bins=252, bins_per_octave=36))
+    chroma = librosa.feature.chroma_cqt(C=cqt, sr=FEAT_SR, hop_length=hop, bins_per_octave=36)
+    bass = librosa.feature.chroma_cqt(
+        C=cqt[:72], sr=FEAT_SR, hop_length=hop, n_octaves=2, bins_per_octave=36
+    )
     mfcc = librosa.feature.mfcc(y=yf, sr=FEAT_SR, n_mfcc=14, hop_length=hop)[1:]  # drop MFCC0
     onset = librosa.onset.onset_strength(y=yf, sr=FEAT_SR, hop_length=hop)[None]
     rms = librosa.feature.rms(y=yf, hop_length=hop)
-    feats = np.vstack([chroma, mfcc, onset[:, : chroma.shape[1]]])
-    bars = librosa.util.sync(feats, bar_frames, aggregate=np.mean).T[1:-1]  # inside the grid
-    sections = sections_from_bars(bars) if len(bars) else []
-    bar_rms = librosa.util.sync(rms, bar_frames, aggregate=np.mean)[0][1:-1]
-    ref = float(np.percentile(bar_rms, 95)) if len(bar_rms) else 1.0
-    bar_energy = np.round(np.clip(bar_rms / (ref + 1e-9), 0, 1), 3).tolist()
+    nfr = min(chroma.shape[1], mfcc.shape[1], onset.shape[1], rms.shape[1])
+    beat_frames = librosa.time_to_frames(beats, sr=FEAT_SR, hop_length=hop)
 
-    vocal = smooth_activity(vocal_ratio_per_beat(stereo, beats)).tolist() if len(beats) else []
+    def per_beat(m):  # (d, n_beats): frames from each beat to the next
+        return librosa.util.sync(m[:, :nfr], beat_frames, aggregate=np.mean)[:, 1 : len(beats) + 1]
+
+    chroma_b, bass_b, mfcc_b = per_beat(chroma), per_beat(bass), per_beat(mfcc)
+    onset_b, rms_b = per_beat(onset)[0], per_beat(rms)[0]
+    downbeats, bpb, meter_conf = regularize_downbeats(raw_db, len(beats), onset_b)  # D24
+    starts = np.zeros(len(beats), bool)
+    starts[[d for d in downbeats if d < len(beats)]] = True
+    tonic, mode, camelot, kconf = key_from_chroma(chroma_b, bass_b, starts)  # D23
+
+    beat_feats = np.vstack([chroma_b, mfcc_b / 10.0, onset_b[None] / (onset_b.max() + 1e-9)])
+    bars = bar_slot_features(beat_feats, downbeats)
+    sections = sections_from_bars(bars) if len(bars) else []
+    n_bars = len(bars)
+    bars_ab = list(zip(downbeats[:-1], downbeats[1:], strict=True))[:n_bars]  # beat spans
+    bar_rms = np.array([rms_b[a:b].mean() for a, b in bars_ab])
+    ref = float(np.percentile(bar_rms, 95)) if len(bar_rms) else 1.0
+    bar_energy = np.round(np.clip(bar_rms / (ref + 1e-9), 0, 1), 3)
+
+    vocal = np.zeros(len(beats))
+    vocal_chroma = np.zeros((n_bars, 12))
+    if len(beats):
+        ratio, voc = vocal_ratio_per_beat(stereo, beats)
+        vocal = smooth_activity(ratio)
+        vf = librosa.resample(voc, orig_sr=SR, target_sr=FEAT_SR)
+        vchroma = librosa.feature.chroma_cqt(y=vf, sr=FEAT_SR, hop_length=hop)
+        vb = librosa.util.sync(vchroma, beat_frames, aggregate=np.mean)[:, 1 : len(beats) + 1]
+        vocal_chroma = np.array([vb[:, a:b].mean(1) for a, b in bars_ab])
+    breaks = detect_breaks(y, SR, beats)
+    bar_t = np.r_[beats[downbeats[: n_bars + 1]]] if n_bars else np.zeros(1)
+    if len(bar_t) == n_bars:  # last bar ends at the end of the audio
+        bar_t = np.r_[bar_t, duration]
+    jumps = []
+    if n_bars >= 2 * MIN_JUMP_BARS:
+        info = BarInfo(
+            bar_t=bar_t, feats=bars, vocal_chroma=vocal_chroma,
+            vocal=np.array([vocal[a:b].max() if b > a else 0 for a, b in bars_ab]),
+            vocal_edge=np.array([vocal[a - 1] if a > 0 else 0 for a in downbeats[:n_bars]]),
+            energy=bar_energy, duration=duration,
+        )  # fmt: skip
+        jumps = find_jumps(info, sections, breaks, downbeats)
 
     meter = pyln.Meter(SR)
     lufs = float(meter.integrated_loudness(stereo.T))
@@ -351,9 +316,10 @@ def analyse_track(path: Path, rel: str, meta: dict) -> TrackBundle:
         beats=[round(float(b), 4) for b in beats],
         downbeats=downbeats,
         sections=sections,
-        bar_energy=bar_energy,
-        vocal_activity=vocal,
-        breaks=detect_breaks(y, SR, beats),
+        bar_energy=bar_energy.tolist(),
+        vocal_activity=[round(float(v), 3) for v in vocal],
+        breaks=breaks,
+        jumps=jumps,
     )
 
 
@@ -424,11 +390,15 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
             c
             and c["size"] == st.st_size
             and c["mtime_ns"] == st.st_mtime_ns
-            and (tracks_dir / f"{c['id']}.json").exists()
+            and _schema_of(tracks_dir / f"{c['id']}.json") == SCHEMA
         ):
             keep.append((rel, c, meta))  # unchanged: reuse the bundle, refresh group labels
             continue
-        if c is None and rel in on_disk:
+        if (
+            c is None
+            and rel in on_disk
+            and _schema_of(tracks_dir / f"{on_disk[rel]}.json") == SCHEMA
+        ):
             c = {"id": on_disk[rel], "size": st.st_size, "mtime_ns": st.st_mtime_ns,
                  "group": "", "version": ""}  # fmt: skip
             keep.append((rel, c, meta))
@@ -490,6 +460,16 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
     return {"bundles": len(entries), "errors": errors}
 
 
+def _schema_of(path: Path) -> str:
+    """Schema tag of a bundle on disk ('' if missing/unreadable). Reads only the head."""
+    try:
+        with path.open(encoding="utf-8") as f:
+            head = f.read(64)
+        return json.loads(head.split(",")[0] + "}").get("schema", "")
+    except (OSError, ValueError):
+        return ""
+
+
 def _bundles_by_file(tracks_dir: Path) -> dict:
     """file (relative, forward slashes) -> track id, read from the bundles themselves."""
     out = {}
@@ -544,4 +524,4 @@ def run_analyze(args) -> int:
     return 0
 
 
-assert SCHEMA == "saics.analysis/7"
+assert SCHEMA == "saics.analysis/8"
