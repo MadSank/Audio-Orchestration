@@ -1,6 +1,13 @@
 # SAICS v6 — A0 Audit and overnight run log
 
-## Summary: done / needs me
+## Morning status (2026-10-30): waiting on you for 3 things
+1. **Approve the Downloads move.** See `reports/downloads_inventory.csv`: 27 to move, 14 to skip. Nothing has moved yet. `saics analyze` and P2 run on the consolidated folder, so they wait for this.
+2. **Pick the vinyl by ear:** `listen/vinyl_A.wav` (live Library-page chain) vs `listen/vinyl_B.wav` (download renderer), plus `listen/vinyl_dry_reference.wav`. All are loudness-matched to −14 LUFS.
+3. **Review the song groups:** `song_groups_review.csv` (largest groups first; the `check` column flags weak or chained groups). Fix anything with `<MusicFolder>/.saics/groups_overrides.csv`; the template is `groups_overrides.example.csv`.
+
+The overnight summary below is kept for history. Its "variant" class and the CPU-vs-GPU item are superseded: versions are now groups, and CUDA torch is installed.
+
+## Summary: done / needs me (overnight)
 
 ### Done (branch `v6`, 8 commits, not pushed; `main` untouched)
 - **A0:** audit written (below) and `PLAN.md` rewritten to match the local code.
