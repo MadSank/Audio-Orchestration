@@ -305,6 +305,7 @@ Each phase lists deliverables and the acceptance check that closes it. P5 does n
 - **`sfx`:** no confident beat grid, or mostly non-tonal/noise-like content (high spectral flatness, low chroma clarity).
 - **`speech`:** mostly speech (optional).
 - **`duplicate`:** byte-identical, or the same group + same version + Chromaprint match (via ffmpeg's chromaprint muxer) + same length. Keep the best copy (bitrate, then clean filename, then length).
+- **`long`:** over 15 minutes (compilations, playlists, hour-long loops). Not analysed, not grouped, never used by stations or the Mix Web. Set aside with `saics triage <folder> --apply --classes long` (moves only; `--undo` restores from `.saics/set_aside_manifest.json`). Files of 8–15 minutes stay in the library and get a `review: long file` note.
 - **Versions are not a class.** Every decodable file gets a `group` and `version` (see "Song groups"). Versions are never flagged or set aside.
 
 Also:
