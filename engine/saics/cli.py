@@ -18,6 +18,14 @@ def _triage(args) -> int:
     return run_triage(args)
 
 
+def _undo_moves(args) -> int:
+    from saics.consolidate import undo
+
+    for rec in undo(args.manifest):
+        print(f"restored {rec['source']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="saics", description="SAICS v6 analysis engine")
     sub = p.add_subparsers(dest="command", required=True)
@@ -35,6 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--apply", action="store_true", help="move flagged files (not implemented)")
     t.add_argument("--undo", action="store_true", help="restore moved files (not implemented)")
     t.set_defaults(func=_triage)
+
+    u = sub.add_parser("undo-moves", help="put files recorded in a move manifest back")
+    u.add_argument("manifest")
+    u.set_defaults(func=_undo_moves)
 
     a = sub.add_parser("analyze", help="write <folder>/.saics/ analysis bundles")
     a.add_argument("folder")
