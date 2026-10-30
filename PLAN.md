@@ -480,6 +480,14 @@ Each edge stores its score breakdown and its **chosen transition style**:
 - colours: `#0A0A0C` background, `#000` in Ride mode, text `#F3EFE7`, amber `#FFB547`, cyan `#6FD3FF`;
 - type: Archivo + IBM Plex Mono.
 
+**Status (2026-10-30), first build on the owner's phone (vivo V2515, release APK, debug-signed):**
+- [x] Kotlin module: `MediaLibraryService` + ExoPlayer (audio focus, becoming-noisy, playback resumption, foreground `mediaPlayback`), multi-press decoder for all play/pause variants, earcons + TTS, stations, SAF folder scan reading `.saics/library.json`.
+- [x] Screens (first pass, tokens only, no design export yet): Home/Stations with mini Now Playing, Library, Button test (live key log, window tuning, simulate).
+- [x] `adb` key events with the screen off: every mapping row acts as specified (manual run, not yet instrumented tests).
+- [x] Real Cardo buttons confirmed working by the owner (short test, not yet the 30-minute bag ride).
+- [ ] Forever = REPEAT_ONE for now; Next-in-Forever switches version only when the group has one (not yet verified on device). `gain_db`, disconnect pause, voice search, Set-aside / Song groups review, Ride mode, Now Playing visualiser: still to do.
+- Windows build notes: `LongPathsEnabled=1` (owner set it), SDK CMake 3.31.6 (ninja 1.12) and a short CMake staging dir, both written by `app/plugins/withShortCxxPath.js` at prebuild; gesture-handler is kept out of the native build (`app/react-native.config.js`).
+
 **Done when:**
 - **With the real Cardo:** every row of the mapping works with the screen off in a closed bag for 30 minutes, after first confirming with the Button test.
 - Navigation prompts duck and resume, and a call pauses and resumes.
