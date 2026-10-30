@@ -61,3 +61,58 @@ def render_segments(y: np.ndarray, segments: list, sr: int, xfade_ms: float = 30
             seams.append(pos)
         pos += b - a
     return (out[0] if mono else out), seams
+
+
+def render_forever(audio_path, bundle, minutes: float, seed: int = 0, channel: int | None = None,
+                   sr: int = 44100) -> tuple:  # fmt: skip
+    """Offline Forever render of one song: (audio (2, n) float32, sr, jump log).
+
+    Follows the bundle's structural jumps with the P3 pacing rules (`jumps.forever_path`).
+    channel=0/1 renders a single input channel to both outputs (e.g. one side of a
+    split-language file)."""
+    from saics.io import decode
+    from saics.jumps import forever_path
+
+    y = decode(audio_path, sr=sr, mono=False)
+    if y.ndim == 1:
+        y = np.stack([y, y])
+    if channel is not None:
+        y = np.stack([y[channel], y[channel]])
+    beats = np.asarray(bundle.beats)
+    n_bars = len(bundle.downbeats) - 1
+    bar_t = np.r_[beats[bundle.downbeats[: n_bars + 1]]]
+    bar_t[-1] = min(bar_t[-1], y.shape[1] / sr)
+    segs_s, log = forever_path(bar_t, bundle.sections, bundle.jumps, minutes, seed=seed)
+    segs = [(int(a * sr), int(b * sr)) for a, b in segs_s]
+    out, seams = render_segments(y.astype(np.float32), segs, sr, xfade_ms=30.0)
+    for entry, seam in zip(log, seams, strict=False):
+        entry["at_s"] = round(seam / sr, 2)  # exact output time of each jump
+    return out, sr, log
+
+
+def write_audio(path, y: np.ndarray, sr: int, lufs: float = -14.0) -> None:
+    """Loudness-normalise and write WAV or MP3 (320k via ffmpeg) depending on the suffix."""
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    import pyloudnorm as pyln
+    import soundfile as sf
+
+    x = y.T if y.ndim == 2 else y
+    cur = pyln.Meter(sr).integrated_loudness(x)
+    if np.isfinite(cur):
+        x = x * 10 ** ((lufs - cur) / 20)
+    pk = float(np.abs(x).max())
+    if pk > 0.98:
+        x = x / pk * 0.98
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix.lower() == ".mp3":
+        with tempfile.TemporaryDirectory() as td:
+            wav = Path(td) / "x.wav"
+            sf.write(wav, x.astype(np.float32), sr, subtype="PCM_16")
+            cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(wav), "-b:a", "320k", str(path)]
+            subprocess.run(cmd, check=True)
+    else:
+        sf.write(path, x.astype(np.float32), sr, subtype="PCM_16")

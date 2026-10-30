@@ -27,6 +27,8 @@ CTX_MEAN = 0.55  # mean similarity along the stripe ...
 CTX_MIN = 0.20  # ... and no single bar pair below this
 STRONG_STRIPE = 0.70  # a stripe this strong counts as a repeat even if segmentation disagrees
 PER_SECONDS = 20.0  # keep about one jump source per 20 s of music
+REUSE_PENALTY = 0.3  # Forever walk: score penalty per earlier use of the same jump …
+TAKE_MIN = 0.6  # … and a (penalised) jump below this is skipped: keep playing instead
 
 
 @dataclass
@@ -174,25 +176,37 @@ def forever_path(bar_t: np.ndarray, sections: list, jumps: list, minutes: float,
     bar, start_bar, t = 0, 0, 0.0
     next_jump = rng.uniform(*pace)
     landed_in = -2  # section instance we last landed in (no second jump inside it)
+    last_jump = -1e9
     recent: list = []  # (out_time, bar) of played bars, to avoid landing in the last 60 s
+    used: dict = {}  # jump label -> times taken; reuse is penalised so the walk explores
     while t < target:
         options = []
-        if t >= next_jump and bar in by_from and (bar >= n or sec[bar] != landed_in):
+        ends = [j for j in by_from.get(bar, []) if j.kind == "end"]
+        if ends and t < target and t - last_jump >= pace[0]:  # song-end safety net
+            options = ends
+        elif t >= next_jump and bar in by_from and (bar >= n or sec[bar] != landed_in):
             fresh = {b for (tt, b) in recent if t - tt < 60.0}
-            options = [j for j in by_from[bar] if j.to_bar not in fresh]
+            # Skip worn-out jumps, and jumps landing within a minute of the song's end.
+            options = [j for j in by_from[bar] if j.to_bar not in fresh
+                       and j.score - REUSE_PENALTY * used.get(j.label, 0) >= TAKE_MIN
+                       and bar_t[n] - bar_t[j.to_bar] >= pace[0]]  # fmt: skip
         if bar >= n and not options:
-            options = [j for j in by_from.get(n, [])]
+            # The song really ended (an end jump was deferred to keep the pacing): loop back.
+            options = [j for js in by_from.values() for j in js if j.kind == "end"]
             if not options:
                 break  # song ended with nowhere to go
         if options:
-            j = max(options, key=lambda j: j.score + rng.uniform(0, 0.02))
+            j = max(options, key=lambda j: j.score - REUSE_PENALTY * used.get(j.label, 0)
+                    + rng.uniform(0, 0.02))  # fmt: skip
+            used[j.label] = used.get(j.label, 0) + 1
             segs.append((bar_t[start_bar], bar_t[min(bar, n)]))
-            log.append({"at_s": round(t, 2), "from": j.label.split(" → ")[0],
-                        "to": j.label.split(" → ")[1], "kind": j.kind,
+            src, _, dst = j.label.partition(" → ")
+            log.append({"at_s": round(t, 2), "from": src, "to": dst or src, "kind": j.kind,
                         "from_s": round(float(bar_t[min(bar, n)]), 2),
                         "to_s": round(float(bar_t[j.to_bar]), 2)})  # fmt: skip
             bar = start_bar = j.to_bar
             landed_in = sec[bar]
+            last_jump = t
             next_jump = t + rng.uniform(*pace)
             continue
         if bar >= n:

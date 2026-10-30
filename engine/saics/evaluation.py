@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from saics.io import decode
 from saics.render import render_segments
 
 OUT_SR = 44100
@@ -256,10 +257,182 @@ def run_eval(args) -> int:
     if args.action == "build":
         build(Path(args.folder), Path(args.set), root / "clips", per_song=args.per_song)
         return 0
+    if args.action == "build2":
+        build_round2(Path(args.folder), Path(args.set), root / "round2", per_song=args.per_song)
+        build_full(Path(args.folder), root / "full")
+        return 0
     if args.action == "report":
         md = report(root / "clips", root / "results")
+        if (root / "round2" / "manifest.json").exists():
+            r2 = report(root / "round2", root / "results")
+            md += "\n\n## Round 2 (15 s context)\n\n" + r2
+        if (root / "full" / "manifest.json").exists():
+            full = report_full(root / "full", root / "results")
+            md += "\n\n## Full-song Forever test (P3 acceptance)\n\n" + full
         (root / "report.md").write_text(md + "\n", encoding="utf-8")
         print(md)
         return 0
     print("unknown action", file=sys.stderr)
     return 2
+
+
+# ── round 2: 15 s seam clips with a reveal, full-song Forever renders ───────────
+
+ROUND2_CTX_S = 15.0
+FULL_SONGS = [  # P3 acceptance: Racing into the Night (original, Japanese side) + 4 from the set
+    ("*Racing Into the Night*Split Audio*", 0),
+    ("Maroon 5 - Memories (Lyrics).mp3", None),
+    ("Passenger - Let Her Go (Feat*", None),
+    ("Earth, Wind & Fire - September (Lyrics).mp3", None),
+    ("from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3", None),
+]
+
+
+def _bundle_for(folder: Path, rel: str):
+    from saics.schema import TrackBundle
+
+    lib = json.loads((folder / ".saics" / "library.json").read_text("utf-8"))
+    tid = next(t["id"] for t in lib["tracks"] if t["file"] == rel.replace("\\", "/"))
+    return TrackBundle.model_validate_json(
+        (folder / ".saics" / "tracks" / f"{tid}.json").read_text("utf-8")
+    )
+
+
+def _place(b, t: float) -> str:
+    """Section label ("B2:5") for a time in the song, from the bundle's bar grid."""
+    from saics.structure import section_labels
+
+    beats = np.asarray(b.beats)
+    bar_t = beats[b.downbeats]
+    bar = int(np.searchsorted(bar_t, t + 1e-3, side="right") - 1)
+    labels = section_labels(b.sections)
+    for k, s in enumerate(b.sections):
+        if s.start_bar <= bar < s.end_bar:
+            return f"{labels[k]}:{bar - s.start_bar + 1}"
+    return "intro" if bar < 0 else "end"
+
+
+def _seam_clip(y: np.ndarray, sr: int, t_from: float, t_to: float, xfade_ms: float) -> tuple:
+    """15 s before the seam (up to t_from) + 15 s after (from t_to), stereo."""
+    a0 = max(0, int((t_from - ROUND2_CTX_S) * sr))
+    b1 = min(y.shape[1], int((t_to + ROUND2_CTX_S) * sr))
+    out, seams = render_segments(y, [(a0, int(t_from * sr)), (int(t_to * sr), b1)], sr, xfade_ms)
+    return out, (seams[0] / sr if seams else (t_from - a0 / sr))
+
+
+def _mmss(t: float) -> str:
+    return f"{int(t // 60)}:{int(t % 60):02d}"
+
+
+def build_round2(folder: Path, set_file: Path, out_dir: Path, per_song: int = 5, log=print) -> dict:
+    """Seam clips with 15 s context: P3 jumps (`current`) + one legacy anchor per song."""
+    import librosa
+
+    folder, out_dir = Path(folder), Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    songs = [ln.strip().replace("\\", "/") for ln in Path(set_file).read_text("utf-8").splitlines()
+             if ln.strip() and not ln.startswith("#")]  # fmt: skip
+    r1 = json.loads((out_dir.parent / "clips" / "manifest.json").read_text("utf-8"))["clips"]
+    manifest = {"round": 2, "context_s": ROUND2_CTX_S, "clips": []}
+    for i, song in enumerate(songs, 1):
+        b = _bundle_for(folder, song)
+        y = decode(folder / song, sr=OUT_SR, mono=False)
+        y = np.stack([y, y]) if y.ndim == 1 else y
+        beats = np.asarray(b.beats)
+        cur = sorted([j for j in b.jumps if j.kind != "end"], key=lambda j: -j.score)
+        picked: list = []
+        for j in cur:
+            if all(abs(j.from_bar - p.from_bar) >= 8 for p in picked):
+                picked.append(j)
+            if len(picked) == per_song:
+                break
+        items = []
+        for j in picked:
+            t_from, t_to = float(beats[j.from_beat]), float(beats[j.to_beat])
+            items.append(("current", t_from, t_to, j.xfade_ms, j.label, j.score))
+        # Legacy anchor: the best-scored round-1 jump of this song, re-rendered with context.
+        leg = [c for c in r1 if c["variant"] == "baseline" and c["song"].replace("\\", "/") == song]
+        leg.sort(key=lambda c: -c["legacy_score"])
+        if leg:
+            ly, lsr = librosa.load(str(folder / song), mono=True, sr=None)
+            _, fr = librosa.beat.beat_track(y=ly, sr=lsr, units="frames")
+            lb = librosa.frames_to_time(fr, sr=lsr)
+            c = leg[0]
+            t_from = float(lb[min(c["src_beat"] + 1, len(lb) - 1)])
+            t_to = float(lb[c["tgt_beat"]])
+            label = f"{_place(b, t_from)} → {_place(b, t_to)}"
+            items.append(("baseline", t_from, t_to, 30.0, label, c["legacy_score"]))
+        for variant, t_from, t_to, xf, label, score in items:
+            clip, seam_s = _seam_clip(y, OUT_SR, t_from, t_to, xf)
+            mono = clip.mean(0)
+            cid = secrets.token_hex(6)
+            sf.write(out_dir / f"{cid}.wav", _normalise(clip.T, OUT_SR), OUT_SR, subtype="PCM_16")
+            manifest["clips"].append({
+                "id": cid, "kind": "jump", "round": 2, "song": song, "variant": variant,
+                "seam_s": round(seam_s, 3), "duration_s": round(clip.shape[1] / OUT_SR, 3),
+                "score": round(float(score), 4),
+                "reveal": {"label": label, "from_s": round(t_from, 2), "to_s": round(t_to, 2),
+                           "text": f"{label}  ({_mmss(t_from)} → {_mmss(t_to)} in the song, "
+                                   f"{t_to - t_from:+.0f} s)"},
+                "metrics": seam_metrics(mono, OUT_SR, seam_s, _beats(mono, OUT_SR)),
+            })  # fmt: skip
+        (out_dir / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8"
+        )
+        log(f"[{i}/{len(songs)}] {song}: {len(items)} clips")
+    return manifest
+
+
+def build_full(folder: Path, out_dir: Path, minutes: float = 7.0, seed: int = 0, log=print) -> dict:
+    """P3 acceptance renders: one ~7-minute Forever version per FULL_SONGS entry."""
+    from saics.render import render_forever, write_audio
+
+    folder, out_dir = Path(folder), Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {"minutes": minutes, "renders": []}
+    for pat, channel in FULL_SONGS:
+        f = next(folder.glob(pat))
+        rel = f.relative_to(folder).as_posix()
+        b = _bundle_for(folder, rel)
+        y, sr, jlog = render_forever(f, b, minutes, seed=seed, channel=channel)
+        rid = secrets.token_hex(6)
+        write_audio(out_dir / f"{rid}.mp3", y, sr)
+        manifest["renders"].append({
+            "id": rid, "song": rel, "channel": channel, "duration_s": round(y.shape[1] / sr, 2),
+            "title": Path(rel).stem[:80], "jumps": jlog,
+        })  # fmt: skip
+        log(f"  {rel}: {y.shape[1] / sr / 60:.1f} min, {len(jlog)} jumps")
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8"
+    )
+    return manifest
+
+
+def report_full(full_dir: Path, results_dir: Path) -> str:
+    """Per render: overall rating, 'felt wrong' marks, and how many marks fall near a jump."""
+    renders = json.loads((Path(full_dir) / "manifest.json").read_text("utf-8"))["renders"]
+    ratings = {}
+    for p in sorted(Path(results_dir).glob("full-*.json")):
+        for r in json.loads(p.read_text("utf-8"))["ratings"]:
+            ratings[r["render_id"]] = r  # latest rating wins
+    rows = [
+        "| song | jumps | overall | marks | marks within 5 s of a jump |",
+        "|---|---|---|---|---|",
+    ]
+    overall = []
+    for r in renders:
+        q = ratings.get(r["id"])
+        jt = [j["at_s"] for j in r["jumps"]]
+        name = Path(r["song"]).stem[:50]
+        if q:
+            near = sum(1 for m in q["marks"] if any(abs(m - t) <= 5 for t in jt))
+            overall.append(q["overall"])
+            rows.append(f"| {name} | {len(jt)} | {q['overall']} | {len(q['marks'])} | {near} |")
+        else:
+            rows.append(f"| {name} | {len(jt)} | – | – | – |")
+    if overall:
+        rows.append(
+            f"\nMean overall: **{np.mean(overall):.2f}** over {len(overall)} of {len(renders)} "
+            "renders (target >= 4.0, none below 3)."
+        )
+    return "\n".join(rows)

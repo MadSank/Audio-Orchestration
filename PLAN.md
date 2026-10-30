@@ -298,10 +298,15 @@ Each phase lists deliverables and the acceptance check that closes it. P5 does n
   - Throughput on the RTX 4070: ~13 s/song warm; Demucs (incl. its inverse STFT) is ~75% of that. One worker only: three workers overflowed the 8 GB VRAM.
   - **Vocal activity is provisional:** the vocal-energy share barely separates instrumental tracks with vocal chops from sung songs. Validate in P3 against rated seams before relying on it.
 - [x] Full-library run finished (2026-10-30): 376 bundles, 0 errors, all `saics.analysis/7`; 11 long files set aside first (`_set_aside/long/`, undo: `saics triage <folder> --undo`).
-- [ ] Spot-check findings to fix before P3 relies on them:
+- [x] Spot-check findings fixed before P3 relies on them:
+  - **Fixed 2026-10-30 (D23–D25), see below; the /8 re-analysis carries the fixes.**
   - **D23 (key):** 307 of 376 tracks come out minor. Likely a relative-minor bias from mean-chroma Krumhansl (it barely matters for Camelot mixing, since 8A/8B are compatible, but labels are wrong). Fix with key-strength over beat-synchronous harmonic chroma, and check against labelled songs.
   - **D24 (meter):** 343 tracks 4/4, but 97 have meter confidence < 0.7, including impossible "1 beat per bar" results (4 tracks) and likely half-bar "2" (20 tracks). Fix: reject meters < 2, prefer 4 over 2 when bars of 4 explain the downbeats nearly as well, and fall back to Beat This! with DBN on low-confidence tracks.
   - **D25 (tempo stability):** only 178 of 376 marked stable; the 2% 8-beat drift test is too strict for live/rubato recordings. Recalibrate on labelled songs.
+  - **Fixes:**
+    - **D23 root cause** was a bug: `chroma_cqt(C=…)` defaults to 36 bins/octave and was fed a 12-bin CQT, scrambling pitch classes. Now: a 36-bin CQT, beat-synchronous chroma, Krumhansl + Temperley profiles, and a bass-line tie-break between relative major and minor. Spot check: *Bad Romance* A minor, *Memories* B major, *Never Gonna Give You Up* A♭ major are right; *Smooth Criminal* is still wrong (F minor vs A minor, at low confidence).
+    - **D24:** a tracking bar grid. The phase is voted over a sliding window of raw downbeats and changes only when it clearly wins, so half-bar detections are ignored, real shifts are followed, and bars are never shorter than 2 beats.
+    - **D25:** stable = ≥ 90% of 16-beat windows within ±4% of the median tempo.
 - [ ] P1 acceptance: beat/downbeat F-measure ≥ 0.9 on 10 hand-labelled songs (owner labels, or tap-along on the eval page).
 
 **Triage (`saics triage <folder>`).** It classifies every file. Classes and rules:
@@ -352,7 +357,12 @@ Also:
 - [x] Clean renderer (`saics.render`): contiguous runs copied untouched, crossfade only at jumps (D8). The crossfade keeps power constant for the measured correlation of the two sides (flat for identical bars, equal-power for unrelated audio).
 - [ ] **Owner rates the baseline** (`uvicorn server.main:app` → http://localhost:8000/eval/). In progress: first 122 ratings show the old renderer at 60/61 rated 1 (jittery) vs 0/61 for the clean renderer, consistent with D8 being the jitter. Confirm once the owner has finished rating.
 - [x] **Owner rated the baseline** (all 294 clips). Report: `eval/baseline_report.md`.
-- [ ] **Round 2** (owner, 2026-10-30):
+- [x] **Round 2 built** (owner's spec, 2026-10-30):
+  - **Seam clips:** 75 in `eval/round2/`: 57 P3 jumps plus 18 old-algorithm anchors, 15 s of context each side, section reveal after rating.
+  - **Full-song test:** 5 Forever renders of 7 minutes in `eval/full/`, rated at http://localhost:8000/eval/full/ with "felt wrong" marks plus an overall rating; the jump log is revealed after submitting.
+  - **Report:** `saics eval report` covers round 1, round 2 and the full-song test.
+- [ ] Owner rates round 2 and the full-song test.
+- Spec (owner, 2026-10-30):
   - **seam clips:** 15 s of context on each side; after rating, the page reveals the from → to section labels;
   - **new full-song test:** 6–8 minute Forever renders of 5 songs (*Racing into the Night* original + 4 from the set), listened start to finish. A button marks "felt wrong" moments with a timestamp, plus an overall 1–5. This is the P3 acceptance test; the jump log is revealed after rating.
 
@@ -382,9 +392,16 @@ Also:
   - bar features that keep within-bar order (4 beat slots of chroma + MFCC1–13 + onset).
 
 **Deliverables:**
-- [ ] `saics.jumps`: structural jump finder and Forever walk; bundle `jumps[]` with from/to bar, section labels (e.g. `B2:5 → B1:5`), kind (`repeat` | `break` | `end`) and score components. Schema `/8`, app type updated.
-- [ ] `saics render <file> --minutes 7`: an offline Forever render with a jump log (timestamps + from → to sections).
-- [ ] Eval round 2 (see P2 "round 2").
+- [x] `saics.jumps`: structural jump finder and Forever walk; bundle `jumps[]` with from/to bar, section labels (e.g. `B2:5 → B1:5`), kind (`repeat` | `break` | `end`) and score components. Schema `/8`, app type updated.
+  - **Walk rules as implemented:**
+    - 60–120 s pacing;
+    - never two jumps in one section instance;
+    - no landing in the last 60 s played, nor within 60 s of the song's end;
+    - each reuse of a jump costs 0.3 score, and a jump under 0.6 is skipped;
+    - end → post-intro only when ≥ 60 s since the last jump, otherwise at the true song end.
+  - **Known gap:** songs with near-constant harmony and unreliable downbeats get no repeat jumps, only end → post-intro (in the eval set: *Never Gonna Give You Up*, *505*, *Biri Biri*, *Mettaton*).
+- [x] `saics render <folder> <file> --minutes 7 [--seed N] [--out x.mp3]`: an offline Forever render with a jump log (timestamps + from → to sections).
+- [x] Eval round 2 built (see P2 "round 2"); waiting for the owner's ratings.
 
 **Done when** (the **full-song test is the acceptance test**; seam clips are secondary):
 - on the full-song test (5 songs × 6–8 min Forever renders, listened start to finish), the mean overall rating is **≥ 4.0**, no song is below 3, and at most one "felt wrong" mark per song falls within ±5 s of a jump;
