@@ -202,10 +202,15 @@ def vocal_ratio_per_beat(stereo44: np.ndarray, beats: np.ndarray) -> np.ndarray:
     from demucs.apply import apply_model
 
     model = _demucs()
-    x = torch.tensor(stereo44[None], dtype=torch.float32)
-    with torch.no_grad():
-        src = apply_model(model, x, device=_device(), split=True, overlap=0.1, progress=False)
-    voc = src[0, model.sources.index("vocals")].mean(0).cpu().numpy()
+    vi = model.sources.index("vocals")
+    chunk = 300 * SR  # 5-minute chunks bound RAM/VRAM on hour-long loops and compilations
+    voc = np.zeros(stereo44.shape[1], np.float32)
+    for a in range(0, stereo44.shape[1], chunk):
+        x = torch.tensor(stereo44[None, :, a : a + chunk], dtype=torch.float32)
+        with torch.no_grad():
+            src = apply_model(model, x, device=_device(), split=True, overlap=0.1, progress=False)
+        voc[a : a + x.shape[-1]] = src[0, vi].mean(0).cpu().numpy()
+        del src
     mix = stereo44.mean(0)
     edges = np.r_[(beats * SR).astype(int), len(mix)]
     out = []
