@@ -1,0 +1,8 @@
+{
+  "name": "saics-player",
+  "version": "0.1.0",
+  "description": "SAICS Media3 player service + Cardo helmet controls (local Expo module)",
+  "main": "index.ts",
+  "license": "UNLICENSED",
+  "private": true
+}
