@@ -323,7 +323,9 @@ def build_groups(files: list, names: list, sigs: list, durations: list, audio_fn
                 continue
             lk = Link(i, j, name_similarity(names[i], names[j]), audio, kind)
             nb = [x for x in (i, j) if not bridge[x]]
-            if not nb:
+            # Versions of the same mashup/compilation (same full title) always join each other.
+            same_title = len(nb) == 2 and lk.name >= NAME_FULL
+            if not nb or same_title:
                 links.append(lk)
                 parent[find(j)] = find(i)
                 continue

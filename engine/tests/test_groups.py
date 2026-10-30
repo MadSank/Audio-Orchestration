@@ -51,6 +51,22 @@ def test_mashups_do_not_bridge_by_audio():
     assert decide_link(m, parse_name("Totally Different"), 0.9, False, True) is None
 
 
+def test_versions_of_one_mashup_group_together():
+    from saics.groups import build_groups
+
+    stems = [
+        "Lovedrug x Headlock - Lady Gaga, Imogen Heap (Mashup) (Lofi VHS)",
+        "Lovedrug x Headlock - Lady Gaga, Imogen Heap (Mashup) (Sped Up)",
+        "Lovedrug x Headlock - Lady Gaga, Imogen Heap (Mashup) (Vinyl Crackle)",
+        "Lovedrug x Headlock - Lady Gaga, Imogen Heap (Mashup)",
+        "headlock x headlock",
+    ]
+    g = build_groups(stems, [parse_name(s) for s in stems], [None] * 5, [220.0] * 5,
+                     audio_fn=lambda a, b: 0.0)  # fmt: skip
+    assert len(set(g.group[:4])) == 1
+    assert g.version[:4] == ["lofi", "sped up", "vinyl", "original"]
+
+
 def test_unrelated_names_need_audio():
     a, b = parse_name("Night Dancer - imase"), parse_name("Racing into the Night - YOASOBI")
     assert decide_link(a, b, 0.0, True, True) is None
