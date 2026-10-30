@@ -361,7 +361,10 @@ Also:
   - **Seam clips:** 75 in `eval/round2/`: 57 P3 jumps plus 18 old-algorithm anchors, 15 s of context each side, section reveal after rating.
   - **Full-song test:** 5 Forever renders of 7 minutes in `eval/full/`, rated at http://localhost:8000/eval/full/ with "felt wrong" marks plus an overall rating; the jump log is revealed after submitting.
   - **Report:** `saics eval report` covers round 1, round 2 and the full-song test.
-- [ ] Owner rates round 2 and the full-song test.
+- [x] Owner rated round 2 and the full-song test (2026-10-30). `eval/report.md`:
+  - **Seam clips (15 s context):** P3 jumps averaged **4.79** (51 of 57 rated 5, 95% ≥ 4, 0% jittery). The old-algorithm anchors averaged **2.22** (6% ≥ 4).
+  - **Full-song Forever test:** mean **4.20** (*Racing into the Night* 5, the other four 4); no song below 3.
+  - **All 8 "felt wrong" marks fall within 1.1 s of an end → post-intro loop.** None of the 7 structural repeat jumps was marked. Owner's notes: September "isn't a loopable song"; Memories: "a single 2 is enough to derail" an otherwise perfect render.
 - Spec (owner, 2026-10-30):
   - **seam clips:** 15 s of context on each side; after rating, the page reveals the from → to section labels;
   - **new full-song test:** 6–8 minute Forever renders of 5 songs (*Racing into the Night* original + 4 from the set), listened start to finish. A button marks "felt wrong" moments with a timestamp, plus an overall 1–5. This is the P3 acceptance test; the jump log is revealed after rating.
@@ -402,6 +405,8 @@ Also:
   - **Known gap:** songs with near-constant harmony and unreliable downbeats get no repeat jumps, only end → post-intro (in the eval set: *Never Gonna Give You Up*, *505*, *Biri Biri*, *Mettaton*).
 - [x] `saics render <folder> <file> --minutes 7 [--seed N] [--out x.mp3]`: an offline Forever render with a jump log (timestamps + from → to sections).
 - [x] Eval round 2 built (see P2 "round 2"); waiting for the owner's ratings.
+
+**Status after round 2:** the structural repeat jumps pass; **the end → post-intro loop fails** (5 of 5 renders that used it got marked there). The full-song criterion "at most one mark near a jump per song" fails for *Let Her Go* and *September* only because of it. The end-loop design is open for the owner's decision.
 
 **Done when** (the **full-song test is the acceptance test**; seam clips are secondary):
 - on the full-song test (5 songs × 6–8 min Forever renders, listened start to finish), the mean overall rating is **≥ 4.0**, no song is below 3, and at most one "felt wrong" mark per song falls within ±5 s of a jump;

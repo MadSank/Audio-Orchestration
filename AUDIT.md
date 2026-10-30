@@ -1,5 +1,11 @@
 # SAICS v6 — A0 Audit and overnight run log
 
+## Round 2 results (2026-10-30)
+- **Library:** all 376 songs on `saics.analysis/8`, 0 errors. Keys are now 191 major / 185 minor (was 69 / 307); 281 songs tempo-stable; 369 songs in 4/4 and 7 in 3/4. 287 songs have structural repeat jumps (about 5 each); 89 only have the end → post-intro loop.
+- **Fixes during the re-run:** UTF-8-safe CLI output (a song title crashed the progress log at 330/357), and a downbeat-mask off-by-one at the end of the audio (2 songs).
+- **Seam clips:** P3 jumps 4.79 (95% ≥ 4, 0% jittery) vs old-algorithm anchors 2.22.
+- **Full-song test:** mean 4.20; *Racing into the Night* rated 5 ("absolute cinema"). Every "felt wrong" mark (8 of 8) sits on an end → post-intro loop; none on a repeat jump.
+
 ## Night (2026-10-30): baseline report, P3 structural jumps, eval round 2
 - **Baseline report** (`eval/baseline_report.md`), all 294 clips rated:
   - **D8 confirmed:** the old renderer was jittery on 98–100% of clips; the clean renderer on 0–3%.
