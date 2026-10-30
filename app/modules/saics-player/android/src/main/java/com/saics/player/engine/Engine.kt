@@ -1,0 +1,459 @@
+package com.saics.player.engine
+
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
+import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
+import kotlin.math.roundToInt
+import kotlin.random.Random
+
+/**
+ * The SAICS playback engine (P6). Three threads:
+ * - **audio**: [Renderer] -> AudioTrack (float, 44.1 kHz), real-time, parks while paused;
+ * - **scheduler** (this class's loop): loads songs into slots, runs the Forever walk one bar
+ *   ahead, turns button intents into [Instruction]s;
+ * - **decoder**: [Decoder] fills slots (one song at a time).
+ * Public methods may be called from any thread; they enqueue work for the scheduler.
+ */
+class Engine(private val context: Context, private val listener: Listener) {
+  interface Listener {
+    /** The song now playing changed (main thread). */
+    fun onSong(song: Song?)
+    /** Something the engine did: "jump", "version", "track", "repeat", "end" (main thread). */
+    fun onAction(kind: String, detail: String)
+  }
+
+  class Song(
+    val id: String,
+    val uri: Uri,
+    val bundleUri: Uri?,
+    val title: String,
+    val group: String,
+    val version: String,
+    val gainDb: Double,
+  )
+
+  private class Loaded(val song: Song, val pcm: Pcm, val bundle: Bundle?) {
+    var barFrames: IntArray? = null // bar starts (frames); last entry = end of audio
+    var walk: ForeverWalk? = null
+    fun bars(): IntArray? {
+      if (barFrames == null && bundle != null && pcm.complete) {
+        val t = bundle.barTimes(pcm.frames.toDouble() / ENGINE_RATE)
+        barFrames = IntArray(t.size) { (t[it] * ENGINE_RATE).roundToInt().coerceIn(0, pcm.frames) }
+      }
+      return barFrames
+    }
+    /** Index of the bar containing [frame]; -1 before the first downbeat. */
+    fun barAt(frame: Int): Int {
+      val b = bars() ?: return -1
+      var lo = 0
+      var hi = b.size - 1
+      if (frame < b[0]) return -1
+      while (hi - lo > 1) {
+        val mid = (lo + hi) / 2
+        if (b[mid] <= frame) lo = mid else hi = mid
+      }
+      return lo
+    }
+  }
+
+  private enum class Kind { TRACK, NEXT, HARD_NEXT, PREVIOUS, RESTART, VERSION }
+  private class Intent(val kind: Kind, val target: Song?, var issuedAt: Int = -1)
+
+  private val slots = Array(SLOTS) { Slot() }
+  private val loaded = arrayOfNulls<Loaded>(SLOTS)
+  val renderer = Renderer(slots)
+  private val main = Handler(Looper.getMainLooper())
+  private val work = LinkedBlockingQueue<() -> Unit>()
+  private val decoder = Executors.newSingleThreadExecutor { Thread(it, "saics-decode") }
+  @Volatile private var running = true
+
+  // Scheduler-thread state.
+  private var queue: List<Song> = emptyList()
+  private var library: List<Song> = emptyList()
+  private var index = 0
+  private var forever = false
+  private var vinylWanted = false
+  private var intent: Intent? = null
+  private var alt: Song? = null // preloaded other version (Forever)
+  private var lastSlot = -1
+  private var lastKey = Long.MIN_VALUE
+  private var landBar = -1 // where a version switch lands (walk.reset)
+  private var endRetry = -1 // slot whose song end couldn't be handed over yet (next song loading)
+  private val rng = Random(System.nanoTime())
+
+  @Volatile var current: Song? = null
+    private set
+
+  private val audioThread = Thread({ audioLoop() }, "saics-audio")
+  private val schedThread = Thread({ schedLoop() }, "saics-sched")
+
+  init {
+    audioThread.start()
+    schedThread.start()
+  }
+
+  // ── public API (any thread) ────────────────────────────────────────────────
+
+  fun setLibrary(songs: List<Song>) = post { library = songs }
+
+  fun setQueue(songs: List<Song>, start: Int) = post {
+    queue = songs
+    index = start.coerceIn(0, maxOf(0, songs.size - 1))
+    songs.getOrNull(index)?.let { intent = Intent(Kind.TRACK, it) }
+  }
+
+  fun play() {
+    renderer.playing = true
+    LockSupport.unpark(audioThread)
+  }
+
+  fun pause() {
+    renderer.playing = false
+  }
+
+  val isPlaying get() = renderer.playing
+
+  fun next(hard: Boolean) = post {
+    if (forever && current != null && versionsOf(current!!).isNotEmpty()) {
+      intent = Intent(Kind.VERSION, alt ?: versionsOf(current!!).random(rng))
+    } else {
+      queue.getOrNull(index + 1)?.let { intent = Intent(if (hard) Kind.HARD_NEXT else Kind.NEXT, it) }
+        ?: queue.firstOrNull()?.let { index = -1; intent = Intent(Kind.NEXT, it) }
+    }
+  }
+
+  fun previous() = post {
+    val s = renderer.slot
+    val sec = if (s >= 0) renderer.frame.toDouble() / ENGINE_RATE else 0.0
+    intent = if (sec < 5.0 && index > 0) Intent(Kind.PREVIOUS, queue[index - 1]) else current?.let { Intent(Kind.RESTART, it) }
+  }
+
+  fun setForever(on: Boolean) = post {
+    forever = on
+    if (!on) renderer.pending.get()?.let { if (it.tag == TAG_JUMP) renderer.pending.compareAndSet(it, null) }
+  }
+
+  fun setVinyl(on: Boolean) = post { vinylWanted = on } // applied on the next bar
+
+  fun setVinylComp(db: Double) {
+    renderer.vinylComp = Math.pow(10.0, db / 20).toFloat()
+  }
+
+  fun duck(level: Float) {
+    renderer.duck = level
+  }
+
+  fun positionMs(): Long = renderer.frame * 1000L / ENGINE_RATE
+  fun durationMs(): Long = loaded.getOrNull(renderer.slot)?.pcm?.let { if (it.complete) it.frames * 1000L / ENGINE_RATE else null } ?: 0L
+
+  fun release() {
+    running = false
+    renderer.playing = false
+    LockSupport.unpark(audioThread)
+    schedThread.interrupt()
+    decoder.shutdownNow()
+    loaded.forEach { it?.pcm?.cancelled = true }
+  }
+
+  private fun post(f: () -> Unit) {
+    work.offer(f)
+  }
+
+  // ── audio thread ───────────────────────────────────────────────────────────
+
+  private fun audioLoop() {
+    Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
+    val min = AudioTrack.getMinBufferSize(ENGINE_RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
+    val track = AudioTrack.Builder()
+      .setAudioAttributes(
+        AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build(),
+      )
+      .setAudioFormat(
+        AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(ENGINE_RATE)
+          .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build(),
+      )
+      .setBufferSizeInBytes(maxOf(min * 2, (ENGINE_RATE * 0.12).toInt() * 8))
+      .setTransferMode(AudioTrack.MODE_STREAM)
+      .build()
+    val buf = FloatArray(BLOCK * 2)
+    var started = false
+    while (running) {
+      if (!renderer.playing && renderer.fade == 0f) {
+        if (started) {
+          track.pause()
+          started = false
+        }
+        LockSupport.parkNanos(50_000_000L)
+        continue
+      }
+      if (!started) {
+        track.play()
+        started = true
+      }
+      renderer.render(buf, BLOCK)
+      track.write(buf, 0, BLOCK * 2, AudioTrack.WRITE_BLOCKING)
+    }
+    track.stop()
+    track.release()
+  }
+
+  // ── scheduler thread ───────────────────────────────────────────────────────
+
+  private fun schedLoop() {
+    while (running) {
+      try {
+        val f = work.poll(TICK_MS, TimeUnit.MILLISECONDS)
+        f?.invoke()
+        while (true) (work.poll() ?: break).invoke()
+        tick()
+      } catch (e: InterruptedException) {
+        return
+      } catch (e: Exception) {
+        // keep the scheduler alive; a bad bundle must never stop the music
+      }
+    }
+  }
+
+  private fun tick() {
+    val cs = renderer.slot
+    if (cs != lastSlot) songStarted(cs)
+    resolveIntent()
+    val cur = loaded.getOrNull(cs) ?: run { preload(); return }
+    val bar = cur.barAt(renderer.frame)
+    val key = (renderer.executed.toLong() shl 40) or ((cs.toLong() and 0xff) shl 32) or (bar.toLong() and 0xffffffffL)
+    if (key != lastKey) {
+      lastKey = key
+      if (renderer.vinylOn != vinylWanted) renderer.vinylOn = vinylWanted // on the bar
+      if (intent == null) decide(cs, cur, bar)
+    } else if (intent == null && renderer.pending.get() == null) {
+      if (cur.bars() == null) decide(cs, cur, bar) // no bundle: only the song end needs handling
+      else if (endRetry == cs) songEnd(cs, cur)
+    }
+    preload()
+  }
+
+  /** What follows the bar now playing (one bar ahead), as forever_path would choose. */
+  private fun decide(cs: Int, cur: Loaded, bar: Int) {
+    if (renderer.pending.get() != null) return
+    val bars = cur.bars()
+    if (bars == null) {
+      val p = cur.pcm
+      if (p.complete && renderer.frame > p.frames - 5 * ENGINE_RATE) songEnd(cs, cur)
+      return
+    }
+    val n = bars.size - 1
+    val boundary = bar + 1
+    if (boundary > n) return
+    val walk = cur.walk
+    if (forever && walk != null) {
+      when (val step = walk.step(boundary)) {
+        is ForeverWalk.Step.Play -> {
+          val j = step.jump ?: return
+          val at = bars[minOf(boundary, n)]
+          val to = bars[j.toBar]
+          if (to + XF_HALF > cur.pcm.frames) return // target not decoded yet: carry on
+          val rho = correlation(cur.pcm, at, cur.pcm, to, XF_HALF)
+          renderer.pending.set(Instruction(cs, at, cs, to, XF_HALF, rho, tag = TAG_JUMP))
+          event("jump", "${j.label} (${step.why})")
+        }
+        ForeverWalk.Step.End -> songEnd(cs, cur)
+      }
+    } else if (boundary == n) {
+      songEnd(cs, cur)
+    }
+  }
+
+  /** The song reached its end: (c) another version / (d) repeat-one in Forever, else the next song. */
+  private fun songEnd(cs: Int, cur: Loaded) {
+    endRetry = cs
+    if (!cur.pcm.complete) return
+    val end = cur.pcm.frames
+    if (forever) {
+      val a = alt
+      val s = a?.let { slotOf(it) }
+      if (a != null && s != null && ready(s)) {
+        renderer.pending.set(Instruction(cs, end, s, 0, 0, tag = TAG_VERSION))
+        endRetry = -1
+        event("version", a.version + " (song end)")
+      } else {
+        cur.walk?.repeatOne()
+        renderer.pending.set(Instruction(cs, end, cs, 0, 0, gap = (ForeverWalk.REPEAT_ONE_GAP_S * ENGINE_RATE).toInt(), tag = TAG_REPEAT))
+        endRetry = -1
+        event("repeat", "repeat one")
+      }
+    } else {
+      val nextSong = queue.getOrNull(index + 1) ?: queue.firstOrNull() ?: return
+      val s = slotOf(nextSong) ?: return
+      if (!ready(s)) return
+      renderer.pending.set(Instruction(cs, end, s, 0, 0, tag = TAG_TRACK))
+      endRetry = -1
+    }
+  }
+
+  /** Turns a button intent into an instruction once its target song is loaded enough. */
+  private fun resolveIntent() {
+    val it = intent ?: return
+    val cs = renderer.slot
+    val target = it.target ?: run { intent = null; return }
+    val s = slotOf(target) ?: load(target) ?: return
+    if (it.issuedAt >= 0) {
+      if (renderer.executed > it.issuedAt && renderer.slot == s) {
+        intent = null // done
+        if (it.kind == Kind.RESTART || it.kind == Kind.PREVIOUS || it.kind == Kind.TRACK) loaded[s]?.walk?.reset(0)
+      } else if (renderer.pending.get() == null && renderer.armedSlot != s) {
+        it.issuedAt = -1 // something else ran first: issue again
+      }
+      return
+    }
+    if (!ready(s)) return
+    val cur = loaded.getOrNull(cs)
+    val now = renderer.frame
+    val ins = when (it.kind) {
+      Kind.TRACK -> Instruction(cs, -1, s, 0, if (cs >= 0) SWITCH_HALF else 0, tag = TAG_TRACK)
+      Kind.HARD_NEXT, Kind.PREVIOUS, Kind.RESTART ->
+        Instruction(cs, now + 2048, s, 0, SWITCH_HALF, tag = TAG_TRACK)
+      Kind.NEXT -> Instruction(cs, nextBarFrame(cur, now), s, 0, SWITCH_HALF, tag = TAG_TRACK)
+      Kind.VERSION -> {
+        val other = loaded[s]!!
+        val cb = cur?.bars()
+        val ab = other.bars()
+        val at = nextBarFrame(cur, now)
+        val land = if (cb != null && ab != null) {
+          val b = (cur.barAt(at) * (ab.size - 1).toDouble() / (cb.size - 1)).roundToInt().coerceIn(0, ab.size - 2)
+          landBar = b
+          ab[b]
+        } else {
+          landBar = -1
+          (now.toLong() * other.pcm.frames / maxOf(1, cur?.pcm?.frames ?: 1)).toInt()
+        }
+        if (land + SWITCH_HALF > other.pcm.frames) return // not decoded that far yet
+        Instruction(cs, at, s, land, SWITCH_HALF, tag = TAG_VERSION)
+      }
+    }
+    renderer.pending.set(ins)
+    it.issuedAt = renderer.executed
+    when (it.kind) {
+      Kind.VERSION -> event("version", target.version)
+      Kind.TRACK -> {}
+      else -> event("track", target.title)
+    }
+  }
+
+  private fun nextBarFrame(cur: Loaded?, now: Int): Int {
+    val b = cur?.bars() ?: return now + 2048
+    val i = cur.barAt(now)
+    val nb = if (i + 1 < b.size) b[i + 1] else now + 2048
+    return if (nb - now < ENGINE_RATE / 4) (if (i + 2 < b.size) b[i + 2] else nb) else nb
+  }
+
+  private fun songStarted(cs: Int) {
+    lastSlot = cs
+    val l = loaded.getOrNull(cs)
+    current = l?.song
+    if (l != null) {
+      index = queue.indexOfFirst { it.id == l.song.id }.let { if (it >= 0) it else index }
+      if (l.bundle != null && l.walk == null && l.bars() != null) {
+        l.walk = ForeverWalk(l.bundle.barTimes(l.pcm.frames.toDouble() / ENGINE_RATE), l.bundle.sections, l.bundle.jumps,
+          l.bundle.outroBar, l.bundle.loopable, rng.nextLong())
+      }
+      if (landBar >= 0) {
+        l.walk?.reset(landBar)
+        landBar = -1
+      }
+      alt = null
+    }
+    main.post { listener.onSong(l?.song) }
+  }
+
+  // ── slots and preloading ───────────────────────────────────────────────────
+
+  private fun versionsOf(s: Song): List<Song> =
+    if (s.group.isEmpty()) emptyList() else library.filter { it.group == s.group && it.id != s.id }
+
+  private fun preload() {
+    val c = current
+    if (forever && c != null) {
+      if (alt == null) alt = versionsOf(c).randomOrNull(rng)
+      alt?.let { slotOf(it) ?: load(it) }
+    }
+    queue.getOrNull(index + 1)?.let { slotOf(it) ?: load(it) }
+    // Bars become available once decoding completes; the walk needs them.
+    val l = loaded.getOrNull(renderer.slot)
+    if (l != null && l.walk == null && l.bundle != null && l.bars() != null) songStarted(renderer.slot)
+  }
+
+  private fun slotOf(s: Song): Int? = loaded.indexOfFirst { it?.song?.id == s.id }.takeIf { it >= 0 }
+
+  private fun ready(s: Int): Boolean {
+    val p = loaded[s]?.pcm ?: return false
+    return !p.failed && (p.complete || p.frames > 3 * ENGINE_RATE)
+  }
+
+  /** Decode [song] into a free slot (never one in use or about to be). */
+  private fun load(song: Song): Int? {
+    val busy = setOf(renderer.slot, renderer.armedSlot, renderer.pending.get()?.toSlot ?: -1)
+    val keep = setOfNotNull(alt?.id, queue.getOrNull(index + 1)?.id, intent?.target?.id)
+    val free = (0 until SLOTS).firstOrNull { loaded[it] == null }
+      ?: (0 until SLOTS).firstOrNull { it !in busy && loaded[it]?.song?.id !in keep }
+      ?: return null
+    loaded[free]?.pcm?.cancelled = true
+    val opened = Decoder.open(context, song.uri) ?: run {
+      event("error", "can't decode ${song.title}")
+      if (intent?.target?.id == song.id) intent = null
+      return null
+    }
+    val (pcm, job) = opened
+    val bundle = song.bundleUri?.let { readText(it) }?.let { Bundle.parse(it) }
+    loaded[free] = Loaded(song, pcm, bundle)
+    slots[free].pcm = pcm
+    slots[free].gain = Math.pow(10.0, song.gainDb.coerceIn(-30.0, MAX_BOOST_DB) / 20).toFloat()
+    decoder.execute(job)
+    return free
+  }
+
+  private fun readText(uri: Uri): String? = try {
+    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+  } catch (e: Exception) {
+    null
+  }
+
+  private fun event(kind: String, detail: String) = main.post { listener.onAction(kind, detail) }
+
+  companion object {
+    const val SLOTS = 4
+    const val BLOCK = 512
+    const val TICK_MS = 10L
+    const val XF_HALF = 662 // 15 ms: render.py uses a 30 ms seam crossfade
+    const val SWITCH_HALF = 1102 // 25 ms: version / track cut on the downbeat
+    const val MAX_BOOST_DB = 10.0
+    const val TAG_JUMP = 1
+    const val TAG_VERSION = 2
+    const val TAG_TRACK = 3
+    const val TAG_REPEAT = 4
+
+    /** Normalised correlation of two windows around the seam (render.py's rho). */
+    fun correlation(a: Pcm, at: Int, b: Pcm, to: Int, half: Int): Double {
+      var ab = 0.0
+      var aa = 0.0
+      var bb = 0.0
+      for (k in -half until half) {
+        val i = at + k
+        val j = to + k
+        if (i < 0 || j < 0 || i >= a.frames || j >= b.frames) continue
+        val x = (a.left(i) + a.right(i)).toDouble()
+        val y = (b.left(j) + b.right(j)).toDouble()
+        ab += x * y; aa += x * x; bb += y * y
+      }
+      return (ab / (Math.sqrt(aa * bb) + 1e-12)).coerceIn(0.0, 1.0)
+    }
+  }
+}
