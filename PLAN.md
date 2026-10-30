@@ -66,7 +66,7 @@ Run on 2026-10-30 against real songs from the music folder.
 ### A0.3 Open questions for the owner (defaults applied overnight, marked ⇒)
 
 - **Q1 — Design export.** `design/` is not in `C:\saics`. Where is it? *Blocks P5 screens; tokens in CLAUDE.md are enough to start P5's native work.* ⇒ unresolved.
-- **Q2 — Which "vinyl" is the reference?** The live Library page (Tone.js) and the downloadable render (`version_renderer.py`) are *different chains* (D17). CLAUDE.md freezes `versions.py`, i.e. the renderer. Is that the vinyl you love, or the one you hear when clicking Vinyl in the Library page? *Blocks the P0 golden tests' scope and the P6 port.* ⇒ Owner (2026-10-30): the live "song modes" are what they used daily. Golden tests stay on `versions.py`. A/B renders `listen/vinyl_A.wav` (live chain) / `listen/vinyl_B.wav` (renderer) are waiting for the owner's pick, which decides the chain the phone's live vinyl must match (see P6). **PICK: _pending_**
+- **Q2 — Which "vinyl" is the reference?** The live Library page (Tone.js) and the downloadable render (`version_renderer.py`) are *different chains* (D17). CLAUDE.md freezes `versions.py`, i.e. the renderer. Is that the vinyl you love, or the one you hear when clicking Vinyl in the Library page? *Blocks the P0 golden tests' scope and the P6 port.* ⇒ Owner (2026-10-30): the live "song modes" are what they used daily. Golden tests stay on `versions.py`. A/B renders `listen/vinyl_A.wav` (live chain) / `listen/vinyl_B.wav` (renderer) are waiting for the owner's pick, which decides the chain the phone's live vinyl must match (see P6). **PICK: _pending_** A blind pair from *Racing into the Night* (original, 60–90 s of the loop file's first pass) is in `listen/vinyl_racing_1.wav` / `listen/vinyl_racing_2.wav`; which chain is which is recorded outside the repo until the owner picks.
 - **Q3 — Version variants in the library.** Should 8D, bass-boosted, sped-up and lyric-video copies of songs you already have be **flagged for review** (proposed) or **set aside automatically**? The app makes those versions itself. ⇒ **Superseded (owner, 2026-10-30): versions are a core feature, never duplicates and never set aside.** See "Song groups" below.
 - **Q4 — Python version.** CLAUDE.md says 3.12; the existing venv is 3.13. Proposal: create `engine/.venv` on **3.12** for Beat This!/Demucs/CUDA wheel compatibility and drop `backend/venv` after P0. ⇒ 3.12 via `uv`, **CPU PyTorch** (owner's instruction; CUDA later is optional).
 
@@ -143,7 +143,7 @@ saics/                          (repo: MadSank/Audio-Orchestration)
 
 ---
 
-## Analysis bundle contract (schema `saics.analysis/6`)
+## Analysis bundle contract (schema `saics.analysis/7`)
 
 This is the single contract between the PC analyser and the phone. Version it, validate it with pydantic on write and with a TS/Kotlin type on read. The analyser writes it into a hidden folder beside the songs:
 
@@ -163,7 +163,7 @@ Per-track JSON (fields are required unless marked optional):
 
 ```jsonc
 {
-  "schema": "saics.analysis/6",
+  "schema": "saics.analysis/7",
   "track": { "id": "…", "file": "relative/path.mp3", "title": "…", "artist": "…",
              "duration_s": 213.4,
              "codec": "mp3",                       // actual codec, not extension (50 ".mp3" files are AAC)
@@ -183,6 +183,10 @@ Per-track JSON (fields are required unless marked optional):
   "sections": [ { "start_bar": 0, "end_bar": 8, "label": "intro", "group": 0 }, … ],
   "bar_energy": [0.41, 0.44, …],                  // per bar, 0..1
   "vocal_activity": [0.0, 0.8, …],                // per beat, 0..1
+  "breaks": [ { "start_beat": 381, "end_beat": 383, "start_s": 190.68, "end_s": 191.33,
+                "depth_db": -70.8, "kind": "silence", "ramp_up": true, "return_db": -4.9 } ],
+                                                  // since /7: silences (<= -30 dB) and near-silent
+                                                  // breakdowns (<= -15 dB) vs the track's typical level
   "jumps": [ { "from_beat": 132, "to_beat": 36, "score": 0.91,
                "kind": "repeat", "xfade_ms": 30 }, … ],
   "cues": {
@@ -191,6 +195,8 @@ Per-track JSON (fields are required unless marked optional):
   }
 }
 ```
+
+Schema history: `/6` → `/7` (2026-10-30) added `breaks`. The app type lives in `app/src/types/analysis.ts`; `engine/tests/test_schema_contract.py` keeps the two in sync. Cached `/6` bundles are upgraded in place by `saics analyze` (breaks only).
 
 `library.json` holds the track list, triage results, **the song groups** (`groups: {id: {name, tracks: [{id, version}]}}`, after applying `<MusicFolder>/.saics/groups_overrides.csv`), and each track's top-K compatible neighbours with a score breakdown (tempo, key, energy, timbre). The phone never computes pairwise analysis itself. Neighbours are computed between **groups** (a group's representative version), never between two versions of the same song.
 
@@ -328,11 +334,18 @@ Also:
   - **legacy-as-is:** `legacy/` graph + legacy renderer; documents D8, expected to rate badly;
   - **baseline:** the legacy jump graph and legacy transition cue points, rendered by the **new clean renderer** (contiguous runs, equal-power crossfade at seams only, common sample rate). This is the bar that P3/P4 must beat, because it isolates *selection* quality from D8/D15 rendering bugs;
   - **current:** the new algorithm.
-- [x] `eval/` static page served by `server/` at `/eval/`: blind, randomised, 1–5 ratings → `eval/results/*.json`.
+- [x] `eval/` static page served by `server/` at `/eval/`: blind, randomised ratings → `eval/results/*.json`, on the **owner's scale** (also in `eval/README.md`), plus a separate **jittery** flag:
+  - 1 = jittery playback (stutter/flutter, regardless of the seam)
+  - 2 = not jittery, but the transition is bad
+  - 3 = right idea, wrong spot: another part of the song would work
+  - 4 = almost perfect, off by a beat or two
+  - 5 = perfect
+  - The report shows the jittery rate per variant (old renderer vs clean renderer). Ratings made before the labels existed carry no `scale` tag; newer ones are tagged `scale: v2`.
 - [x] Automatic seam metrics per clip: spectral-flux spike, chroma discontinuity (excess over the clip's typical change), loudness step (dB), and beat-phase error (ms; Beat This! beats refined to onset peaks at ~1.5 ms, since its 20 ms frames are too coarse for the 10 ms criterion).
 - [x] `saics eval report`: mean rating, % rated ≥ 4 and median metrics per variant → `eval/report.md`.
 - [x] Clean renderer (`saics.render`): contiguous runs copied untouched, crossfade only at jumps (D8). The crossfade keeps power constant for the measured correlation of the two sides (flat for identical bars, equal-power for unrelated audio).
-- [ ] **Owner rates the baseline** (`uvicorn server.main:app` → http://localhost:8000/eval/).
+- [ ] **Owner rates the baseline** (`uvicorn server.main:app` → http://localhost:8000/eval/). In progress: first 122 ratings show the old renderer at 60/61 rated 1 (jittery) vs 0/61 for the clean renderer, consistent with D8 being the jitter. Confirm once the owner has finished rating.
+- [ ] **P3 does not start until the owner has rated the baseline.**
 
 **Done when:** legacy-as-is and baseline are rated and the report renders. Every later algorithm change must beat **baseline** here.
 
@@ -347,6 +360,7 @@ Also:
   - per track, top-N by score (N ≈ 1 per 20 s), with a floor taken from that track's score distribution (D5);
   - **coverage constraint:** no stretch longer than ~25% of the song without a source, and at least one cycle covering most of the song with no dead end before the final bars (D20).
 - **Reachability and probabilities:** compute reachability for all targets, then normalise once, with explicit weights (D6, D7). The walk avoids recently played regions and keeps ≥ 8 bars between jumps.
+- **Breaks are first-class jump points:** a jump *out of* a break's start or *into* a break's end (`breaks[]`, especially `kind: silence` with `ramp_up`) gets a strong score bonus, and the beat-alignment requirement is relaxed there (silence hides small phase errors).
 - **Seam:** the cut lands on the downbeat transient, with an equal-power crossfade of 15–60 ms chosen per jump to minimise the seam metrics.
 - **Renderer:** `render.py` copies contiguous runs and crossfades only at jumps (D8), at the 44.1 kHz engine rate.
 
@@ -356,31 +370,58 @@ Also:
 - no clip has a beat-phase error above 10 ms;
 - the coverage constraint holds on every bundled song.
 
-### P4 — Cross-track transitions and stations (transitions v6)
-- **Pair scoring:** tempo compatibility with half/double time (reuse `library_analyzer.bpm_compatibility`, which is sound), Camelot distance with major/minor, energy continuity, a timbre descriptor without MFCC0 (D2), and a no-recent-artist rule. Store the top-K neighbours in `library.json`. Scoring is between **groups**; two versions of the same song are never neighbours.
-- **Cue points (D19):**
-  - **Mix-out:** a section boundary in A's last third, preferring outro or low-vocal sections.
-  - **Mix-in:** B's first section boundary after the intro, or its first strong downbeat. Never deeper than the end of B's first chorus.
-  - Both are downbeats and align phrase-to-phrase.
-- **Beatmatch:** Signalsmith Stretch (MIT; `python-stretch` on the PC, NDK on Android). B is stretched to A's tempo through the overlap, then ramped back over 8–16 bars (D11).
-- **Styles, chosen from the pair's features rather than at random (D12):**
-  - **Blend:** 8–32 bars with an EQ bass swap. Used when tempo is within 6% and keys are compatible.
-  - **Cut on the one:** a downbeat cut with a 5–10 ms crossfade. Used for big tempo or key gaps.
-  - **Build:** a filter or echo-out of A on a phrase end, then B lands on a downbeat. Used for energy jumps.
-- **Loudness:** both tracks play at their bundle `gain_db` through the overlap (D18).
-- **Sequencer (stations):** the **two-stage shuffle** from "Song groups". Stage 1 is a weighted walk over the **group** neighbour graph, with a target energy curve, a group-level no-repeat window, and likes/skips as weights. Stage 2 picks a version, avoiding recent versions of that group. A station may constrain versions (Late Night prefers slowed/slowed+reverb versions when a group has them, before applying the live chain).
-  - **Infinite Ride:** the whole library as a continuous set.
-  - **This Song Forever (primary):** the single-track infinite loop; Next cycles through the song's versions (beat-matched or downbeat cut).
-  - **Vinyl Ride:** Infinite Ride with the vinyl chain on.
-  - **Late Night:** lower energy, slowed+reverb.
-  - **Liked:** liked songs only.
+### P4 — The Mix Web (headline feature: cross-track transitions and stations)
 
-**Done when:**
-- version-switch clips (Forever + Next, within a group: e.g. original → slowed, nightcore → original) are in the eval set and rate ≥ 4.0;
-- the mean transition rating is ≥ 4.0;
-- no train-wrecks (beat-phase error under 10 ms through the whole overlap);
+The Mix Web is a library-wide graph of **exit → entry** transitions, computed on the PC and stored in `library.json`, so the phone never computes pairwise analysis. The Infinite Ride station walks it live, and `saics mix` renders it offline.
+
+**Per song: exit and entry points** (all on downbeats, from the `/7` bundle):
+- **Exits:** the outro start, breaks (`breaks[]`, best when a silence or breakdown follows a phrase end), and low-vocal phrase ends (end of a section with `vocal_activity` ≈ 0 over the last bar).
+- **Entries:** the intro, post-break points (a break end with `ramp_up`), and chorus starts (first bar of the most-repeated high-energy section group).
+- Each point stores its beat, bar, phrase position, local tempo, key, energy and vocal state, and a quality score.
+- Exits within a song are at least **16 bars apart**.
+
+**Edges (exit of A → entry of B), scored on:**
+- tempo compatibility, including half/double time (`library_analyzer.bpm_compatibility` is sound and is reused);
+- Camelot key distance with major/minor;
+- energy continuity (exit bar energy vs entry bar energy, plus the station's energy target);
+- timbre similarity (MFCC1–13 without MFCC0, D2);
+- **break quality** (cutting into or out of silence scores high and relaxes beat alignment).
+
+Each edge stores its score breakdown and its **chosen transition style**:
+- **Blend + bass swap:** 8–32 bars, A's lows cut as B's come in, never both. Used when tempo is within ~6% and the keys are compatible.
+- **Cut on the one:** downbeat cut, 5–10 ms crossfade. Used for large tempo or key gaps.
+- **Cut into silence:** A exits into a break (or B enters from one); the silence carries the change, so tempo and key matter little.
+- **Build:** filter or echo-out of A over a phrase end, then B lands on a downbeat. Used for energy jumps.
+
+**Beatmatch:** Signalsmith Stretch (MIT; `python-stretch` on the PC, NDK on Android). B is stretched to A's tempo through a blend, then ramped back over 8–16 bars (D11).
+**Loudness:** both songs play at their bundle `gain_db` through the overlap (D18).
+
+**Spacing and walking rules:**
+- Play at least about **60–90 s or one full chorus** of a song before leaving it.
+- Exits within a song are ≥ 16 bars apart.
+- Never jump into **another version of the same song group** unless Forever is on (in Forever, Next switches version: beat-matched if tempos differ, otherwise a cut on the downbeat; see "Song groups").
+- A **song-group no-repeat window** (by count and by time).
+- Two-stage choice: next **group** first (weighted by edge score, likes/skips, energy target), then the **version** within it (avoiding recent versions), then the best edge into that version.
+
+**Stations:**
+- **Infinite Ride:** walks the Mix Web live.
+- **This Song Forever (primary):** the single-song loop (P3); Next = another version of the same song.
+- **Vinyl Ride:** Infinite Ride with the vinyl chain on.
+- **Late Night:** lower-energy walk, preferring slowed/slowed+reverb versions.
+- **Liked:** liked songs only.
+
+**Deliverables:**
+- [ ] `saics.mixweb`: exit/entry points per track + the edge graph (top-K edges per exit) written into `library.json` (bump `saics.library/7` → `/8` with the app type).
+- [ ] `saics mix <folder> --minutes 30|60 [--seed N] [--station infinite-ride]`: renders a mixtape to MP3 (clean renderer, beatmatching, bass swap, loudness-normalised) plus a tracklist with timestamps (`.txt` + `.cue`).
+- [ ] Transition clips (5 s before the exit → 10 s after the entry) in `saics eval build`, with variants `p4-baseline` (legacy `TrackTransitionProcessor` cue + clean renderer at a common sample rate) and `current`.
+- [ ] Optional second cue-point source: **CUE-DETR** (github.com/ETH-DISCO/cue-detr). Licence checked 2026-10-30: code **MIT**; weights on Hugging Face `disco-eth/cue-detr` declare **MIT**, but the model card is empty and its base model isn't named, so confirm the base model's licence before shipping. The CLI accepts mp3 only. Use it only as extra candidates, and keep it only if its cues beat our rules in blind ratings.
+
+**Done when** (rated on the eval page, same 1–5 scale + jittery flag):
+- the mean transition rating is ≥ 4.0, ≥ 80% of transition clips rated ≥ 4, 0% jittery;
+- version-switch clips (Forever + Next within a group, e.g. original → slowed, nightcore → original) rate ≥ 4.0;
+- no train-wrecks: beat-phase error under 10 ms through every blend overlap (cut-into-silence edges are exempt);
 - 44.1 kHz↔48 kHz and MP3↔AAC pairs are in the eval set and pass;
-- a 60-minute Infinite Ride render has no short-term loudness jump above 2 LU.
+- a 60-minute `saics mix` has no short-term loudness jump above 2 LU, obeys every spacing rule, and its tracklist timestamps land within one beat of the audible transitions.
 
 ### P5 — Android app, milestone A: shell, library, helmet controls (parallel with P3/P4)
 **Stack:** Expo (latest SDK) **development build**, TypeScript, Expo Router, Reanimated, React Native Skia, Zustand, `expo-sqlite`.
@@ -472,5 +513,6 @@ Also:
 
 ## Claude Code tooling (install at the phase where it's needed)
 - **P0/P1:** `fpcalc` (Chromaprint) on PATH; CPU PyTorch in `engine/.venv`.
+- **Docs:** Context7 (`npx ctx7 setup --claude`) for up-to-date Media3 / Expo / Reanimated docs; see AUDIT.md for install status.
 - **P5+:** the Expo MCP server (`claude mcp add --transport http expo https://mcp.expo.dev/mcp`), `npx expo install expo-mcp --dev`, and `EXPO_UNSTABLE_MCP_SERVER=1 npx expo start`. Media-button behaviour is tested with `adb` key events.
 - **P8:** the frontend-design plugin plus Playwright.
