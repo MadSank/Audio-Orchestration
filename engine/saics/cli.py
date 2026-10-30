@@ -27,6 +27,11 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--out", default="triage_report.csv", help="CSV path (default: ./)")
     t.add_argument("--workers", type=int, default=4)
     t.add_argument("--limit", type=int, default=0, help="only the first N files (debugging)")
+    t.add_argument(
+        "--groups-file",
+        default=None,
+        help="group overrides CSV (default: <folder>/.saics/groups_overrides.csv)",
+    )
     t.add_argument("--apply", action="store_true", help="move flagged files (not implemented)")
     t.add_argument("--undo", action="store_true", help="restore moved files (not implemented)")
     t.set_defaults(func=_triage)
