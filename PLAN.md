@@ -286,9 +286,12 @@ Each phase lists deliverables and the acceptance check that closes it. P5 does n
 - [x] `engine/.venv` set up: Python 3.12, torch CPU, beat-this, demucs, librosa, pyloudnorm (smoke-tested).
 - [x] `saics triage` **report-only**: real-codec probing, fixed-rate decode, Chromaprint duplicates with keep recommendation, unreadable/short/sfx/speech/variant, review notes. Run on the real folder → `triage_report.csv` (see `AUDIT.md`).
 - [x] Song groups + version labels in triage (`group`, `version`, `group_evidence` columns), `song_groups_review.csv`, overrides file, tests.
-- [ ] Consolidate the library: move the owner-approved audio from `Downloads` into `<MusicFolder>/from-downloads/` with an undo manifest; `C:\Users\ASUS\Music\songs` is then the only library folder.
+- [x] Consolidate the library: 27 owner-approved files moved from `Downloads` into `<MusicFolder>/from-downloads/` (sha-verified; undo: `saics undo-moves <MusicFolder>/.saics/moves_from_downloads.json`). `C:\Users\ASUS\Music\songs` is now the only library folder: 397 files, 380 music, 304 song groups (43 with several versions).
 - [ ] Owner reviews `triage_report.csv` + `song_groups_review.csv`; overrides applied; then `--apply`/`--undo` with manifest (moves only `unreadable` / `short` / `sfx` / `speech` / `duplicate`, **never versions**).
-- [ ] `saics analyze` and the bundle schema.
+- [x] `saics analyze` + bundle schema (`saics.schema`, validated on write): Beat This! (CUDA), meter from downbeats, Krumhansl key → Camelot, bar-SSM sections + repeat groups, bar energy, Demucs vocal activity (5-min chunks), loudness gain, decoder start offset; cached by size/mtime; writes only in `.saics/`.
+  - Throughput on the RTX 4070: ~13 s/song warm; Demucs (incl. its inverse STFT) is ~75% of that. One worker only: three workers overflowed the 8 GB VRAM.
+  - **Vocal activity is provisional:** the vocal-energy share barely separates instrumental tracks with vocal chops from sung songs. Validate in P3 against rated seams before relying on it.
+- [ ] Full-library run finished and spot-checked (beat/downbeat F-measure on 10 hand-labelled songs).
 
 **Triage (`saics triage <folder>`).** It classifies every file. Classes and rules:
 - **`unreadable`:** ffprobe/ffmpeg fails, or the decoded length is under 1 s (catches the three 2-byte `Y2meta.app …` files and the 0.16 s `au_uu_…` file).
@@ -321,13 +324,15 @@ Also:
 - Every remaining song has a valid bundle.
 
 ### P2 — Evaluation harness (before touching jump logic)
-- [ ] `saics eval build <folder> --set eval/set.txt`: for 15–20 songs, render ~10 jump clips per song (5 s each side of the seam) and 5 transition clips per pair, for these variants:
+- [x] `saics eval build <folder> --set eval/set.txt` for **jump** clips (18-song set, legacy + baseline variants, random ids, −16 LUFS clips). *Transition clips per pair: still to do (with P4's baseline).* Variants:
   - **legacy-as-is:** `legacy/` graph + legacy renderer; documents D8, expected to rate badly;
   - **baseline:** the legacy jump graph and legacy transition cue points, rendered by the **new clean renderer** (contiguous runs, equal-power crossfade at seams only, common sample rate). This is the bar that P3/P4 must beat, because it isolates *selection* quality from D8/D15 rendering bugs;
   - **current:** the new algorithm.
-- [ ] `eval/` static page served by `server/`: blind, randomised, 1–5 ratings → `eval/results/*.json`.
-- [ ] Automatic seam metrics per clip: spectral-flux spike, chroma discontinuity, loudness step (LU), and beat-phase error (ms, against Beat This! on the rendered clip).
-- [ ] `saics eval report`: mean rating and metric deltas per variant.
+- [x] `eval/` static page served by `server/` at `/eval/`: blind, randomised, 1–5 ratings → `eval/results/*.json`.
+- [x] Automatic seam metrics per clip: spectral-flux spike, chroma discontinuity (excess over the clip's typical change), loudness step (dB), and beat-phase error (ms; Beat This! beats refined to onset peaks at ~1.5 ms, since its 20 ms frames are too coarse for the 10 ms criterion).
+- [x] `saics eval report`: mean rating, % rated ≥ 4 and median metrics per variant → `eval/report.md`.
+- [x] Clean renderer (`saics.render`): contiguous runs copied untouched, crossfade only at jumps (D8). The crossfade keeps power constant for the measured correlation of the two sides (flat for identical bars, equal-power for unrelated audio).
+- [ ] **Owner rates the baseline** (`uvicorn server.main:app` → http://localhost:8000/eval/).
 
 **Done when:** legacy-as-is and baseline are rated and the report renders. Every later algorithm change must beat **baseline** here.
 
