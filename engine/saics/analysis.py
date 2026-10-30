@@ -1,9 +1,11 @@
-"""`saics analyze`: write `<MusicFolder>/.saics/` analysis bundles (schema saics.analysis/6).
+"""`saics analyze`: write `<MusicFolder>/.saics/` analysis bundles (schema saics.analysis/7).
 
 Per track: beats + downbeats (Beat This!), meter from the downbeat spacing (never assume
 4/4), tempo, key (Krumhansl-Kessler major/minor -> Camelot), sections + repeat groups
 (bar-level self-similarity), bar energy, vocal activity (Demucs vocal stem), loudness
-(BS.1770 -> gain to -14 LUFS). Jumps (P3) and cues (P4) are left empty.
+(BS.1770 -> gain to -14 LUFS), breaks (silences / near-silent breakdowns).
+Jumps (P3) and cues (P4) are left empty. Bundles from an older schema are upgraded in place
+(only the new fields are computed).
 
 Writes ONLY inside `<folder>/.saics/` (CLAUDE.md hard rule 3). Cached by track id and
 file size/mtime, so re-runs only process new or changed files.
@@ -23,6 +25,7 @@ import numpy as np
 from saics.io import AUDIO_EXTS, decode, probe
 from saics.schema import (
     SCHEMA,
+    Break,
     Group,
     Key,
     Library,
@@ -152,6 +155,58 @@ def sections_from_bars(bar_feats: np.ndarray, min_len: int = 4, kernel: int = 8)
     return [
         Section(start_bar=a, end_bar=b, group=g) for (a, b), g in zip(segs, groups, strict=True)
     ]
+
+
+BREAK_DB = -15.0  # a break is at least this far below the track's typical level …
+SILENCE_DB = -30.0  # … and a "silence" at least this far
+BREAK_MIN_S = 0.25
+RETURN_DB = -8.0  # music counts as back once the 4 s after a break average above this
+EDGE_S = 1.0  # leading/trailing silence is not a break
+
+
+def short_term_db(y: np.ndarray, sr: int, win_s: float = 0.4, hop_s: float = 0.05) -> tuple:
+    """(times, level dB) of mean-square energy in sliding windows (centre times)."""
+    win, hop = int(win_s * sr), int(hop_s * sr)
+    if len(y) < win:
+        return np.zeros(0), np.zeros(0)
+    c = np.concatenate([[0.0], np.cumsum(y.astype(np.float64) ** 2)])
+    starts = np.arange(0, len(y) - win + 1, hop)
+    ms = (c[starts + win] - c[starts]) / win
+    return (starts + win / 2) / sr, 10 * np.log10(ms + 1e-12)
+
+
+def detect_breaks(y: np.ndarray, sr: int, beats: np.ndarray) -> list:
+    """Silences and near-silent breakdowns, relative to the track's typical level."""
+    t, db = short_term_db(y, sr)
+    if len(t) == 0 or len(beats) < 2:
+        return []
+    ref = float(np.median(db[db > db.max() - 60]))  # typical level, ignoring digital silence
+    low = db < ref + BREAK_DB
+    out = []
+    i, n, hop = 0, len(t), t[1] - t[0] if len(t) > 1 else 0.05
+    while i < n:
+        if not low[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and (low[j + 1] or (j + 2 < n and low[j + 2])):  # bridge 1-frame blips
+            j += 1
+        start, end = t[i] - hop / 2, t[j] + hop / 2
+        depth = float(db[i : j + 1].min() - ref)
+        i = j + 1
+        if end - start < BREAK_MIN_S or start < EDGE_S or end > t[-1] - EDGE_S:
+            continue
+        after = db[(t >= end) & (t < end + 4.0)]
+        ret = float(np.mean(after) - ref) if len(after) else -99.0
+        ramp = ret >= RETURN_DB
+        out.append(Break(
+            start_beat=int(np.argmin(np.abs(beats - start))),
+            end_beat=int(np.argmin(np.abs(beats - end))),
+            start_s=round(float(start), 3), end_s=round(float(end), 3),
+            depth_db=round(depth, 1), kind="silence" if depth <= SILENCE_DB else "breakdown",
+            ramp_up=ramp, return_db=round(ret, 1),
+        ))  # fmt: skip
+    return out
 
 
 def smooth_activity(ratio: np.ndarray, on: float = 0.35, off: float = 0.2) -> np.ndarray:
@@ -298,6 +353,7 @@ def analyse_track(path: Path, rel: str, meta: dict) -> TrackBundle:
         sections=sections,
         bar_energy=bar_energy,
         vocal_activity=vocal,
+        breaks=detect_breaks(y, SR, beats),
     )
 
 
@@ -375,7 +431,9 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
     log(f"analyze: {len(todo)} to analyse, {len(keep)} cached, device={_device()}")
 
     entries, errors, t0 = [], [], time.time()
+    upgraded = 0
     for rel, c, meta in keep:
+        upgraded += _upgrade(tracks_dir / f"{c['id']}.json", folder / rel)
         _relabel(tracks_dir / f"{c['id']}.json", meta)
         entries.append(LibraryTrack(id=c["id"], file=rel, size=c["size"], mtime_ns=c["mtime_ns"],
                                     group=meta.get("group") or c["group"],
@@ -418,6 +476,20 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
     return {"bundles": len(entries), "errors": errors}
 
 
+def _upgrade(path: Path, audio: Path) -> int:
+    """Bring a cached bundle from an older schema to SCHEMA by computing only new fields."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("schema") == SCHEMA:
+        return 0
+    if data.get("schema") == "saics.analysis/6":  # /6 -> /7: add breaks
+        y = decode(audio, sr=SR)
+        data["breaks"] = [b.model_dump() for b in detect_breaks(y, SR, np.asarray(data["beats"]))]
+        data["schema"] = SCHEMA
+        path.write_text(TrackBundle.model_validate(data).dump(), encoding="utf-8")
+        return 1
+    raise ValueError(f"cannot upgrade {path.name} from {data.get('schema')}")
+
+
 def _relabel(path: Path, meta: dict) -> None:
     if not meta.get("group"):
         return
@@ -446,4 +518,4 @@ def run_analyze(args) -> int:
     return 0
 
 
-assert SCHEMA == "saics.analysis/6"
+assert SCHEMA == "saics.analysis/7"
