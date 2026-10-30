@@ -208,9 +208,12 @@ def build(folder: Path, set_file: Path, out_dir: Path, per_song: int = 10, log=p
 
 
 def load_ratings(results_dir: Path) -> list:
+    """Seam-clip ratings only (full-song ratings live in full-*.json)."""
     out = []
     for p in sorted(Path(results_dir).glob("*.json")):
-        out.extend(json.loads(p.read_text("utf-8")).get("ratings", []))
+        if p.name.startswith("full-"):
+            continue
+        out.extend(r for r in json.loads(p.read_text("utf-8")).get("ratings", []) if "clip_id" in r)
     return out
 
 
