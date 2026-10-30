@@ -14,10 +14,10 @@
 
 | song | jumps | overall | marks | marks within 5 s of a jump |
 |---|---|---|---|---|
-| Y2meta.app - YOASOBI - Racing Into the Night （夜に駆け | 2 | 5 | 0 | 0 |
-| Maroon 5 - Memories (Lyrics) | 3 | 4 | 1 | 1 |
-| Passenger - Let Her Go (Feat. Ed Sheeran - Anniver | 2 | 4 | 2 | 2 |
-| Earth, Wind & Fire - September (Lyrics) | 2 | 4 | 2 | 2 |
-| Lady Gaga - Bad Romance (Lyrics) | 4 | 4 | 1 | 1 |
+| Y2meta.app - YOASOBI - Racing Into the Night （夜に駆け | 3 | 5 | 0 | 0 |
+| Maroon 5 - Memories (Lyrics) | 4 | 5 | 0 | 0 |
+| Passenger - Let Her Go (Feat. Ed Sheeran - Anniver | 3 | 4 | 1 | 1 |
+| Earth, Wind & Fire - September (Lyrics) | 1 | 5 | 0 | 0 |
+| Lady Gaga - Bad Romance (Lyrics) | 3 | 5 | 1 | 1 |
 
-Mean overall: **4.20** over 5 of 5 renders (target >= 4.0, none below 3).
+Mean overall: **4.80** over 5 of 5 renders (target >= 4.0, none below 3).

@@ -408,6 +408,14 @@ Also:
 
 **Status after round 2:** the structural repeat jumps pass; **the end → post-intro loop fails** (5 of 5 renders that used it got marked there). The full-song criterion "at most one mark near a jump per song" fails for *Let Her Go* and *September* only because of it. The end-loop design is open for the owner's decision.
 
+**Status after round 2b (2026-10-31): P3 acceptance met.**
+- [x] Endings redesigned (avoid the ending → break loop → version switch → repeat-one with a gap; `not_loopable` override). End → post-intro removed.
+- [x] Full-song test: **4.80** mean (5, 5, 4, 5, 5; was 4.20). One "felt wrong" mark each on *Let Her Go* (365 s, the version switch) and *Bad Romance* (176.5 s); within the ≤ 1-per-song limit.
+- [x] Seam clips: 42 new/moved jumps, mean **4.45**, 83% ≥ 4, 0% jittery (round 2: 4.79; baseline 2.22).
+- Near-miss alignment: the one moved jump (*Dernière Danse* H1:5 → F1:6) still rated 2, as its F1:5 version did, so it's a bad jump, not misalignment. Alignment stays corrective-only.
+- Score / beat-phase / loudness cutoffs were checked against all 99 rated jumps: dropping 7 of 10 bad would cost 25 of 89 good, so **no algorithm change**. Instead `saics eval feedback` now reads rounds 2 + 2b: 82 keeps, 8 bans. The 82 rated-5 jumps are regression tests (all pass); all 8 bans are gone.
+- Open: the version switch in *Let Her Go* was marked. It's a plain crossfade in the Python render; the beat-matched/downbeat switch arrives with P6.
+
 **Done when** (the **full-song test is the acceptance test**; seam clips are secondary):
 - on the full-song test (5 songs × 6–8 min Forever renders, listened start to finish), the mean overall rating is **≥ 4.0**, no song is below 3, and at most one "felt wrong" mark per song falls within ±5 s of a jump;
 - seam clips (15 s context): mean ≥ 1.0 above baseline, 0% jittery;
