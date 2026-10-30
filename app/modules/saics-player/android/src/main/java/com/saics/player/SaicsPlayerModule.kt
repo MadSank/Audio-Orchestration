@@ -69,6 +69,14 @@ class SaicsPlayerModule : Module() {
     }
   }
 
+  /** A playback action from the app screen: it may start the phone speaker (testing at home);
+   *  helmet keys, call-end focus regain and resumption never may (PlaybackService.guardSpeaker). */
+  private fun onUiAction(promise: Promise, block: (PlaybackService) -> Any?) =
+    onService(promise) { svc ->
+      svc.allowSpeakerBriefly()
+      block(svc)
+    }
+
   override fun definition() = ModuleDefinition {
     Name("SaicsPlayer")
     Events("onButton", "onState", "onAction")
@@ -112,6 +120,7 @@ class SaicsPlayerModule : Module() {
       val tree = Uri.parse(folder)
       val files = mutableListOf<Pair<String, Uri>>() // relative path, document uri
       var libraryJson: Uri? = null
+      var bundles: Map<String, String> = emptyMap() // "<id>.json" -> document id in .saics/tracks
       var saicsRoot = "" // library.json paths are relative to the folder that holds .saics/
       fun walk(docId: String, rel: String) {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
@@ -129,7 +138,7 @@ class SaicsPlayerModule : Module() {
             if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
               if (name == "_set_aside") continue
               if (name == ".saics") {
-                walkSaics(tree, id) { libraryJson = it; saicsRoot = rel }
+                walkSaics(tree, id, { libraryJson = it; saicsRoot = rel }) { bundles = it }
                 continue
               }
               walk(id, path)
@@ -143,8 +152,9 @@ class SaicsPlayerModule : Module() {
       val meta = libraryJson?.let { readLibrary(it) } ?: emptyMap()
       val tracks = files.sortedBy { it.first.lowercase() }.map { (path, uri) ->
         val m = meta[if (saicsRoot.isEmpty()) path else path.removePrefix("$saicsRoot/")]
+        val gain = m?.id?.let { bundles["$it.json"] }?.let { readGain(tree, it) } ?: 0.0
         Track(uri.toString(), path.substringAfterLast('/').substringBeforeLast('.'), path,
-              m?.first ?: "", m?.second ?: "original")
+              m?.group ?: "", m?.version ?: "original", gain)
       }
       // The walk runs off the main thread, but the player may only be touched on its own.
       onService(promise) { svc ->
@@ -155,10 +165,10 @@ class SaicsPlayerModule : Module() {
 
     // ── playback ──────────────────────────────────────────────────────────────
     AsyncFunction("startStation") { index: Int, promise: Promise ->
-      onService(promise) { it.startStation(index, announce = true); null }
+      onUiAction(promise) { it.startStation(index, announce = true); null }
     }
     AsyncFunction("playTrack") { uri: String, promise: Promise ->
-      onService(promise) { svc ->
+      onUiAction(promise) { svc ->
         val all = svc.library
         val start = all.indexOfFirst { it.uri == uri }.coerceAtLeast(0)
         svc.player.setMediaItems(all.map { it.toMediaItem() }, start, 0)
@@ -167,9 +177,9 @@ class SaicsPlayerModule : Module() {
         null
       }
     }
-    AsyncFunction("togglePlay") { promise: Promise -> onService(promise) { it.togglePlay(); null } }
-    AsyncFunction("next") { promise: Promise -> onService(promise) { it.next(hardCut = false); null } }
-    AsyncFunction("previous") { promise: Promise -> onService(promise) { it.previous(); null } }
+    AsyncFunction("togglePlay") { promise: Promise -> onUiAction(promise) { it.togglePlay(); null } }
+    AsyncFunction("next") { promise: Promise -> onUiAction(promise) { it.next(hardCut = false); null } }
+    AsyncFunction("previous") { promise: Promise -> onUiAction(promise) { it.previous(); null } }
     AsyncFunction("toggleForever") { promise: Promise -> onService(promise) { it.toggleForever(); null } }
     AsyncFunction("toggleVinyl") { promise: Promise -> onService(promise) { it.toggleVinyl(); null } }
     AsyncFunction("getState") { promise: Promise -> onService(promise) { it.state() } }
@@ -177,7 +187,7 @@ class SaicsPlayerModule : Module() {
     // ── Button test + settings ────────────────────────────────────────────────
     /** Simulates a helmet press (same path as a real key): button = PLAY_PAUSE|NEXT|PREVIOUS. */
     AsyncFunction("simulatePress") { button: String, promise: Promise ->
-      onService(promise) { svc ->
+      onUiAction(promise) { svc ->
         val keyCode = when (button) {
           "NEXT" -> KeyEvent.KEYCODE_MEDIA_NEXT
           "PREVIOUS" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
@@ -207,29 +217,47 @@ class SaicsPlayerModule : Module() {
     }
   }
 
-  private fun walkSaics(tree: Uri, saicsId: String, found: (Uri) -> Unit) {
-    val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, saicsId)
+  private fun children(tree: Uri, docId: String): Map<String, String> {
+    val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
     val cols = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-    context.contentResolver.query(children, cols, null, null, null)?.use { c ->
-      while (c.moveToNext()) {
-        if (c.getString(1) == "library.json") found(DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0)))
-      }
+    val out = HashMap<String, String>()
+    context.contentResolver.query(uri, cols, null, null, null)?.use { c ->
+      while (c.moveToNext()) c.getString(1)?.let { out[it] = c.getString(0) }
     }
+    return out
   }
 
-  /** file (relative) -> (group, version) from .saics/library.json. */
-  private fun readLibrary(uri: Uri): Map<String, Pair<String, String>> = try {
+  /** Finds .saics/library.json and the per-track bundles in .saics/tracks/. */
+  private fun walkSaics(tree: Uri, saicsId: String, found: (Uri) -> Unit, tracks: (Map<String, String>) -> Unit) {
+    val kids = children(tree, saicsId)
+    kids["library.json"]?.let { found(DocumentsContract.buildDocumentUriUsingTree(tree, it)) }
+    kids["tracks"]?.let { tracks(children(tree, it)) }
+  }
+
+  private data class Meta(val id: String, val group: String, val version: String)
+
+  /** file (relative to the folder holding .saics) -> bundle id, group, version from library.json. */
+  private fun readLibrary(uri: Uri): Map<String, Meta> = try {
     val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: "{}"
     val tracks = JSONObject(text).optJSONArray("tracks")
-    val out = HashMap<String, Pair<String, String>>()
+    val out = HashMap<String, Meta>()
     if (tracks != null) {
       for (i in 0 until tracks.length()) {
         val t = tracks.getJSONObject(i)
-        out[t.optString("file")] = t.optString("group") to t.optString("version", "original")
+        out[t.optString("file")] = Meta(t.optString("id"), t.optString("group"), t.optString("version", "original"))
       }
     }
     out
   } catch (e: Exception) {
     emptyMap()
+  }
+
+  /** loudness.gain_db from a track's analysis bundle; 0 when missing or unreadable. */
+  private fun readGain(tree: Uri, docId: String): Double = try {
+    val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
+    val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: "{}"
+    JSONObject(text).optJSONObject("loudness")?.optDouble("gain_db", 0.0) ?: 0.0
+  } catch (e: Exception) {
+    0.0
   }
 }
