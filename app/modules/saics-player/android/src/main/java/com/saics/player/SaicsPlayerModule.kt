@@ -31,12 +31,16 @@ class SaicsPlayerModule : Module() {
   private val prefs
     get() = context.getSharedPreferences(PlaybackService.PREFS, Context.MODE_PRIVATE)
 
-  /** Binding a MediaController starts the service (Media3 makes it foreground when playing). */
+  /** Binding a MediaController starts the service (Media3 makes it foreground when playing).
+   *  [then] always runs on the main thread: AsyncFunctions are called on Expo's queue thread,
+   *  and ExoPlayer may only be touched on its own (main) thread. */
   private fun ensureService(then: (PlaybackService) -> Unit) {
     val ready = PlaybackService.instance
     if (ready != null && controllerFuture != null) {
-      attach(ready)
-      then(ready)
+      context.mainExecutor.execute {
+        attach(ready)
+        then(ready)
+      }
       return
     }
     val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
@@ -108,6 +112,7 @@ class SaicsPlayerModule : Module() {
       val tree = Uri.parse(folder)
       val files = mutableListOf<Pair<String, Uri>>() // relative path, document uri
       var libraryJson: Uri? = null
+      var saicsRoot = "" // library.json paths are relative to the folder that holds .saics/
       fun walk(docId: String, rel: String) {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
         val cols = arrayOf(
@@ -124,7 +129,7 @@ class SaicsPlayerModule : Module() {
             if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
               if (name == "_set_aside") continue
               if (name == ".saics") {
-                walkSaics(tree, id) { libraryJson = it }
+                walkSaics(tree, id) { libraryJson = it; saicsRoot = rel }
                 continue
               }
               walk(id, path)
@@ -137,7 +142,7 @@ class SaicsPlayerModule : Module() {
       walk(DocumentsContract.getTreeDocumentId(tree), "")
       val meta = libraryJson?.let { readLibrary(it) } ?: emptyMap()
       val tracks = files.sortedBy { it.first.lowercase() }.map { (path, uri) ->
-        val m = meta[path]
+        val m = meta[if (saicsRoot.isEmpty()) path else path.removePrefix("$saicsRoot/")]
         Track(uri.toString(), path.substringAfterLast('/').substringBeforeLast('.'), path,
               m?.first ?: "", m?.second ?: "original")
       }
