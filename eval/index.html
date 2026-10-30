@@ -58,7 +58,7 @@
 <script>
   const params = new URLSearchParams(location.search);
   const rater = params.get("rater") || "owner";
-  const round = params.get("round") || "2";
+  let round = params.get("round") || ""; // empty: the server's latest round
   const audio = new Audio();
   let todo = [], total = 0, rated = 0, heard = false;
   const $ = (id) => document.getElementById(id);
@@ -83,10 +83,11 @@
     [...$("rates").children].forEach((b) => (b.disabled = !heard || !todo.length));
   }
   async function load() {
-    const r = await fetch(`clips?rater=${encodeURIComponent(rater)}&round=${round}`);
+    const q = round ? `&round=${encodeURIComponent(round)}` : "";
+    const r = await fetch(`clips?rater=${encodeURIComponent(rater)}${q}`);
     if (!r.ok) { $("progress").textContent = (await r.json()).detail; return; }
     const d = await r.json();
-    ({ todo, total, rated } = d);
+    ({ todo, total, rated, round } = d);
     $("ctx").textContent = `${d.context_s} seconds in`;
     show();
   }
