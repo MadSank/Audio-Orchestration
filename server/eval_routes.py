@@ -17,6 +17,7 @@ class Rating(BaseModel):
     clip_id: str = Field(pattern=r"^[0-9a-f]{12}$")
     rating: int = Field(ge=1, le=5)
     rater: str = Field("owner", max_length=40)
+    jittery: bool = False  # stutter/flutter anywhere in the clip, independent of the seam
 
 
 def _manifest() -> dict:
@@ -62,6 +63,8 @@ def rate(r: Rating):
     out = EVAL_DIR / "results" / f"{time.strftime('%Y-%m-%d')}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     data = json.loads(out.read_text("utf-8")) if out.exists() else {"ratings": []}
-    data["ratings"].append({**r.model_dump(), "at": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    rec = r.model_dump()
+    rec["jittery"] = rec["jittery"] or r.rating == 1  # 1 means jittery by definition
+    data["ratings"].append({**rec, "at": time.strftime("%Y-%m-%dT%H:%M:%S")})
     out.write_text(json.dumps(data, indent=1), "utf-8")
     return {"ok": True}

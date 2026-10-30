@@ -41,8 +41,8 @@ def test_report_joins_blind_ratings(tmp_path):
     ]}  # fmt: skip
     (clips / "manifest.json").write_text(json.dumps(manifest))
     (results / "r.json").write_text(json.dumps({"ratings": [
-        {"clip_id": "a1", "rating": 2}, {"clip_id": "b2", "rating": 5}, {"clip_id": "b2", "rating": 4},
+        {"clip_id": "a1", "rating": 2, "jittery": True}, {"clip_id": "b2", "rating": 5}, {"clip_id": "b2", "rating": 4},
     ]}))  # fmt: skip
     md = report(clips, results)
-    assert "| baseline | 1 | 1 | 4.50 | 100% |" in md
-    assert "| legacy | 1 | 1 | 2.00 | 0% |" in md and "40.0 | 1 |" in md
+    assert "| baseline | 1 | 1 | 4.50 | 100% | 0% |" in md
+    assert "| legacy | 1 | 1 | 2.00 | 0% | 100% |" in md and "40.0 | 1 |" in md
