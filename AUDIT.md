@@ -132,6 +132,22 @@ All work is on branch **`v6`**. Nothing was pushed, and `main` was not touched.
      - a "noise bed" rule (pulse < 0.04 and chroma < 0.15; the minimum among songs was 0.079 / 0.166).
 7. **Real run #2:** 145 s with 8 workers. Codecs confirmed: 221 MP3 @ 44.1 kHz, 91 MP3 @ 48 kHz, **50 AAC inside `.mp3` (MP4 container)**, 5 Vorbis, 3 unreadable 2-byte files plus a 0.16 s file. 6 short clips: the ringtone, meme snippets, `Monster 3(mp3cut.net)` and the 45.0 s `Jabardasth bgm`.
 
+## Morning of 2026-10-30 (owner's corrections)
+- **Folder scanned last night:** exactly `C:\Users\ASUS\Music\songs` (all 370 files there, no subfolders). Nothing in `C:\Users\ASUS\Downloads` was scanned.
+- **Downloads inventory:** `reports/downloads_inventory.csv` lists 41 media files.
+  - 27 audio files recommended to move. Most are old-app renders ("(Lofi VHS)", "(Vinyl Crackle)", "(Sped Up)") of library songs, plus ~9 songs not yet in the library: Arctic Monkeys *505*, B.o.B *Nothin' On You*, Bruno Mars *24K Magic*, Lady Gaga *Bad Romance* / *Poker Face*, *Lovedrug x Headlock*, *Écoute chérie*, the kompa x frozy slowed edit.
+  - 14 to skip: 9 `transition_*.wav` mix previews made by the old app (with the D8/D15 bugs) and 5 videos (assignments, a phone clip).
+  - **Waiting for the owner's approval** before anything moves into `Music\songs\from-downloads\`.
+- **Vinyl A/B:** same 30 s of *Fujii Kaze – Kirari* (60–90 s), loudness-matched to −14 LUFS so the louder one doesn't win:
+  - `listen/vinyl_A.wav`: the **live Library-page chain**, rendered by the web app's own Tone.js 15.1.22 offline;
+  - `listen/vinyl_B.wav`: the **download renderer** (`versions.py`);
+  - `listen/vinyl_dry_reference.wav`: the untouched clip.
+  - Unmatched, A was 2.5 LU quieter than B.
+- **CUDA:** `nvidia-smi` shows the driver supports CUDA 13.3. `engine/.venv` now has **torch 2.14.1+cu130**, verified on the RTX 4070.
+- **Song groups:** `saics.groups` + triage integration, with 30 tests. Versions are no longer duplicates, and the `variant` class is gone.
+  - Calibration on the real library: the *Racing into the Night* core versions (original, slowed+reverb, sped up, 0.8×, Miku, Michael Jackson AI, Mickey, covers) score 0.4–1.0 against each other, and random pairs score 0.
+  - Re-arranged covers (solo guitar, a cappella, bass cover) share no audio and must be grouped by name; the review CSV flags them.
+
 ## Blocked
 Nothing blocked the run. Two points to note:
 - `fpcalc` isn't installed; I used ffmpeg's built-in Chromaprint muxer instead (same algorithm, raw fingerprints).

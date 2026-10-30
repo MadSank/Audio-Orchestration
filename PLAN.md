@@ -66,8 +66,8 @@ Run on 2026-10-30 against real songs from the music folder.
 ### A0.3 Open questions for the owner (defaults applied overnight, marked ⇒)
 
 - **Q1 — Design export.** `design/` is not in `C:\saics`. Where is it? *Blocks P5 screens; tokens in CLAUDE.md are enough to start P5's native work.* ⇒ unresolved.
-- **Q2 — Which "vinyl" is the reference?** The live Library page (Tone.js) and the downloadable render (`version_renderer.py`) are *different chains* (D17). CLAUDE.md freezes `versions.py`, i.e. the renderer. Is that the vinyl you love, or the one you hear when clicking Vinyl in the Library page? *Blocks the P0 golden tests' scope and the P6 port.* ⇒ `versions.py` (the renderer) frozen; revisit if the live one is preferred.
-- **Q3 — Version variants in the library.** Should 8D, bass-boosted, sped-up and lyric-video copies of songs you already have be **flagged for review** (proposed) or **set aside automatically**? The app makes those versions itself. ⇒ flag for review only.
+- **Q2 — Which "vinyl" is the reference?** The live Library page (Tone.js) and the downloadable render (`version_renderer.py`) are *different chains* (D17). CLAUDE.md freezes `versions.py`, i.e. the renderer. Is that the vinyl you love, or the one you hear when clicking Vinyl in the Library page? *Blocks the P0 golden tests' scope and the P6 port.* ⇒ Owner (2026-10-30): the live "song modes" are what they used daily. Golden tests stay on `versions.py`. A/B renders `listen/vinyl_A.wav` (live chain) / `listen/vinyl_B.wav` (renderer) are waiting for the owner's pick, which decides the chain the phone's live vinyl must match (see P6). **PICK: _pending_**
+- **Q3 — Version variants in the library.** Should 8D, bass-boosted, sped-up and lyric-video copies of songs you already have be **flagged for review** (proposed) or **set aside automatically**? The app makes those versions itself. ⇒ **Superseded (owner, 2026-10-30): versions are a core feature, never duplicates and never set aside.** See "Song groups" below.
 - **Q4 — Python version.** CLAUDE.md says 3.12; the existing venv is 3.13. Proposal: create `engine/.venv` on **3.12** for Beat This!/Demucs/CUDA wheel compatibility and drop `backend/venv` after P0. ⇒ 3.12 via `uv`, **CPU PyTorch** (owner's instruction; CUDA later is optional).
 
 ---
@@ -94,7 +94,7 @@ References are to local `backend/` and `frontend/` at `987ae60`.
 | D14 | **new, verified live** | `frontend/src/pages/InfiniteJukebox.jsx:174` → `useJukeboxEngine.js:138` | The page calls `/analyze` (no `jump_schedule`, no `min_beats_between_jumps`) instead of `/analyze-full`. `x >= undefined` is false, so **the web jukebox never jumps**. | Superseded by the app (P5/P6); web fix in P8 (one-line fix possible earlier on request) |
 | D15 | **new, verified** | `:58` (`sr=None`), `synthesise_full_mix` `:565` | Tracks load at their native rate, but the mix is written at A's rate, so a 48 kHz B under a 44.1 kHz A plays 8.8% slow and ~1.5 semitones low. This affects 91+ files in the folder. | Decode everything to one engine rate (44.1 kHz) with stored native rate (P1); the phone resamples on decode (P6) |
 | D16 | **new** | `_detect_phrase_boundaries` `:123-157` | Phrase starts are the union of "every 4th guessed downbeat" and agglomerative boundaries (`k = n/16`) snapped within ±3 beats. Result: "phrase" sources 1–2 bars apart (Dancin: 5, 9, 10, 13 s), so phrase gating means little. | Sections and repeat groups from the bar-level SSM on true downbeats (P1) |
-| D17 | **new, needs owner (Q2)** | `frontend/src/hooks/useLibraryPlayer.js:78-158` vs `version_renderer.py` | The live web versions are different chains from the renderer. E.g. vinyl live = 3 kHz band-pass + Freeverb + brown noise; rendered = 200 Hz–8 kHz band-pass 70/30 + pops/hiss + wow + 12 kHz LP. Lo-fi live adds a 4-bit crusher; the renderer doesn't. | Pick one reference (Q2); freeze it with golden tests (P0); port that one (P6) |
+| D17 | **new, needs owner (Q2)** | `frontend/src/hooks/useLibraryPlayer.js:78-158` vs `version_renderer.py` | The live web versions are different chains from the renderer. E.g. vinyl live = 3 kHz band-pass + Freeverb + brown noise; rendered = 200 Hz–8 kHz band-pass 70/30 + pops/hiss + wow + 12 kHz LP. Lo-fi live adds a 4-bit crusher; the renderer doesn't. | Golden tests freeze `versions.py` (P0). The phone's live vinyl matches the owner's A/B pick (Q2, P6) |
 | D18 | **new** | `:455-457`, `:625-627`, `version_renderer.py:463-469` | Peak normalisation to −1 dBFS everywhere, with no loudness normalisation. Versions and tracks differ by several LU (violates hard rule 10). | Per-track LUFS gain in the bundle (P1); per-version loudness compensation measured offline and applied on-device (P6) |
 | D19 | **new** | `find_best_crossfade_point` `:495-521` | Cue search is "most similar beat pair" within A's last 40% × B's first 40%, so B can enter 60+ s in (skipping intro and verse), and A can exit mid-section. Tempo penalty `|Δbpm|/20` ignores half/double time (unlike `library_analyzer`). | Phrase/section-aware cue points (P4) |
 | D20 | **new, minor** | `find_playback_path` `:369`; `useJukeboxEngine.js:124-127` | Reaching the last beat wraps hard to beat 0 (offline), or restarts at 0 with the dip-and-sweep (web). | Graph must guarantee a good exit before the end (P3) |
@@ -121,7 +121,8 @@ saics/                          (repo: MadSank/Audio-Orchestration)
 │   ├── pyproject.toml
 │   ├── saics/
 │   │   ├── io.py               ← ffmpeg decode → float32 @ 44.1 kHz, codec sniffing, track_id, loudness
-│   │   ├── triage.py           ← music / sfx / short / unreadable / duplicate / variant
+│   │   ├── triage.py           ← music / sfx / speech / short / unreadable / duplicate
+│   │   ├── groups.py           ← song groups + version labels (names + tempo/key-invariant audio)
 │   │   ├── analysis.py         ← beats/downbeats, key, sections, vocals, energy
 │   │   ├── jumps.py            ← single-track jump graph (v6)
 │   │   ├── transitions.py      ← cue points + pair scoring (absorbs library_analyzer.py)
@@ -168,8 +169,11 @@ Per-track JSON (fields are required unless marked optional):
              "codec": "mp3",                       // actual codec, not extension (50 ".mp3" files are AAC)
              "native_sample_rate": 48000,          // all times below are in seconds, rate-independent
              "decoder_offset_ms": 0.0 },           // see R1
-  "triage": { "class": "music", "reasons": [], "variant_of": null },
-                                                  // music | sfx | speech | short | unreadable | duplicate | variant
+  "triage": { "class": "music", "reasons": [] },  // music | sfx | speech | short | unreadable | duplicate
+  "group": { "id": "racing-into-the-night",      // song id shared by every version of the song
+             "version": "slowed+reverb",           // original | slowed | slowed+reverb | sped up | nightcore |
+                                                  // 8d | lyrics | english | cover | remix | extended | … ("+"-joined)
+             "evidence": "name+audio" },           // name | audio | name+audio | override
   "loudness": { "integrated_lufs": -9.2, "gain_db": -4.8 },   // gain to reach -14 LUFS
   "tempo": { "bpm": 96.0, "stable": true, "confidence": 0.93 },
   "meter": { "beats_per_bar": 4, "confidence": 0.9 },
@@ -188,9 +192,26 @@ Per-track JSON (fields are required unless marked optional):
 }
 ```
 
-`library.json` holds the track list, triage results (including `variant_of` groups), and each track's top-K compatible neighbours with a score breakdown (tempo, key, energy, timbre). The phone never computes pairwise analysis itself.
+`library.json` holds the track list, triage results, **the song groups** (`groups: {id: {name, tracks: [{id, version}]}}`, after applying `<MusicFolder>/.saics/groups_overrides.csv`), and each track's top-K compatible neighbours with a score breakdown (tempo, key, energy, timbre). The phone never computes pairwise analysis itself. Neighbours are computed between **groups** (a group's representative version), never between two versions of the same song.
 
 ---
+
+## Song groups (core feature, owner 2026-10-30)
+
+The owner keeps many versions of the same song (originals, slowed, sped up, nightcore, 8D, lyric videos, English/Japanese versions, covers); *Racing into the Night* alone has 15–20. **Versions are not duplicates and are never set aside.**
+- **Duplicates** are only byte-identical files, or the same version in another encoding (same group + same version label + Chromaprint match + same length). Triage recommends the best copy.
+- **Grouping** (`saics.groups`) combines two kinds of evidence:
+  - normalised names/tags, with download-site junk and version markers stripped;
+  - tempo- and key-invariant audio similarity: beat-synchronous 36-bin chroma, all 36 transpositions, frame ratios 1×/2×/½×/3:2/2:3 (for beat-tracker octave errors), and coverage by long diagonal runs.
+  - Mashups, compilations and long loops never bridge two groups.
+- **Review:** triage writes `song_groups_review.csv` (largest groups first, with a `check` column for weak or chained groups). The owner fixes groups with `<MusicFolder>/.saics/groups_overrides.csv` (`merge` / `split` / `name` / `version`; template `groups_overrides.example.csv`). **Groups are final only after the owner's review.**
+- **Sequencer: two-stage shuffle.**
+  1. Pick a **group** uniformly at random (weighted by likes/skips and the station's energy target), with a no-repeat window at **group** level.
+  2. Pick a **version** within the group, avoiding recently played versions of that group.
+- **Forever is the primary use case.** While Forever is on, the current song loops seamlessly (P3), and Cardo **Next** switches to *another version of the same song*:
+  - mixed in at the next phrase;
+  - **beat-matched** (time-stretched, P4) when the tempos differ (e.g. original → slowed), otherwise a **cut on the downbeat**.
+  - Version order follows the same "avoid recent" rule. Previous ×1 restarts the current version; Previous ×2 still toggles Forever off.
 
 ## Helmet / Bluetooth control spec (primary interface)
 
@@ -206,10 +227,10 @@ Per-track JSON (fields are required unless marked optional):
 | Cardo input | Action |
 |-------------|--------|
 | Play/Pause ×1 | Pause on the next beat (100 ms fade); resume in sync |
-| Next ×1 | Mix into the next song at the next phrase (the station's transition style) |
+| Next ×1 | Forever **off**: mix into the next song (next group from the two-stage shuffle) at the next phrase, in the station's transition style. Forever **on**: switch to another version of the same song at the next phrase: beat-matched if the tempos differ, otherwise a cut on the downbeat (earcon + optional TTS "<version>") |
 | Next ×2 within 700 ms | Hard cut to the next song on the next downbeat |
 | Previous ×1 | Restart the current song from its first downbeat (within 5 s of the start: go to the previous song) |
-| Previous ×2 within 700 ms | Toggle **Forever** (loop the current song seamlessly) |
+| Previous ×2 within 700 ms | Toggle **Forever** (loop the current song seamlessly; the primary mode, and the default when a ride starts, configurable) |
 | Play/Pause ×2 within 700 ms | Toggle **Vinyl** |
 | Play/Pause ×3 within 1 s | Cycle station: Infinite Ride → Vinyl Ride → Late Night → Liked |
 
@@ -264,7 +285,9 @@ Each phase lists deliverables and the acceptance check that closes it. P5 does n
 ### P1 — Library triage and analysis v6
 - [x] `engine/.venv` set up: Python 3.12, torch CPU, beat-this, demucs, librosa, pyloudnorm (smoke-tested).
 - [x] `saics triage` **report-only**: real-codec probing, fixed-rate decode, Chromaprint duplicates with keep recommendation, unreadable/short/sfx/speech/variant, review notes. Run on the real folder → `triage_report.csv` (see `AUDIT.md`).
-- [ ] Owner reviews the CSV; then `--apply`/`--undo` with manifest.
+- [x] Song groups + version labels in triage (`group`, `version`, `group_evidence` columns), `song_groups_review.csv`, overrides file, tests.
+- [ ] Consolidate the library: move the owner-approved audio from `Downloads` into `<MusicFolder>/from-downloads/` with an undo manifest; `C:\Users\ASUS\Music\songs` is then the only library folder.
+- [ ] Owner reviews `triage_report.csv` + `song_groups_review.csv`; overrides applied; then `--apply`/`--undo` with manifest (moves only `unreadable` / `short` / `sfx` / `speech` / `duplicate`, **never versions**).
 - [ ] `saics analyze` and the bundle schema.
 
 **Triage (`saics triage <folder>`).** It classifies every file. Classes and rules:
@@ -272,12 +295,12 @@ Each phase lists deliverables and the acceptance check that closes it. P5 does n
 - **`short`:** under 45 s (10 files today: ringtones, BGM clips, meme snippets).
 - **`sfx`:** no confident beat grid, or mostly non-tonal/noise-like content (high spectral flatness, low chroma clarity).
 - **`speech`:** mostly speech (optional).
-- **`duplicate`:** a Chromaprint (`fpcalc`) match of the same recording; keep the higher-bitrate copy.
-- **`variant`:** the same song in a derived version, found by filename tokens ("8D", "bass boosted", "sped up", "slowed", "nightcore", "lyrics") plus a fuzzy fingerprint/chroma match. It records `variant_of`. **Report-only by default (Q3).**
+- **`duplicate`:** byte-identical, or the same group + same version + Chromaprint match (via ffmpeg's chromaprint muxer) + same length. Keep the best copy (bitrate, then clean filename, then length).
+- **Versions are not a class.** Every decodable file gets a `group` and `version` (see "Song groups"). Versions are never flagged or set aside.
 
 Also:
 - It records the actual codec and sample rate per file (50 ".mp3" files are AAC; R1).
-- It writes `triage_report.csv` (file, class, reasons, keep recommendation, variant_of, codec, container, sr, duration, bpm) **outside the music folder** by default (`--out`). Report-only runs never write inside the music folder.
+- It writes `triage_report.csv` (file, class, keep, duplicate_of, group, version, reasons, notes, codec, container, sr, duration, bpm, features) **outside the music folder** by default (`--out`). Report-only runs never write inside the music folder.
 - Only with `--apply` does it **move** flagged files into `_set_aside/<class>/`, with a manifest so `--undo` restores everything. **It never deletes.** The owner reviews the CSV first.
 
 **Analysis (`saics analyze <folder>`):**
@@ -329,7 +352,7 @@ Also:
 - the coverage constraint holds on every bundled song.
 
 ### P4 — Cross-track transitions and stations (transitions v6)
-- **Pair scoring:** tempo compatibility with half/double time (reuse `library_analyzer.bpm_compatibility`, which is sound), Camelot distance with major/minor, energy continuity, a timbre descriptor without MFCC0 (D2), and a no-recent-artist rule. Store the top-K neighbours in `library.json`. Variants of the same song are never neighbours.
+- **Pair scoring:** tempo compatibility with half/double time (reuse `library_analyzer.bpm_compatibility`, which is sound), Camelot distance with major/minor, energy continuity, a timbre descriptor without MFCC0 (D2), and a no-recent-artist rule. Store the top-K neighbours in `library.json`. Scoring is between **groups**; two versions of the same song are never neighbours.
 - **Cue points (D19):**
   - **Mix-out:** a section boundary in A's last third, preferring outro or low-vocal sections.
   - **Mix-in:** B's first section boundary after the intro, or its first strong downbeat. Never deeper than the end of B's first chorus.
@@ -340,14 +363,15 @@ Also:
   - **Cut on the one:** a downbeat cut with a 5–10 ms crossfade. Used for big tempo or key gaps.
   - **Build:** a filter or echo-out of A on a phrase end, then B lands on a downbeat. Used for energy jumps.
 - **Loudness:** both tracks play at their bundle `gain_db` through the overlap (D18).
-- **Sequencer (stations):** a weighted walk over the neighbour graph with a target energy curve, a no-repeat window, and likes/skips as weights.
+- **Sequencer (stations):** the **two-stage shuffle** from "Song groups". Stage 1 is a weighted walk over the **group** neighbour graph, with a target energy curve, a group-level no-repeat window, and likes/skips as weights. Stage 2 picks a version, avoiding recent versions of that group. A station may constrain versions (Late Night prefers slowed/slowed+reverb versions when a group has them, before applying the live chain).
   - **Infinite Ride:** the whole library as a continuous set.
-  - **This Song Forever:** the single-track infinite loop.
+  - **This Song Forever (primary):** the single-track infinite loop; Next cycles through the song's versions (beat-matched or downbeat cut).
   - **Vinyl Ride:** Infinite Ride with the vinyl chain on.
   - **Late Night:** lower energy, slowed+reverb.
   - **Liked:** liked songs only.
 
 **Done when:**
+- version-switch clips (Forever + Next, within a group: e.g. original → slowed, nightcore → original) are in the eval set and rate ≥ 4.0;
 - the mean transition rating is ≥ 4.0;
 - no train-wrecks (beat-phase error under 10 ms through the whole overlap);
 - 44.1 kHz↔48 kHz and MP3↔AAC pairs are in the eval set and pass;
@@ -360,9 +384,10 @@ Also:
 - A Media3 `MediaLibraryService` (`foregroundServiceType="mediaPlayback"`), using ExoPlayer for plain gapless playback in this milestone, with per-track `gain_db` applied.
 - The full helmet / Bluetooth spec above: mapping, multi-press, earcons + TTS, focus and ducking, disconnect pause, resumption, battery prompt, and the Button test screen.
 - Voice: `onSearch`/`onGetSearchResult`. Android Auto browse tree kept, but not a gate.
+- **Forever + versions:** Forever is on by default; Next while Forever is on plays another version of the same group (plain ExoPlayer crossfade in this milestone; beat-matched/downbeat switching arrives with P6).
 - **Folder access:** SAF folder pick with a persisted permission. The app reads `.saics/`, plays tracks without a bundle (or with an older schema) as plain tracks, and skips `unreadable` files.
 
-**Screens** follow the design canvas (Q1): Home/Stations, Library, Now Playing (record visualiser), Versions sheet, Ride mode (+ mid-transition variant), Set-aside review, Settings (+ Button test, helmet controls map). Tokens go in `app/src/theme/tokens.ts` first:
+**Screens** follow the design canvas (Q1): Home/Stations, Library, Now Playing (record visualiser), Versions sheet, Ride mode (+ mid-transition variant), Set-aside review, **Song groups review** (browse groups and their versions; merge / split / rename / relabel, written to `.saics/groups_overrides.csv`; not in the design canvas yet, so match its tokens), Settings (+ Button test, helmet controls map). Tokens go in `app/src/theme/tokens.ts` first:
 - colours: `#0A0A0C` background, `#000` in Ride mode, text `#F3EFE7`, amber `#FFB547`, cyan `#6FD3FF`;
 - type: Archivo + IBM Plex Mono.
 
@@ -379,11 +404,15 @@ Also:
 - **Jump scheduler:** decide ≥ 1 bar ahead and execute sample-accurately with an equal-power crossfade. `AudioTrack` (float) on a real-time thread, with no allocations, locks, logging or JNI in the loop.
 - **Transitions:** P4's Blend / Cut / Build, with Signalsmith Stretch (NDK) and a 3-band EQ.
 - **Button actions are engine-aware:**
-  - Next schedules a transition at the next phrase;
+  - Next schedules a transition at the next phrase (Forever on: a version switch within the group, beat-matched if the tempos differ, otherwise a downbeat cut);
   - Next ×2 cuts on the next downbeat;
   - pause and resume land on beats;
   - Forever and Vinyl switch on the next bar.
-- **Live versions:** a port of the reference chains chosen in Q2. If that is `versions.py`:
+- **Live versions:** port the chains so the **live vinyl matches the owner's A/B pick (Q2)**:
+  - if they pick `vinyl_A` (the old Library page's live Tone.js chain): band-pass 3 kHz Q 0.7 → Freeverb (room 0.3, damping 5 kHz, wet 0.15), plus brown noise → band-pass 4 kHz Q 2 → gain 0.025, all at gain 0.8;
+  - if they pick `vinyl_B`: the `versions.py` chain below.
+  - The other modes follow the same rule once the owner has compared them. `versions.py` (golden tests) remains the offline renderer either way.
+  - `versions.py` chain parameters:
   - **Vinyl:** 200 Hz–8 kHz band-pass (3rd-order Butterworth) blended 70/30 with dry, pops (~8/s, 0.5–2 ms bursts) + 800 Hz–5 kHz hiss at 0.03, wow 0.5 Hz ±1.5 ms, 12 kHz 2nd-order LP.
   - **Slowed+reverb:** 0.8× varispeed, Schroeder (4 combs 29.7/37.1/41.1/43.7 ms + 2 allpasses, decay 0.7, mix 0.4), chorus 0.8 Hz / 4 ms / 0.25.
   - **Nightcore:** 1.3× varispeed + 6 kHz HP blend at 0.15.
@@ -406,7 +435,8 @@ Also:
 - **Record visualiser:** jump arcs; tap an arc to queue that jump, long-press for "jump now".
 - **Mix queue:** shows "Mixing into <B> in 4 bars · Blend"; tap to switch the style or skip.
 - **Version carousel** with a live preview.
-- **Set-aside review:** reads the triage manifest and shows `variant_of` groups; listen, then restore or keep aside.
+- **Set-aside review:** reads the triage manifest; listen, then restore or keep aside (duplicates show which copy was kept).
+- **Song groups review:** polish of the P5 screen: listen to versions side by side and drag a file between groups.
 - **Ratings:** likes and skips from the helmet are logged for the sequencer, and an optional "rate this seam" prompt feeds the P2 dataset.
 
 ### P8 — Website overhaul (secondary, later)
@@ -432,7 +462,8 @@ Also:
 - **R4 — Background kills** on Android 14+ and OEM skins. Mitigation: correct FGS type, battery exemption, playback resumption.
 - **R5 — Another app stealing the media session.** Documented: start playback from our app once per ride.
 - **R6 — Licensing.** MIT/BSD/Apache/LGPL only; ask before any GPL dependency.
-- **R7 — Library hygiene (new).** 370 files with variants, broken downloads and misleading extensions. Mitigation: triage is report-first, and the owner reviews before `--apply`.
+- **R7 — Library hygiene (new).** 370 files with many versions, broken downloads and misleading extensions. Mitigation: triage is report-first, versions are grouped rather than flagged, and the owner reviews before `--apply`.
+- **R8 — Grouping errors.** Covers with a different arrangement (solo guitar, a cappella) may share no audio with the original and must be grouped by name. Mashups can match two songs. Mitigation: name evidence, non-bridging mashups, the review CSV and the overrides file.
 
 ## Claude Code tooling (install at the phase where it's needed)
 - **P0/P1:** `fpcalc` (Chromaprint) on PATH; CPU PyTorch in `engine/.venv`.

@@ -176,14 +176,15 @@ def _rescale(x: np.ndarray, factor: float) -> np.ndarray:
     return y / (np.linalg.norm(y, axis=0, keepdims=True) + 1e-9)
 
 
-def _coverage(sim: np.ndarray) -> float:
-    """Fraction of the shorter sequence covered by diagonal runs >= RUN_MIN."""
+def _coverage(sim: np.ndarray, run_min: int = RUN_MIN) -> float:
+    """Fraction of the shorter sequence covered by diagonal runs >= run_min."""
     n, m = sim.shape
-    if n < RUN_MIN or m < RUN_MIN:
+    if n < run_min or m < run_min:
         return 0.0
     # Keep cells that are among the top 10% of both their row and their column.
-    thr_r = np.quantile(sim, 0.9, axis=1, keepdims=True)
-    thr_c = np.quantile(sim, 0.9, axis=0, keepdims=True)
+    kr, kc = int(0.9 * (m - 1)), int(0.9 * (n - 1))
+    thr_r = np.partition(sim, kr, axis=1)[:, kr : kr + 1]
+    thr_c = np.partition(sim, kc, axis=0)[kc : kc + 1, :]
     hit = (sim >= thr_r) & (sim >= thr_c)
     # Skew so each diagonal becomes a column, then run lengths down axis 0.
     rows = np.arange(n)[:, None]
@@ -193,7 +194,7 @@ def _coverage(sim: np.ndarray) -> float:
     idx = np.arange(n + 1)[:, None]
     last_zero = np.maximum.accumulate(np.where(z, -1, idx), axis=0)
     run = np.where(z, idx - last_zero, 0)
-    ends = z[:-1] & ~z[1:] & (run[:-1] >= RUN_MIN)
+    ends = z[:-1] & ~z[1:] & (run[:-1] >= run_min)
     ei, ec = np.nonzero(ends)
     length = run[:-1][ei, ec]
     # Rows (in A) and columns (in B) covered by each run.
@@ -209,11 +210,21 @@ def _coverage(sim: np.ndarray) -> float:
     return fa if n <= m else fb
 
 
-def audio_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """Tempo- and key-invariant similarity of two signatures (0..1)."""
+COARSE = 4  # beats per frame in the prefilter (about one bar)
+COARSE_GATE = 0.25  # ~90th pct of all pairs; missed 1 of 97 name-matched pairs (2026-10-30)
+
+
+def audio_similarity(a: np.ndarray, b: np.ndarray, coarse: bool = False) -> float:
+    """Tempo- and key-invariant similarity of two signatures (0..1).
+
+    coarse=True compares bar-level sequences (~16x cheaper); used as a prefilter."""
     if a.shape[1] < RUN_MIN or b.shape[1] < RUN_MIN:
         return 0.0
     a32, b32 = a.astype(np.float32), b.astype(np.float32)
+    run_min = RUN_MIN
+    if coarse:
+        a32, b32 = _rescale(a32, 1 / COARSE), _rescale(b32, 1 / COARSE)
+        run_min = max(2, RUN_MIN // COARSE)
     # Candidate transpositions from the mean profiles (optimal transposition index).
     pa, pb = a32.mean(axis=1), b32.mean(axis=1)
     corr = np.array([pa @ np.roll(pb, r) for r in range(BINS)])
@@ -222,8 +233,15 @@ def audio_similarity(a: np.ndarray, b: np.ndarray) -> float:
     for f in FRAME_RATIOS:
         bx = _rescale(b32, f)
         for r in rots:
-            best = max(best, _coverage(a32.T @ np.roll(bx, r, axis=0)))
+            best = max(best, _coverage(a32.T @ np.roll(bx, r, axis=0), run_min))
     return best
+
+
+def gated_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """Full similarity only for pairs that pass the coarse prefilter."""
+    if audio_similarity(a, b, coarse=True) < COARSE_GATE:
+        return 0.0
+    return audio_similarity(a, b)
 
 
 # ── grouping ──────────────────────────────────────────────────────────────────
@@ -231,7 +249,7 @@ def audio_similarity(a: np.ndarray, b: np.ndarray) -> float:
 NAME_STRONG = 0.85  # containment for name-only grouping …
 NAME_STRONG_WEIGHT = 8  # … and at least this much shared title text
 NAME_WEAK = 0.5  # name evidence that needs audio support
-AUDIO_STRONG = 0.30  # audio alone groups
+AUDIO_STRONG = 0.25  # audio alone groups (true versions >= 0.26, noise <= 0.21 on the library)
 AUDIO_SUPPORT = 0.12  # audio that confirms a weak name match
 NON_BRIDGING_S = 600.0  # compilations / loops
 
@@ -410,10 +428,16 @@ _SIGS: list = []
 def _init_worker(sigs):
     global _SIGS
     _SIGS = sigs
+    try:  # one BLAS thread per process; the pool already uses every core
+        from threadpoolctl import threadpool_limits
+
+        threadpool_limits(1)
+    except ImportError:
+        pass
 
 
 def _row(i):
-    return i, [audio_similarity(_SIGS[i], _SIGS[j]) for j in range(i + 1, len(_SIGS))]
+    return i, [gated_similarity(_SIGS[i], _SIGS[j]) for j in range(i + 1, len(_SIGS))]
 
 
 def similarity_matrix(sigs: list, workers: int = 4, log=None) -> np.ndarray:
