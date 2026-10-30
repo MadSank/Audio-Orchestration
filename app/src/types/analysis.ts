@@ -6,7 +6,7 @@
  * the app falls back to plain playback for that track.
  */
 
-export const ANALYSIS_SCHEMA = "saics.analysis/8" as const;
+export const ANALYSIS_SCHEMA = "saics.analysis/9" as const;
 export const LIBRARY_SCHEMA = "saics.library/7" as const;
 
 export type TriageClass =
@@ -47,14 +47,15 @@ export interface Break {
   return_db: number;
 }
 
-/** Instead of playing bar from_bar, continue at bar to_bar (both on downbeats). Since /8. */
+/** Instead of playing bar from_bar, continue at bar to_bar (both on downbeats). Since /8;
+ * targets are directly aligned and there are no song-end jumps since /9. */
 export interface Jump {
   from_beat: number;
   to_beat: number;
-  from_bar: number; // == number of bars for a song-end jump
+  from_bar: number;
   to_bar: number;
   score: number;
-  kind: "repeat" | "break" | "end";
+  kind: "repeat" | "break";
   xfade_ms: number;
   label: string; // e.g. "B2:5 → B1:5"
   context: number;
@@ -84,6 +85,11 @@ export interface TrackBundle {
   vocal_activity: number[]; // per beat, 0..1
   breaks: Break[];
   jumps: Jump[];
+  /** Since /9. Forever ending, in order: the last backward repeat jump before outro_bar,
+   * else a break loop, else another version of the group, else repeat-one (outro, short
+   * gap, restart). loopable=false (owner override) skips straight to version/repeat-one. */
+  outro_bar: number;
+  loopable: boolean;
   cues: { out: Cue[]; in: Cue[] };
 }
 

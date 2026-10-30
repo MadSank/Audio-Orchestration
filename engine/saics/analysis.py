@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from saics.io import AUDIO_EXTS, decode, probe
-from saics.jumps import MIN_JUMP_BARS, BarInfo, find_jumps
+from saics.jumps import MIN_JUMP_BARS, BarInfo, find_jumps, outro_bar
 from saics.schema import (
     SCHEMA,
     Break,
@@ -212,7 +212,38 @@ def vocal_ratio_per_beat(stereo44: np.ndarray, beats: np.ndarray) -> tuple:
 # ── per-track analysis ────────────────────────────────────────────────────────
 
 
-def analyse_track(path: Path, rel: str, meta: dict) -> TrackBundle:
+def compute_jumps(beats, downbeats, sections, breaks, bar_energy, vocal, duration, feats,
+                  feedback: list | None = None) -> list:  # fmt: skip
+    """Structural jumps from bundle fields + cached beat-level features (see saics.jumps)."""
+    beats = np.asarray(beats, dtype=float)
+    bars = bar_slot_features(np.asarray(feats["beat_feats"]), downbeats)
+    n_bars = len(bars)
+    if n_bars < 2 * MIN_JUMP_BARS or not sections:
+        return []
+    vocal = np.asarray(vocal, dtype=float)
+    bars_ab = list(zip(downbeats[:-1], downbeats[1:], strict=True))[:n_bars]
+    vb = np.asarray(feats["vchroma"])
+    bar_t = np.r_[beats[downbeats[: n_bars + 1]]]
+    if len(bar_t) == n_bars:  # last bar ends at the end of the audio
+        bar_t = np.r_[bar_t, duration]
+    nb = vb.shape[1]
+    info = BarInfo(
+        bar_t=bar_t, feats=bars,
+        vocal_chroma=np.array([vb[:, a:b].mean(1) for a, b in bars_ab]),
+        vocal=np.array([vocal[a:b].max() if b > a else 0 for a, b in bars_ab]),
+        vocal_edge=np.array([vocal[a - 1] if a > 0 else 0 for a in downbeats[:n_bars]]),
+        energy=np.asarray(bar_energy, dtype=float), duration=duration,
+        downbeats=list(downbeats), beat_vchroma=vb, beat_vonset=np.asarray(feats["vonset"]),
+        beat_chroma=np.asarray(feats["chroma"]), beat_vocal=vocal[:nb],
+    )  # fmt: skip
+    for action, t_from, t_to in feedback or []:  # times in the song -> nearest bars
+        pair = (int(np.argmin(np.abs(bar_t - t_from))), int(np.argmin(np.abs(bar_t - t_to))))
+        (info.pin if action == "keep" else info.ban).append(pair)
+    return find_jumps(info, sections, breaks, downbeats)
+
+
+def analyse_track(path: Path, rel: str, meta: dict) -> tuple:
+    """(TrackBundle, beat-level features for the cache) for one audio file."""
     import pyloudnorm as pyln
 
     p = probe(path)
@@ -267,27 +298,20 @@ def analyse_track(path: Path, rel: str, meta: dict) -> TrackBundle:
     bar_energy = np.round(np.clip(bar_rms / (ref + 1e-9), 0, 1), 3)
 
     vocal = np.zeros(len(beats))
-    vocal_chroma = np.zeros((n_bars, 12))
+    vb = np.zeros((12, nb))
+    vonset = np.zeros(nb)
     if len(beats):
         ratio, voc = vocal_ratio_per_beat(stereo, beats)
         vocal = smooth_activity(ratio)
         vf = librosa.resample(voc, orig_sr=SR, target_sr=FEAT_SR)
         vchroma = librosa.feature.chroma_cqt(y=vf, sr=FEAT_SR, hop_length=hop)
-        vb = librosa.util.sync(vchroma, beat_frames, aggregate=np.mean)[:, 1 : len(beats) + 1]
-        vocal_chroma = np.array([vb[:, a:b].mean(1) for a, b in bars_ab])
+        von = librosa.onset.onset_strength(y=vf, sr=FEAT_SR, hop_length=hop)[None]
+        vb = librosa.util.sync(vchroma, beat_frames, aggregate=np.mean)[:, 1 : nb + 1]
+        vonset = librosa.util.sync(von, beat_frames, aggregate=np.mean)[0, 1 : nb + 1]
     breaks = detect_breaks(y, SR, beats)
-    bar_t = np.r_[beats[downbeats[: n_bars + 1]]] if n_bars else np.zeros(1)
-    if len(bar_t) == n_bars:  # last bar ends at the end of the audio
-        bar_t = np.r_[bar_t, duration]
-    jumps = []
-    if n_bars >= 2 * MIN_JUMP_BARS:
-        info = BarInfo(
-            bar_t=bar_t, feats=bars, vocal_chroma=vocal_chroma,
-            vocal=np.array([vocal[a:b].max() if b > a else 0 for a, b in bars_ab]),
-            vocal_edge=np.array([vocal[a - 1] if a > 0 else 0 for a in downbeats[:n_bars]]),
-            energy=bar_energy, duration=duration,
-        )  # fmt: skip
-        jumps = find_jumps(info, sections, breaks, downbeats)
+    feats = {"beat_feats": beat_feats, "vchroma": vb, "vonset": vonset, "chroma": chroma_b}
+    jumps = compute_jumps(beats, downbeats, sections, breaks, bar_energy, vocal, duration, feats,
+                          meta.get("feedback"))  # fmt: skip
 
     meter = pyln.Meter(SR)
     lufs = float(meter.integrated_loudness(stereo.T))
@@ -321,15 +345,17 @@ def analyse_track(path: Path, rel: str, meta: dict) -> TrackBundle:
         vocal_activity=[round(float(v), 3) for v in vocal],
         breaks=breaks,
         jumps=jumps,
-    )
+        outro_bar=outro_bar(sections, n_bars),
+        loopable=bool(meta.get("loopable", True)),
+    ), {k: np.asarray(v, dtype=np.float32) for k, v in feats.items()}
 
 
 def _worker(path_str: str, rel: str, meta: dict) -> tuple:
     try:
-        b = analyse_track(Path(path_str), rel, meta)
-        return rel, b.dump(), ""
+        b, feats = analyse_track(Path(path_str), rel, meta)
+        return rel, b.dump(), "", feats
     except Exception as exc:  # one bad file never stops the batch
-        return rel, "", f"{type(exc).__name__}: {exc}"
+        return rel, "", f"{type(exc).__name__}: {exc}", None
 
 
 def _init():
@@ -343,6 +369,74 @@ def _init():
 
 
 # ── library run ───────────────────────────────────────────────────────────────
+
+
+FOREVER_OVERRIDES = "forever_overrides.csv"
+JUMP_FEEDBACK = "jump_feedback.csv"
+
+
+def read_jump_feedback(saics_dir: Path) -> dict:
+    """file -> [(keep|ban, from_s, to_s)] from `<folder>/.saics/jump_feedback.csv`."""
+    import csv as _csv
+
+    p = Path(saics_dir) / JUMP_FEEDBACK
+    out: dict = {}
+    if p.exists():
+        with p.open(encoding="utf-8-sig", newline="") as f:
+            for row in _csv.reader(f):
+                if len(row) >= 4 and row[0] in ("keep", "ban"):
+                    out.setdefault(row[1].replace("\\", "/"), []).append(
+                        (row[0], float(row[2]), float(row[3]))
+                    )
+    return out
+
+
+def read_forever_overrides(saics_dir: Path) -> set:
+    """Files the owner marked not loopable: lines `not_loopable,<file>` (# comments allowed)."""
+    p = Path(saics_dir) / FOREVER_OVERRIDES
+    out = set()
+    if p.exists():
+        for line in p.read_text(encoding="utf-8-sig").splitlines():
+            parts = [x.strip() for x in line.split(",", 1)]
+            if len(parts) == 2 and parts[0].lower() == "not_loopable" and not line.startswith("#"):
+                out.add(parts[1].replace("\\", "/"))
+    return out
+
+
+def recompute_jumps(folder: Path, only: set | None = None, log=print) -> int:
+    """Re-run jump finding + Forever fields from cached features (no audio decoding)."""
+    folder = Path(folder).resolve()
+    out_dir = folder / ".saics"
+    not_loopable = read_forever_overrides(out_dir)
+    feedback = read_jump_feedback(out_dir)
+    lib = json.loads((out_dir / "library.json").read_text(encoding="utf-8"))
+    done = 0
+    for t in lib["tracks"]:
+        if only is not None and t["file"] not in only:
+            continue
+        bpath, fpath = (
+            out_dir / "tracks" / f"{t['id']}.json",
+            out_dir / "features" / f"{t['id']}.npz",
+        )
+        if not fpath.exists():
+            continue  # analysed before features were cached: needs `saics analyze`
+        d = json.loads(bpath.read_text(encoding="utf-8"))
+        feats = dict(np.load(fpath))
+        from saics.schema import Break, Section
+
+        sections = [Section(**x) for x in d["sections"]]
+        breaks = [Break(**x) for x in d.get("breaks", [])]
+        jumps = compute_jumps(d["beats"], d["downbeats"], sections, breaks, d["bar_energy"],
+                              d["vocal_activity"], d["track"]["duration_s"], feats,
+                              feedback.get(t["file"]))  # fmt: skip
+        d["jumps"] = [j.model_dump() for j in jumps]
+        d["outro_bar"] = outro_bar(sections, len(d["downbeats"]) - 1)
+        d["loopable"] = t["file"] not in not_loopable
+        d["schema"] = SCHEMA
+        bpath.write_text(TrackBundle.model_validate(d).dump(), encoding="utf-8")
+        done += 1
+    log(f"recomputed jumps for {done} tracks")
+    return done
 
 
 def read_triage(report: Path) -> dict:
@@ -367,6 +461,8 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
     tracks_dir = out_dir / "tracks"
     tracks_dir.mkdir(parents=True, exist_ok=True)
     tri = read_triage(triage_report)
+    not_loopable = read_forever_overrides(out_dir)
+    feedback = read_jump_feedback(out_dir)
     lib_path = out_dir / "library.json"
     old = json.loads(lib_path.read_text(encoding="utf-8")) if lib_path.exists() else {}
     cache = {t["file"]: t for t in old.get("tracks", [])}
@@ -382,7 +478,9 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
             or rel.startswith(("_set_aside/", ".saics/"))
         ):
             continue
-        meta = tri.get(rel, {"class": "music"})
+        meta = dict(tri.get(rel, {"class": "music"}))
+        meta["loopable"] = rel not in not_loopable
+        meta["feedback"] = feedback.get(rel)
         if tri and meta["class"] not in PLAYABLE:
             continue
         st = p.stat()
@@ -427,13 +525,16 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
         futs = {ex.submit(_worker, str(p), rel, meta): (rel, st) for p, rel, meta, st in todo}
         for n, fut in enumerate(as_completed(futs), 1):
             rel, st = futs[fut]
-            _, js, err = fut.result()
+            _, js, err, feats = fut.result()
             if err:
                 errors.append((rel, err))
                 log(f"  ! {rel}: {err}")
             else:
                 b = TrackBundle.model_validate_json(js)  # validate on write
                 (tracks_dir / f"{b.track.id}.json").write_text(js, encoding="utf-8")
+                feat_dir = out_dir / "features"
+                feat_dir.mkdir(exist_ok=True)
+                np.savez_compressed(feat_dir / f"{b.track.id}.npz", **feats)
                 entries.append(LibraryTrack(id=b.track.id, file=rel, size=st.st_size,
                                             mtime_ns=st.st_mtime_ns, group=b.group.id,
                                             version=b.group.version,
@@ -529,4 +630,4 @@ def run_analyze(args) -> int:
     return 0
 
 
-assert SCHEMA == "saics.analysis/8"
+assert SCHEMA == "saics.analysis/9"

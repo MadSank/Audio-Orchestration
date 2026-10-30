@@ -264,6 +264,13 @@ def run_eval(args) -> int:
         build_round2(Path(args.folder), Path(args.set), root / "round2", per_song=args.per_song)
         build_full(Path(args.folder), root / "full")
         return 0
+    if args.action == "build2b":
+        build_round2b(Path(args.folder), root)
+        build_full(Path(args.folder), root / "full")
+        return 0
+    if args.action == "feedback":
+        write_jump_feedback(Path(args.folder), root)
+        return 0
     if args.action == "report":
         md = report(root / "clips", root / "results")
         if (root / "round2" / "manifest.json").exists():
@@ -386,6 +393,32 @@ def build_round2(folder: Path, set_file: Path, out_dir: Path, per_song: int = 5,
     return manifest
 
 
+def _alternates(folder: Path, rel: str, limit: int = 3) -> list:
+    """Other versions of the song's group with current-schema bundles: [(path, bundle, None)]."""
+    from saics.schema import SCHEMA
+
+    lib = json.loads((folder / ".saics" / "library.json").read_text("utf-8"))
+    by_file = {t["file"]: t for t in lib["tracks"]}
+    group = by_file[rel]["group"]
+    out = []
+    for t in lib["tracks"]:
+        if t["group"] != group or t["file"] == rel:
+            continue
+        p = folder / ".saics" / "tracks" / f"{t['id']}.json"
+        if json.loads(p.read_text("utf-8")).get("schema") == SCHEMA:
+            out.append((folder / t["file"], _bundle_for(folder, t["file"]), None))
+        if len(out) >= limit:
+            break
+    return out
+
+
+FULL_TITLES = {
+    "*Racing Into the Night*Split Audio*": (
+        "YOASOBI - Racing into the Night (original, Japanese side of the split-audio file)"
+    ),
+}
+
+
 def build_full(folder: Path, out_dir: Path, minutes: float = 7.0, seed: int = 0, log=print) -> dict:
     """P3 acceptance renders: one ~7-minute Forever version per FULL_SONGS entry."""
     from saics.render import render_forever, write_audio
@@ -397,14 +430,67 @@ def build_full(folder: Path, out_dir: Path, minutes: float = 7.0, seed: int = 0,
         f = next(folder.glob(pat))
         rel = f.relative_to(folder).as_posix()
         b = _bundle_for(folder, rel)
-        y, sr, jlog = render_forever(f, b, minutes, seed=seed, channel=channel)
+        alts = _alternates(folder, rel)
+        y, sr, jlog = render_forever(
+            f, b, minutes, seed=seed, channel=channel, alternates=tuple(alts)
+        )
         rid = secrets.token_hex(6)
         write_audio(out_dir / f"{rid}.mp3", y, sr)
         manifest["renders"].append({
             "id": rid, "song": rel, "channel": channel, "duration_s": round(y.shape[1] / sr, 2),
-            "title": Path(rel).stem[:80], "jumps": jlog,
+            "title": FULL_TITLES.get(pat, Path(rel).stem[:80]), "jumps": jlog,
+            "loopable": b.loopable, "alternates": [str(p.relative_to(folder)) for p, _, _ in alts],
         })  # fmt: skip
-        log(f"  {rel}: {y.shape[1] / sr / 60:.1f} min, {len(jlog)} jumps")
+        log(
+            f"  {rel}: {y.shape[1] / sr / 60:.1f} min, "
+            + "; ".join(
+                f"{e['at_s']:.0f}s {e['from']}→{e['to']} [{e['kind']}/{e['why']}]" for e in jlog
+            )
+        )
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8"
+    )
+    return manifest
+
+
+def build_round2b(folder: Path, eval_dir: Path, log=print) -> dict:
+    """Only the affected seam clips: current jumps of the round-2 songs that are new or moved
+    since round 2 (same 15 s context and reveal as round 2)."""
+    folder, eval_dir = Path(folder), Path(eval_dir)
+    r2 = json.loads((eval_dir / "round2" / "manifest.json").read_text("utf-8"))["clips"]
+    out_dir = eval_dir / "round2b"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {"round": "2b", "context_s": ROUND2_CTX_S, "clips": []}
+    songs = sorted({c["song"] for c in r2})
+    for song in songs:
+        b = _bundle_for(folder, song)
+        beats = np.asarray(b.beats)
+        old = [(c["reveal"]["from_s"], c["reveal"]["to_s"]) for c in r2
+               if c["song"] == song and c["variant"] == "current"]  # fmt: skip
+        new = []
+        for j in b.jumps:
+            tf, tt = float(beats[j.from_beat]), float(beats[j.to_beat])
+            if not any(abs(tf - a) < 0.3 and abs(tt - c) < 0.3 for a, c in old):
+                new.append((j, tf, tt))
+        if not new:
+            continue
+        y = decode(folder / song, sr=OUT_SR, mono=False)
+        y = np.stack([y, y]) if y.ndim == 1 else y
+        for j, t_from, t_to in new:
+            clip, seam_s = _seam_clip(y, OUT_SR, t_from, t_to, j.xfade_ms)
+            mono = clip.mean(0)
+            cid = secrets.token_hex(6)
+            sf.write(out_dir / f"{cid}.wav", _normalise(clip.T, OUT_SR), OUT_SR, subtype="PCM_16")
+            manifest["clips"].append({
+                "id": cid, "kind": "jump", "round": "2b", "song": song, "variant": "current",
+                "seam_s": round(seam_s, 3), "duration_s": round(clip.shape[1] / OUT_SR, 3),
+                "score": j.score,
+                "reveal": {"label": j.label, "from_s": round(t_from, 2), "to_s": round(t_to, 2),
+                           "text": f"{j.label}  ({_mmss(t_from)} → {_mmss(t_to)} in the song, "
+                                   f"{t_to - t_from:+.0f} s)"},
+                "metrics": seam_metrics(mono, OUT_SR, seam_s, _beats(mono, OUT_SR)),
+            })  # fmt: skip
+        log(f"  {song}: {len(new)} new/moved jumps")
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8"
     )
@@ -439,3 +525,28 @@ def report_full(full_dir: Path, results_dir: Path) -> str:
             "renders (target >= 4.0, none below 3)."
         )
     return "\n".join(rows)
+
+
+def write_jump_feedback(folder: Path, eval_dir: Path, rater: str = "owner", log=print) -> int:
+    """Round-2 seam ratings -> `<folder>/.saics/jump_feedback.csv` (5 -> keep, <= 2 -> ban)."""
+    import csv as _csv
+
+    m2 = json.loads((Path(eval_dir) / "round2" / "manifest.json").read_text("utf-8"))
+    man = {c["id"]: c for c in m2["clips"]}
+    rows = []
+    for r in load_ratings(Path(eval_dir) / "results"):
+        c = man.get(r["clip_id"])
+        if not c or c["variant"] != "current" or r.get("rater", "owner") != rater:
+            continue
+        action = "keep" if r["rating"] == 5 else "ban" if r["rating"] <= 2 else None
+        if action:
+            rv = c["reveal"]
+            rows.append([action, c["song"], rv["from_s"], rv["to_s"], rv["label"], r["rating"]])
+    out = Path(folder) / ".saics" / "jump_feedback.csv"
+    with out.open("w", encoding="utf-8", newline="") as f:
+        f.write(
+            "# action,file,from_s,to_s,label,rating (saics eval feedback; keep=always, ban=never)\n"
+        )
+        _csv.writer(f).writerows(rows)
+    log(f"{len(rows)} jump feedback rows -> {out}")
+    return len(rows)
