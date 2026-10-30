@@ -159,3 +159,21 @@ def test_racing_into_the_night_gap_before_final_section():
     gap = [b for b in breaks if 185 < b.start_s < 195]
     assert gap, [(b.start_s, b.end_s, b.depth_db) for b in breaks]
     assert gap[0].kind == "silence" and gap[0].ramp_up and gap[0].end_s - gap[0].start_s > 0.5
+
+
+def test_regularize_follows_a_phase_shift_and_ignores_half_bars():
+    from saics.structure import regularize_downbeats
+
+    raw = list(range(0, 64, 4)) + list(range(64, 100, 2)) + [101] + list(range(105, 180, 4))
+    grid, m, conf = regularize_downbeats(raw, 180)
+    assert m == 4
+    assert all(d in grid for d in range(0, 64, 4))  # first part on phase 0
+    assert all(d in grid for d in range(105, 176, 4))  # follows the shifted phase later
+    assert all(b - a in (3, 4, 5) for a, b in zip(grid[:-1], grid[1:], strict=True))
+
+
+def test_regularize_rejects_one_beat_bars():
+    from saics.structure import regularize_downbeats
+
+    grid, m, _ = regularize_downbeats(list(range(0, 100)), 100)
+    assert m in (3, 4) and all(b - a >= 2 for a, b in zip(grid[:-1], grid[1:], strict=True))
