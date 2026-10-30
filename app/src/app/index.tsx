@@ -13,6 +13,7 @@ export default function Home() {
   const [scanning, setScanning] = useState(false);
   const [count, setCount] = useState<number | null>(null);
   const [batteryOk, setBatteryOk] = useState(true);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   useEffect(() => {
     setFolder(SaicsPlayer.getFolder());
@@ -21,9 +22,12 @@ export default function Home() {
 
   async function scan() {
     setScanning(true);
+    setScanError(null);
     try {
       const tracks = await SaicsPlayer.scanLibrary();
       setCount(tracks.length);
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : String(e));
     } finally {
       setScanning(false);
     }
@@ -75,6 +79,7 @@ export default function Home() {
         <Text style={[type.mono, { color: color.textMuted, fontFamily: "monospace" }]}>
           {scanning ? "scanning…" : `${libraryCount} songs`}
         </Text>
+        {scanError ? <Text style={[type.mono, { color: color.danger, fontFamily: "monospace" }]}>Scan failed: {scanError}</Text> : null}
         <View style={s.row}>
           <Button label={folder ? "Change folder" : "Choose folder"} kind={folder ? "plain" : "primary"} onPress={pick} style={s.flex} />
           {folder ? <Button label="Rescan" onPress={scan} style={s.flex} /> : null}

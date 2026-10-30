@@ -103,8 +103,8 @@ class SaicsPlayerModule : Module() {
 
     /** Lists audio files under the folder (skips _set_aside/ and .saics/), with song groups
      *  and versions from .saics/library.json when present; hands them to the player. */
-    AsyncFunction("scanLibrary") {
-      val folder = prefs.getString("folder", null) ?: return@AsyncFunction emptyList<Map<String, Any?>>()
+    AsyncFunction("scanLibrary") { promise: Promise ->
+      val folder = prefs.getString("folder", null) ?: return@AsyncFunction promise.resolve(emptyList<Map<String, Any?>>())
       val tree = Uri.parse(folder)
       val files = mutableListOf<Pair<String, Uri>>() // relative path, document uri
       var libraryJson: Uri? = null
@@ -141,8 +141,11 @@ class SaicsPlayerModule : Module() {
         Track(uri.toString(), path.substringAfterLast('/').substringBeforeLast('.'), path,
               m?.first ?: "", m?.second ?: "original")
       }
-      PlaybackService.instance?.setLibrary(tracks)
-      tracks.map { it.toMap() }
+      // The walk runs off the main thread, but the player may only be touched on its own.
+      onService(promise) { svc ->
+        svc.setLibrary(tracks)
+        tracks.map { it.toMap() }
+      }
     }
 
     // ── playback ──────────────────────────────────────────────────────────────
