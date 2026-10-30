@@ -1,5 +1,23 @@
 # SAICS v6 — A0 Audit and overnight run log
 
+## Late afternoon (2026-10-30): rating scale, breaks, Mix Web plan, Context7
+- **Vinyl blind pair:** `listen/vinyl_racing_1.wav` / `listen/vinyl_racing_2.wav`. Same 30 s (60–90 s) of *Racing into the Night*, original, through the live Library-page chain and the download renderer, loudness-matched. Which is which is recorded outside the repo until the owner picks.
+- **Library finding:** the "1 HOUR LOOP" *Racing into the Night* file repeats only the first 190 s of the song; it cuts at the silent gap and never plays the final section. The full original is in the "Split Audio (Japanese vs English)" file (L = Japanese).
+- **Rating page:**
+  - the owner's 1–5 labels and a separate jittery flag (also in `eval/README.md`);
+  - the report shows the jittery rate per variant; new ratings are tagged `scale: v2`;
+  - the server was restarted twice around 15:23 to load these changes, so a rating clicked at that moment may have failed.
+- **Ratings so far:** 122, all made before the labels changed. The old renderer got 60 of 61 rated 1; the clean renderer got 0 of 61 rated 1 (35 rated 2, 18 rated 3, 8 rated 4). If those ratings already followed the new scale, that confirms the D8 per-beat crossfade as the jitter.
+- **Breaks:**
+  - `saics analyze` detects silences and near-silent breakdowns; schema bumped to `saics.analysis/7`; app type in `app/src/types/analysis.ts`, kept in sync by a test.
+  - *Racing into the Night* gap: 190.7–191.3 s, −70.8 dB, silence, music returns at −4.9 dB.
+  - Cached /6 bundles are upgraded in place; this runs once the current analysis finishes.
+- **PLAN:**
+  - the Mix Web replaces P4 (exit/entry points, scored edges with a transition style, spacing rules, Infinite Ride, `saics mix`, rated transition clips);
+  - breaks get a bonus in P3 and P4;
+  - CUE-DETR licence: code MIT, weights MIT, base model unnamed; optional only.
+- **Context7:** `npx ctx7 setup --claude -y` configured the MCP server in `C:\Users\ASUS\.claude.json`, plus a rule (`~\.claude\rules\context7.md`) and a skill. It authenticated via Context7's device flow and needed nothing from the owner. It's available in new sessions.
+
 ## Afternoon (2026-10-30): consolidation, analyze, P2 started
 - **Downloads consolidated:** all 27 approved files moved to `Music\songs\from-downloads\`, each verified by size + SHA-256.
   - Undo: `engine\.venv\Scripts\saics.exe undo-moves "C:\Users\ASUS\Music\songs\.saics\moves_from_downloads.json"`.
