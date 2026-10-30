@@ -485,7 +485,9 @@ Each edge stores its score breakdown and its **chosen transition style**:
 - [x] Screens (first pass, tokens only, no design export yet): Home/Stations with mini Now Playing, Library, Button test (live key log, window tuning, simulate).
 - [x] `adb` key events with the screen off: every mapping row acts as specified (manual run, not yet instrumented tests).
 - [x] Real Cardo buttons confirmed working by the owner (short test, not yet the 30-minute bag ride).
-- [ ] Forever = REPEAT_ONE for now; Next-in-Forever switches version only when the group has one (not yet verified on device). `gain_db`, disconnect pause, voice search, Set-aside / Song groups review, Ride mode, Now Playing visualiser: still to do.
+- [x] Never the phone speaker: helmet keys / call-end focus regain / resumption can't start playback without a private output (BT, wired, USB); pause when the last one disappears. Verified on device (speaker-only: helmet Play stays paused, on-screen Play works).
+- [x] Loudness to -14 LUFS from each bundle's `gain_db` (cut via volume, boost ≤ +10 dB via `LoudnessEnhancer`); shown per track in Library.
+- [ ] Forever = REPEAT_ONE for now; Next-in-Forever switches version only when the group has one (not yet verified on device). Voice search, Set-aside / Song groups review, Ride mode, Now Playing visualiser: still to do.
 - Windows build notes: `LongPathsEnabled=1` (owner set it), SDK CMake 3.31.6 (ninja 1.12) and a short CMake staging dir, both written by `app/plugins/withShortCxxPath.js` at prebuild; gesture-handler is kept out of the native build (`app/react-native.config.js`).
 
 **Done when:**
