@@ -1,5 +1,18 @@
 # SAICS v6 — A0 Audit and overnight run log
 
+## Afternoon (2026-10-30): consolidation, analyze, P2 started
+- **Downloads consolidated:** all 27 approved files moved to `Music\songs\from-downloads\`, each verified by size + SHA-256.
+  - Undo: `engine\.venv\Scripts\saics.exe undo-moves "C:\Users\ASUS\Music\songs\.saics\moves_from_downloads.json"`.
+  - The 14 skipped files (9 transition previews, 5 videos) are still in Downloads.
+- **Re-triage** (report-only): 397 files, 380 music, 304 song groups (43 with several versions), 6 duplicates, 6 short, 4 unreadable, 1 sfx. *Racing into the Night* now has 19 versions.
+- **`saics analyze`** is implemented and running on the GPU (single worker; ~2 h for 386 songs; cached afterwards).
+- **P2 started:**
+  - clean renderer + eval harness;
+  - the 18-song set in `eval/set.txt`;
+  - blind rating page at `/eval/`;
+  - seam metrics and `saics eval report`.
+  - Jump clips are being built (legacy + baseline variants). Transition clips come with P4's baseline.
+
 ## Morning status (2026-10-30): waiting on you for 3 things
 1. **Approve the Downloads move.** See `reports/downloads_inventory.csv`: 27 to move, 14 to skip. Nothing has moved yet. `saics analyze` and P2 run on the consolidated folder, so they wait for this.
 2. **Pick the vinyl by ear:** `listen/vinyl_A.wav` (live Library-page chain) vs `listen/vinyl_B.wav` (download renderer), plus `listen/vinyl_dry_reference.wav`. All are loudness-matched to −14 LUFS.
