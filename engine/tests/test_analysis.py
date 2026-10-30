@@ -97,7 +97,56 @@ def test_analyze_end_to_end(tmp_path):
         and abs(b.loudness.gain_db + b.loudness.integrated_lufs + 14) < 0.01
     )
     assert len(b.vocal_activity) == len(b.beats) and max(b.vocal_activity) < 0.5  # no vocals
-    assert json.loads(b.dump())["schema"] == "saics.analysis/6"
+    assert json.loads(b.dump())["schema"] == "saics.analysis/7"
 
     again = an.analyze(lib, None, workers=1, log=lambda *_: None)  # cached: nothing re-analysed
     assert again["bundles"] == 1
+
+
+def _song_with_gaps(sr=22050):
+    t = np.arange(40 * sr) / sr
+    y = 0.3 * np.sin(2 * np.pi * 220 * t) * (1 + 0.5 * np.sin(2 * np.pi * 2 * t))
+    y[int(20.0 * sr) : int(21.0 * sr)] = 0.0  # 1 s silent gap, then full level again
+    y[int(30.0 * sr) : int(31.5 * sr)] *= 10 ** (-20 / 20)  # near-silent breakdown, -20 dB
+    y[int(31.5 * sr) :] *= 10 ** (-12 / 20)  # ... that does not come back up
+    return y.astype(np.float32)
+
+
+def test_detect_breaks_silence_and_breakdown():
+    sr = 22050
+    breaks = an.detect_breaks(_song_with_gaps(sr), sr, np.arange(0, 40, 0.5))
+    assert len(breaks) == 2
+    gap, dip = breaks
+    assert abs(gap.start_s - 20.0) < 0.3 and abs(gap.end_s - 21.0) < 0.3
+    assert gap.kind == "silence" and gap.depth_db < -30 and gap.ramp_up
+    assert (gap.start_beat, gap.end_beat) == (40, 42)
+    assert dip.kind == "breakdown" and -30 < dip.depth_db <= -15 and not dip.ramp_up
+
+
+def test_no_breaks_in_steady_music_or_at_the_edges():
+    sr = 22050
+    y = _song_with_gaps(sr)[: 19 * sr].copy()
+    y[: sr // 2] = 0  # leading silence is an intro, not a break
+    assert an.detect_breaks(y, sr, np.arange(0, 19, 0.5)) == []
+
+
+RACING_ORIGINAL = (
+    "*Racing Into the Night*Split Audio*"  # full original; the loop file is a 190 s edit
+)
+
+
+@pytest.mark.slow
+def test_racing_into_the_night_gap_before_final_section():
+    from pathlib import Path
+
+    from saics.io import decode
+
+    lib = Path(r"C:\Users\ASUS\Music\songs")
+    files = list(lib.glob(RACING_ORIGINAL)) if lib.exists() else []
+    if not files:
+        pytest.skip("owner's library not available")
+    y = decode(files[0], sr=an.SR, mono=False)[0]  # left channel: the Japanese original
+    breaks = an.detect_breaks(y, an.SR, np.arange(0, len(y) / an.SR, 0.5))
+    gap = [b for b in breaks if 185 < b.start_s < 195]
+    assert gap, [(b.start_s, b.end_s, b.depth_db) for b in breaks]
+    assert gap[0].kind == "silence" and gap[0].ramp_up and gap[0].end_s - gap[0].start_s > 0.5

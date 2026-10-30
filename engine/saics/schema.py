@@ -8,8 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SCHEMA = "saics.analysis/6"
-LIBRARY_SCHEMA = "saics.library/6"
+SCHEMA = "saics.analysis/7"  # /7 (2026-10-30): + breaks
+LIBRARY_SCHEMA = "saics.library/7"
 
 
 class _M(BaseModel):
@@ -70,6 +70,19 @@ class Section(_M):
     group: int  # repeat class: sections with the same group are repeats of each other
 
 
+class Break(_M):
+    """A silence or near-silent breakdown: a first-class jump/transition point."""
+
+    start_beat: int  # beat nearest the start of the drop
+    end_beat: int  # beat nearest the point where the music returns
+    start_s: float
+    end_s: float
+    depth_db: float  # lowest short-term level relative to the track's typical level (negative)
+    kind: Literal["silence", "breakdown"]  # silence: <= -30 dB; breakdown: <= -15 dB
+    ramp_up: bool  # the music comes back: the 4 s after the break average >= -8 dB
+    return_db: float  # level of those 4 s relative to the track's typical level
+
+
 class Jump(_M):
     from_beat: int
     to_beat: int
@@ -90,7 +103,7 @@ class Cues(_M):
 
 
 class TrackBundle(_M):
-    schema_: Literal["saics.analysis/6"] = Field(SCHEMA, alias="schema")
+    schema_: Literal["saics.analysis/7"] = Field(SCHEMA, alias="schema")
     track: Track
     triage: Triage = Triage()
     group: Group
@@ -103,6 +116,7 @@ class TrackBundle(_M):
     sections: list[Section]
     bar_energy: list[float]  # per bar, 0..1
     vocal_activity: list[float]  # per beat, 0..1
+    breaks: list[Break] = []  # silences / near-silent breakdowns (since /7)
     jumps: list[Jump] = []  # P3
     cues: Cues = Cues()  # P4
 
@@ -126,7 +140,7 @@ class LibraryGroup(_M):
 
 
 class Library(_M):
-    schema_: Literal["saics.library/6"] = Field(LIBRARY_SCHEMA, alias="schema")
+    schema_: Literal["saics.library/7"] = Field(LIBRARY_SCHEMA, alias="schema")
     track_schema: str = SCHEMA
     generated: str
     tracks: list[LibraryTrack]
