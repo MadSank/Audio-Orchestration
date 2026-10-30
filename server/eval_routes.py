@@ -14,8 +14,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 EVAL_DIR = Path(__file__).resolve().parents[1] / "eval"
-ROUNDS = {"1": EVAL_DIR / "clips", "2": EVAL_DIR / "round2"}
-LATEST_ROUND = "2"
+ROUNDS = {"1": EVAL_DIR / "clips", "2": EVAL_DIR / "round2", "2b": EVAL_DIR / "round2b"}
+LATEST_ROUND = "2b"
 FULL_DIR = EVAL_DIR / "full"
 router = APIRouter(prefix="/eval", tags=["Eval"])
 

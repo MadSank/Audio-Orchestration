@@ -63,31 +63,76 @@ def render_segments(y: np.ndarray, segments: list, sr: int, xfade_ms: float = 30
     return (out[0] if mono else out), seams
 
 
-def render_forever(audio_path, bundle, minutes: float, seed: int = 0, channel: int | None = None,
-                   sr: int = 44100) -> tuple:  # fmt: skip
-    """Offline Forever render of one song: (audio (2, n) float32, sr, jump log).
+def _flush(y: np.ndarray, run: list, pieces: list, sr: int) -> float:
+    """Render the pending segments of `y` into `pieces`; returns the seconds produced."""
+    if not run:
+        return 0.0
+    audio, _ = render_segments(y, list(run), sr, xfade_ms=30.0)
+    pieces.append(audio)
+    run.clear()
+    return audio.shape[1] / sr
 
-    Follows the bundle's structural jumps with the P3 pacing rules (`jumps.forever_path`).
-    channel=0/1 renders a single input channel to both outputs (e.g. one side of a
-    split-language file)."""
-    from saics.io import decode
-    from saics.jumps import forever_path
 
-    y = decode(audio_path, sr=sr, mono=False)
-    if y.ndim == 1:
-        y = np.stack([y, y])
-    if channel is not None:
-        y = np.stack([y[channel], y[channel]])
+def _bar_times(bundle, n_samples: int, sr: int) -> np.ndarray:
+    """Bar start times; the last bar runs to the true end of the audio (outros finish)."""
     beats = np.asarray(bundle.beats)
     n_bars = len(bundle.downbeats) - 1
     bar_t = np.r_[beats[bundle.downbeats[: n_bars + 1]]]
-    bar_t[-1] = min(bar_t[-1], y.shape[1] / sr)
-    segs_s, log = forever_path(bar_t, bundle.sections, bundle.jumps, minutes, seed=seed)
-    segs = [(int(a * sr), int(b * sr)) for a, b in segs_s]
-    out, seams = render_segments(y.astype(np.float32), segs, sr, xfade_ms=30.0)
-    for entry, seam in zip(log, seams, strict=False):
-        entry["at_s"] = round(seam / sr, 2)  # exact output time of each jump
-    return out, sr, log
+    bar_t[-1] = n_samples / sr
+    return bar_t
+
+
+def render_forever(audio_path, bundle, minutes: float, seed: int = 0, channel: int | None = None,
+                   sr: int = 44100, alternates: tuple = ()) -> tuple:  # fmt: skip
+    """Offline Forever render: (audio (2, n) float32, sr, log).
+
+    Follows the bundle's structural jumps with the P3 pacing and ending rules
+    (`jumps.forever_path`). `alternates` = [(path, bundle, channel)] other versions of the
+    song group, used when the ending can't be avoided (owner's (c)); without them the song
+    repeats with a short gap (d). channel=0/1 renders one input channel to both outputs."""
+    from pathlib import Path
+
+    from saics.io import decode
+    from saics.jumps import forever_path
+
+    def load(path, ch):
+        y = decode(path, sr=sr, mono=False)
+        y = np.stack([y, y]) if y.ndim == 1 else y
+        return (np.stack([y[ch], y[ch]]) if ch is not None else y).astype(np.float32)
+
+    queue = [(audio_path, bundle, channel), *alternates]
+    pieces, log, t_out, k = [], [], 0.0, 0
+    remaining = minutes * 60.0
+    while remaining > 1.0:
+        path, b, ch = queue[k % len(queue)]
+        y = load(path, ch)
+        bar_t = _bar_times(b, y.shape[1], sr)
+        others = len(queue) > 1
+        segs_s, wlog = forever_path(bar_t, b.sections, b.jumps, remaining / 60, seed=seed + k,
+                                    outro=b.outro_bar or None, loopable=b.loopable,
+                                    has_versions=others)  # fmt: skip
+        run: list = []
+        switched = False
+        produced = 0.0
+        for seg in segs_s:
+            if seg[0] == "gap":
+                produced += _flush(y, run, pieces, sr)
+                pieces.append(np.zeros((2, int(seg[1] * sr)), np.float32))
+                produced += seg[1]
+            elif seg[0] == "switch":
+                switched = True
+            else:
+                run.append((int(seg[0] * sr), int(seg[1] * sr)))
+        produced += _flush(y, run, pieces, sr)
+        for e in wlog:
+            log.append({**e, "at_s": round(e["at_s"] + t_out, 2), "song": Path(str(path)).name})
+        t_out += produced
+        remaining -= produced
+        if not switched:
+            break
+        k += 1
+    out = np.concatenate(pieces, axis=1) if pieces else np.zeros((2, 0), np.float32)
+    return out[:, : int(minutes * 60 * sr)], sr, log
 
 
 def write_audio(path, y: np.ndarray, sr: int, lufs: float = -14.0) -> None:

@@ -1,0 +1,308 @@
+[
+ {
+  "song": "Michael Jackson - Smooth Criminal Lyrics.mp3",
+  "from_s": 119.4,
+  "to_s": 54.44,
+  "label": "C3:5 → C1:5"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 128.48,
+  "to_s": 47.8,
+  "label": "G1:12 → D1:8"
+ },
+ {
+  "song": "Aaron Smith - Dancin (KRONO Remix).mp3",
+  "from_s": 104.2,
+  "to_s": 56.2,
+  "label": "C3:4 → C1:4"
+ },
+ {
+  "song": "Aaron Smith - Dancin (KRONO Remix).mp3",
+  "from_s": 184.22,
+  "to_s": 120.22,
+  "label": "F1:13 → D2:6"
+ },
+ {
+  "song": "TheFatRat - Monody (feat. Laura Brehm).mp3",
+  "from_s": 253.94,
+  "to_s": 81.24,
+  "label": "E2:13 → E1:13"
+ },
+ {
+  "song": "TheFatRat - Electrified.mp3",
+  "from_s": 110.38,
+  "to_s": 31.7,
+  "label": "D2:1 → D1:1"
+ },
+ {
+  "song": "Racing into the Night - YOASOBI (Hatsune Miku ver.).mp3",
+  "from_s": 23.14,
+  "to_s": 109.92,
+  "label": "C1:5 → C2:5"
+ },
+ {
+  "song": "Y2meta.app - 夜に駆ける racing into the night - YOASOBI (𝙨𝙡𝙤𝙬𝙚𝙙 + 𝙧𝙚𝙫𝙚𝙧𝙗) (320 kbps).mp3",
+  "from_s": 123.66,
+  "to_s": 27.24,
+  "label": "C2:5 → C1:5"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 164.78,
+  "to_s": 84.1,
+  "label": "J1:6 → F1:6"
+ },
+ {
+  "song": "Fujii Kaze - Kirari (Official Video).mp3",
+  "from_s": 89.96,
+  "to_s": 213.04,
+  "label": "E1:4 → N1:6"
+ },
+ {
+  "song": "TheFatRat - Electrified.mp3",
+  "from_s": 69.06,
+  "to_s": 163.48,
+  "label": "G1:4 → G2:4"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 47.8,
+  "to_s": 128.48,
+  "label": "D1:8 → G1:12"
+ },
+ {
+  "song": "Maroon 5 - Memories (Lyrics).mp3",
+  "from_s": 78.14,
+  "to_s": 142.76,
+  "label": "B2:6 → B3:6"
+ },
+ {
+  "song": "Indila - Dernière Danse.mp3",
+  "from_s": 132.12,
+  "to_s": 198.9,
+  "label": "F1:16 → F2:16"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 180.92,
+  "to_s": 100.24,
+  "label": "K1:7 → F1:14"
+ },
+ {
+  "song": "Earth, Wind & Fire - September (Lyrics).mp3",
+  "from_s": 179.52,
+  "to_s": 134.16,
+  "label": "E4:5 → E2:5"
+ },
+ {
+  "song": "MGMT - Little Dark Age (𝚂𝚕𝚘𝚠𝚎𝚍  𝚁𝚎𝚟𝚎𝚛𝚋).mp3",
+  "from_s": 96.26,
+  "to_s": 223.68,
+  "label": "E1:2 → E2:2"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 100.24,
+  "to_s": 180.92,
+  "label": "F1:14 → K1:7"
+ },
+ {
+  "song": "Maroon 5 - Memories (Lyrics).mp3",
+  "from_s": 142.76,
+  "to_s": 78.14,
+  "label": "B3:6 → B2:6"
+ },
+ {
+  "song": "MGMT - Little Dark Age (𝚂𝚕𝚘𝚠𝚎𝚍  𝚁𝚎𝚟𝚎𝚛𝚋).mp3",
+  "from_s": 162.88,
+  "to_s": 209.2,
+  "label": "G1:5 → G2:5"
+ },
+ {
+  "song": "The Kid LAROI, Justin Bieber - Stay (Lyrics).mp3",
+  "from_s": 62.48,
+  "to_s": 118.96,
+  "label": "D1:14 → G1:6"
+ },
+ {
+  "song": "Michael Jackson - Smooth Criminal Lyrics.mp3",
+  "from_s": 135.64,
+  "to_s": 70.68,
+  "label": "D2:5 → D1:5"
+ },
+ {
+  "song": "Aaron Smith - Dancin (KRONO Remix).mp3",
+  "from_s": 72.2,
+  "to_s": 120.22,
+  "label": "D1:6 → D2:6"
+ },
+ {
+  "song": "Passenger - Let Her Go (Feat. Ed Sheeran - Anniversary Edition) [Official Video].mp3",
+  "from_s": 222.52,
+  "to_s": 169.44,
+  "label": "I1:5 → G1:4"
+ },
+ {
+  "song": "Racing into the Night - YOASOBI (Hatsune Miku ver.).mp3",
+  "from_s": 109.92,
+  "to_s": 23.14,
+  "label": "C2:5 → C1:5"
+ },
+ {
+  "song": "Michael Jackson - Smooth Criminal Lyrics.mp3",
+  "from_s": 54.44,
+  "to_s": 119.4,
+  "label": "C1:5 → C3:5"
+ },
+ {
+  "song": "MGMT - Little Dark Age (𝚂𝚕𝚘𝚠𝚎𝚍  𝚁𝚎𝚟𝚎𝚛𝚋).mp3",
+  "from_s": 209.2,
+  "to_s": 162.88,
+  "label": "G2:5 → G1:5"
+ },
+ {
+  "song": "The Kid LAROI, Justin Bieber - Stay (Lyrics).mp3",
+  "from_s": 118.96,
+  "to_s": 51.2,
+  "label": "G1:6 → D1:6"
+ },
+ {
+  "song": "TheFatRat - Monody (feat. Laura Brehm).mp3",
+  "from_s": 236.0,
+  "to_s": 63.3,
+  "label": "E2:5 → E1:5"
+ },
+ {
+  "song": "Aaron Smith - Dancin (KRONO Remix).mp3",
+  "from_s": 120.22,
+  "to_s": 72.2,
+  "label": "D2:6 → D1:6"
+ },
+ {
+  "song": "Earth, Wind & Fire - September (Lyrics).mp3",
+  "from_s": 54.46,
+  "to_s": 130.36,
+  "label": "E1:3 → E2:3"
+ },
+ {
+  "song": "TheFatRat - Monody (feat. Laura Brehm).mp3",
+  "from_s": 81.24,
+  "to_s": 253.94,
+  "label": "E1:13 → E2:13"
+ },
+ {
+  "song": "Maroon 5 - Memories (Lyrics).mp3",
+  "from_s": 57.06,
+  "to_s": 121.66,
+  "label": "D1:2 → D2:2"
+ },
+ {
+  "song": "Earth, Wind & Fire - September (Lyrics).mp3",
+  "from_s": 134.16,
+  "to_s": 164.46,
+  "label": "E2:5 → E3:5"
+ },
+ {
+  "song": "Michael Jackson - Smooth Criminal Lyrics.mp3",
+  "from_s": 70.68,
+  "to_s": 135.64,
+  "label": "D1:5 → D2:5"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 84.1,
+  "to_s": 164.78,
+  "label": "F1:6 → J1:6"
+ },
+ {
+  "song": "Racing into the Night - YOASOBI (Hatsune Miku ver.).mp3",
+  "from_s": 176.38,
+  "to_s": 61.9,
+  "label": "N1:2 → F1:2"
+ },
+ {
+  "song": "Indila - Dernière Danse.mp3",
+  "from_s": 180.12,
+  "to_s": 113.32,
+  "label": "F2:7 → F1:7"
+ },
+ {
+  "song": "Maroon 5 - Memories (Lyrics).mp3",
+  "from_s": 121.66,
+  "to_s": 57.06,
+  "label": "D2:2 → D1:2"
+ },
+ {
+  "song": "Fujii Kaze - Kirari (Official Video).mp3",
+  "from_s": 213.04,
+  "to_s": 89.96,
+  "label": "N1:6 → E1:4"
+ },
+ {
+  "song": "Indila - Dernière Danse.mp3",
+  "from_s": 198.9,
+  "to_s": 132.12,
+  "label": "F2:16 → F1:16"
+ },
+ {
+  "song": "Michael Jackson - Smooth Criminal Lyrics.mp3",
+  "from_s": 86.92,
+  "to_s": 54.44,
+  "label": "C2:5 → C1:5"
+ },
+ {
+  "song": "Y2meta.app - 夜に駆ける racing into the night - YOASOBI (𝙨𝙡𝙤𝙬𝙚𝙙 + 𝙧𝙚𝙫𝙚𝙧𝙗) (320 kbps).mp3",
+  "from_s": 27.24,
+  "to_s": 123.66,
+  "label": "C1:5 → C2:5"
+ },
+ {
+  "song": "TheFatRat - Electrified.mp3",
+  "from_s": 126.12,
+  "to_s": 47.44,
+  "label": "J1:1 → E1:1"
+ },
+ {
+  "song": "TheFatRat - Monody (feat. Laura Brehm).mp3",
+  "from_s": 63.3,
+  "to_s": 236.0,
+  "label": "E1:5 → E2:5"
+ },
+ {
+  "song": "The Kid LAROI, Justin Bieber - Stay (Lyrics).mp3",
+  "from_s": 51.2,
+  "to_s": 118.96,
+  "label": "D1:6 → G1:6"
+ },
+ {
+  "song": "Earth, Wind & Fire - September (Lyrics).mp3",
+  "from_s": 164.46,
+  "to_s": 134.16,
+  "label": "E3:5 → E2:5"
+ },
+ {
+  "song": "Passenger - Let Her Go (Feat. Ed Sheeran - Anniversary Edition) [Official Video].mp3",
+  "from_s": 169.44,
+  "to_s": 222.52,
+  "label": "G1:4 → I1:5"
+ },
+ {
+  "song": "from-downloads/Lady Gaga - Bad Romance (Lyrics).mp3",
+  "from_s": 265.62,
+  "to_s": 168.82,
+  "label": "J2:8 → K1:1"
+ },
+ {
+  "song": "Aaron Smith - Dancin (KRONO Remix).mp3",
+  "from_s": 56.2,
+  "to_s": 104.2,
+  "label": "C1:4 → C3:4"
+ },
+ {
+  "song": "TheFatRat - Electrified.mp3",
+  "from_s": 31.7,
+  "to_s": 110.38,
+  "label": "D1:1 → D2:1"
+ }
+]

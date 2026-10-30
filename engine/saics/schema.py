@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SCHEMA = "saics.analysis/8"  # /7: + breaks; /8: structural jumps (P3)
+SCHEMA = "saics.analysis/9"  # /7: + breaks; /8: structural jumps; /9: Forever endings
 LIBRARY_SCHEMA = "saics.library/7"
 
 
@@ -88,10 +88,10 @@ class Jump(_M):
 
     from_beat: int
     to_beat: int
-    from_bar: int  # == number of bars for a song-end jump
+    from_bar: int
     to_bar: int
     score: float
-    kind: Literal["repeat", "break", "end"]
+    kind: Literal["repeat", "break"]
     xfade_ms: float
     label: str  # e.g. "B2:5 → B1:5" (repeat group letter, instance, bar in section)
     context: float  # mean bar similarity over the 4 bars before and after the seam
@@ -111,7 +111,7 @@ class Cues(_M):
 
 
 class TrackBundle(_M):
-    schema_: Literal["saics.analysis/8"] = Field(SCHEMA, alias="schema")
+    schema_: Literal["saics.analysis/9"] = Field(SCHEMA, alias="schema")
     track: Track
     triage: Triage = Triage()
     group: Group
@@ -125,7 +125,9 @@ class TrackBundle(_M):
     bar_energy: list[float]  # per bar, 0..1
     vocal_activity: list[float]  # per beat, 0..1
     breaks: list[Break] = []  # silences / near-silent breakdowns (since /7)
-    jumps: list[Jump] = []  # P3 structural jumps (since /8)
+    jumps: list[Jump] = []  # P3 structural jumps (since /8; aligned, no end jumps since /9)
+    outro_bar: int = 0  # bar where the ending starts (since /9; == bar count if no outro)
+    loopable: bool = True  # False: Forever never loops this song (owner override, /9)
     cues: Cues = Cues()  # P4
 
     def dump(self) -> str:

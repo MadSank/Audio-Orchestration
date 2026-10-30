@@ -18,6 +18,21 @@ def _triage(args) -> int:
     return run_triage(args)
 
 
+def _jumps(args) -> int:
+    from pathlib import Path
+
+    from saics.analysis import recompute_jumps
+
+    only = None
+    if args.only:
+        lines = Path(args.only).read_text(encoding="utf-8").splitlines()
+        only = {
+            ln.strip().replace("\\", "/") for ln in lines if ln.strip() and not ln.startswith("#")
+        }
+    recompute_jumps(Path(args.folder), only)
+    return 0
+
+
 def _analyze(args) -> int:
     from saics.analysis import run_analyze
 
@@ -59,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     u.add_argument("manifest")
     u.set_defaults(func=_undo_moves)
 
+    jp = sub.add_parser("jumps", help="re-run jump finding from cached features (fast)")
+    jp.add_argument("folder")
+    jp.add_argument("--only", default="", help="file listing songs to update")
+    jp.set_defaults(func=_jumps)
+
     a = sub.add_parser("analyze", help="write <folder>/.saics/ analysis bundles")
     a.add_argument("folder")
     a.add_argument(
@@ -80,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(func=_render)
 
     e = sub.add_parser("eval", help="listening-test harness")
-    e.add_argument("action", choices=["build", "build2", "report"])
+    e.add_argument("action", choices=["build", "build2", "build2b", "report", "feedback"])
     e.add_argument("folder", nargs="?", default="", help="music folder (build)")
     e.add_argument("--set", default="eval/set.txt", help="songs to evaluate, one per line")
     e.add_argument("--eval-dir", default="eval", help="clips/, results/, report.md live here")
