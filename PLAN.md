@@ -529,6 +529,19 @@ Each edge stores its score breakdown and its **chosen transition style**:
   - Kotlin unit tests: crossfade power, sample-exact jump positions, no allocations in the render loop;
   - an instrumented click-track test on the device, including one AAC and one 48 kHz file.
 
+**Status (2026-10-31, work in progress; the phone still runs the P5 build):**
+- Written and compiling (`app/modules/saics-player/.../engine/`), **not yet built into an APK or tested on the device**:
+  - `Butter.kt`: scipy-equivalent Butterworth SOS design; `Vinyl.kt`: streaming port of `_apply_vinyl_crackle`.
+  - `Pcm.kt` (whole song as 16-bit PCM, off-heap) + Kaiser windowed-sinc resampler (88 library MP3s are 48 kHz); `Decoder.kt` (MediaCodec, encoder-delay trim).
+  - `Renderer.kt`: real-time core; plays linearly and executes one pending `Instruction` sample-accurately with render.py's centred, correlation-aware equal-power crossfade; no allocations or locks; a late decision never gaps.
+  - `ForeverWalk.kt`: incremental port of `forever_path` (one bar ahead). `Engine.kt`: audio / scheduler / decoder threads, slots, button intents (Next → version switch on the next bar in Forever, next song on the next downbeat; Next ×2 cut now; Previous). `SaicsPlayer.kt`: `SimpleBasePlayer` + audio focus, becoming-noisy and a wake lock. `PlaybackService` now runs on it.
+  - Vinyl loudness compensation **+3.0 dB** (D18: the chain is -3.0 LU on average over 12 library songs, sd 1.0).
+  - `engine/tests/make_vinyl_parity.py` → `engine/tests/golden/vinyl_parity.json` (12-seed min/max envelope of the Python chain's 1/3-octave fingerprint).
+- **Next steps:**
+  1. Write the JVM tests in `app/modules/saics-player/android/src/test/.../engine/`: `ButterTest` (scipy magnitudes; values were computed on 2026-10-31), `RendererTest` (sample-exact jumps, centred crossfade, rho = 1 → no bump, rho = 0 → constant power, gap, no allocations via ThreadMXBean), `ForeverWalkTest` (last chance, avoid ≤ 2, pacing ≥ 60 s and never landing within 60 s of the last chance, not loopable), `VinylParityTest` (mixed-radix FFT, compare to the envelope ±1 dB). Run `.\gradlew :saics-player:testReleaseUnitTest`.
+  2. Build, install, then verify on the phone: plain playback, Forever jumps (log the jump events), version switch, Vinyl toggle, buttons, pause/resume, focus (call / navigation), BT disconnect, CPU with the screen off.
+  3. Keep the P5 APK around to roll back to before a ride.
+
 **Done when:**
 - A 2-hour Cardo ride has no glitches, dropouts or volume jumps, and every button works throughout.
 - On-device quality matches the P3/P4 ratings.

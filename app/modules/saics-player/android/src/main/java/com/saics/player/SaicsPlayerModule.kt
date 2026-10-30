@@ -152,9 +152,11 @@ class SaicsPlayerModule : Module() {
       val meta = libraryJson?.let { readLibrary(it) } ?: emptyMap()
       val tracks = files.sortedBy { it.first.lowercase() }.map { (path, uri) ->
         val m = meta[if (saicsRoot.isEmpty()) path else path.removePrefix("$saicsRoot/")]
-        val gain = m?.id?.let { bundles["$it.json"] }?.let { readGain(tree, it) } ?: 0.0
+        val bundleDoc = m?.id?.let { bundles["$it.json"] }
+        val gain = bundleDoc?.let { readGain(tree, it) } ?: 0.0
+        val bundleUri = bundleDoc?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it).toString() } ?: ""
         Track(uri.toString(), path.substringAfterLast('/').substringBeforeLast('.'), path,
-              m?.group ?: "", m?.version ?: "original", gain)
+              m?.group ?: "", m?.version ?: "original", gain, bundleUri)
       }
       // The walk runs off the main thread, but the player may only be touched on its own.
       onService(promise) { svc ->

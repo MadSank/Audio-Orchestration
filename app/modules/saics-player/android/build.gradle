@@ -15,6 +15,9 @@ android {
   lintOptions {
     abortOnError false
   }
+  testOptions {
+    unitTests.returnDefaultValues = true
+  }
 }
 
 dependencies {
@@ -22,4 +25,6 @@ dependencies {
   implementation "androidx.media3:media3-exoplayer:$media3"
   implementation "androidx.media3:media3-session:$media3"
   implementation "androidx.media3:media3-common:$media3"
+  testImplementation "junit:junit:4.13.2"
+  testImplementation "org.json:json:20240303" // android.jar's org.json is a stub on the JVM
 }

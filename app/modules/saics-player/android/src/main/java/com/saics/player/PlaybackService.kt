@@ -5,25 +5,23 @@ import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
-import android.media.audiofx.LoudnessEnhancer
 import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.KeyEvent
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
 import com.google.common.collect.ImmutableList
+import com.saics.player.engine.Engine
+import com.saics.player.engine.SaicsPlayer
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import org.json.JSONArray
@@ -37,10 +35,13 @@ data class Track(
   val group: String,
   val version: String,
   val gainDb: Double = 0.0, // to -14 LUFS, from the track's analysis bundle (0 when missing)
+  val bundle: String = "", // document uri of its .saics/tracks/<id>.json ("" = none)
 ) {
+  fun toSong() = Engine.Song(uri, Uri.parse(uri), bundle.takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }, title, group, version, gainDb)
+
   fun toJson(): JSONObject = JSONObject()
     .put("uri", uri).put("title", title).put("path", path).put("group", group).put("version", version)
-    .put("gainDb", gainDb)
+    .put("gainDb", gainDb).put("bundle", bundle)
 
   fun toMediaItem(): MediaItem = MediaItem.Builder()
     .setMediaId(uri)
@@ -52,23 +53,25 @@ data class Track(
     .build()
 
   fun toMap(): Map<String, Any?> =
-    mapOf("uri" to uri, "title" to title, "path" to path, "group" to group, "version" to version, "gainDb" to gainDb)
+    mapOf("uri" to uri, "title" to title, "path" to path, "group" to group, "version" to version, "gainDb" to gainDb, "bundle" to bundle)
 
   companion object {
     fun fromJson(o: JSONObject) = Track(
       o.getString("uri"), o.optString("title"), o.optString("path"),
       o.optString("group"), o.optString("version", "original"), o.optDouble("gainDb", 0.0),
+      o.optString("bundle", ""),
     )
   }
 }
 
 /**
- * The media service the Cardo talks to. Milestone A (P5): plain ExoPlayer playback of the
- * library, with the helmet button mapping, audio feedback, audio focus (duck for navigation
- * prompts, pause/resume for calls), pause on Bluetooth disconnect, and playback resumption.
+ * The media service the Cardo talks to: the SAICS engine (P6: Forever jumps, live Vinyl,
+ * version switches) behind a Media3 session, with the helmet button mapping, audio feedback,
+ * audio focus (duck for navigation prompts, pause/resume for calls), pause on Bluetooth
+ * disconnect, never the phone speaker, and playback resumption.
  */
 class PlaybackService : MediaLibraryService() {
-  lateinit var player: ExoPlayer
+  lateinit var player: SaicsPlayer
   lateinit var buttons: HelmetButtons
   lateinit var feedback: Feedback
   private var session: MediaLibrarySession? = null
@@ -83,10 +86,6 @@ class PlaybackService : MediaLibraryService() {
   val buttonLog = ArrayDeque<Map<String, Any?>>()
   var listener: ((String, Map<String, Any?>) -> Unit)? = null
 
-  private var fadeLevel = 1f
-  private var duckLevel = 1f
-  private var gainLevel = 1f // loudness normalisation: attenuation part (boosts go to the enhancer)
-  private var enhancer: LoudnessEnhancer? = null
   private val audio by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
   /** Playback started from the app screen may use the phone speaker (owner testing at home);
@@ -99,27 +98,27 @@ class PlaybackService : MediaLibraryService() {
 
   override fun onCreate() {
     super.onCreate()
-    player = ExoPlayer.Builder(this)
-      .setAudioAttributes(
-        AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
-        /* handleAudioFocus = */ true, // ducks under navigation prompts, pauses for calls
-      )
-      .setHandleAudioBecomingNoisy(true) // helmet off / out of range: pause, never the speaker
-      .setWakeMode(C.WAKE_MODE_LOCAL)
-      .build()
-    feedback = Feedback(this) { duck ->
-      duckLevel = if (duck) 0.3f else 1f
-      applyVolume()
+    player = SaicsPlayer(this).also { p ->
+      p.resolve = { item ->
+        library.firstOrNull { it.uri == item.mediaId }?.toSong()
+          ?: Track(item.mediaId, item.mediaMetadata.title?.toString() ?: "", "", "", "").toSong()
+      }
+      p.itemFor = { song -> library.firstOrNull { it.uri == song.id }?.toMediaItem() }
+      p.onEngineAction = ::onEngineAction
     }
+    feedback = Feedback(this) { duck -> player.engine.duck(if (duck) 0.3f else 1f) }
     buttons = HelmetButtons(::onButton) { ev ->
       buttonLog.addFirst(ev)
       while (buttonLog.size > 100) buttonLog.removeLast()
       emit("onButton", ev)
     }
     loadSettings()
+    player.engine.setLibrary(library.map { it.toSong() })
+    player.engine.setForever(forever)
+    player.engine.setVinyl(vinyl)
+    player.engine.setVinylComp(VINYL_COMP_DB)
     player.addListener(object : Player.Listener {
       override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        applyGain()
         saveState()
         emitState()
       }
@@ -128,12 +127,6 @@ class PlaybackService : MediaLibraryService() {
         if (isPlaying) guardSpeaker()
         saveState()
         emitState()
-      }
-
-      override fun onAudioSessionIdChanged(audioSessionId: Int) {
-        enhancer?.release()
-        enhancer = null
-        applyGain()
       }
     })
     audio.registerAudioDeviceCallback(deviceCallback, main)
@@ -158,7 +151,6 @@ class PlaybackService : MediaLibraryService() {
   override fun onDestroy() {
     saveState()
     audio.unregisterAudioDeviceCallback(deviceCallback)
-    enhancer?.release()
     session?.run {
       player.release()
       release()
@@ -184,46 +176,53 @@ class PlaybackService : MediaLibraryService() {
   }
 
   fun togglePlay() {
-    if (player.isPlaying) {
-      fadeTo(0f, 100) { player.pause() }
+    if (player.playWhenReady) {
+      player.pause() // the engine fades out over 100 ms
     } else {
       if (player.mediaItemCount == 0) restoreQueue()
       if (player.mediaItemCount == 0 && library.isNotEmpty()) startStation(station, announce = false)
-      if (player.playbackState == Player.STATE_IDLE) player.prepare()
-      fadeLevel = 0f
-      applyVolume()
+      player.prepare()
       player.play()
-      fadeTo(1f, 100) {}
     }
   }
 
+  /** Next: in Forever another version of the song (on the next bar), else the next song
+   *  (on the next downbeat; x2 = cut now). */
   fun next(hardCut: Boolean) {
-    if (forever) {
-      switchVersion()
-      return
-    }
-    if (player.hasNextMediaItem()) player.seekToNextMediaItem() else if (player.mediaItemCount > 0) player.seekTo(0, 0)
+    player.engine.next(hardCut)
     feedback.earcon("step")
-    if (announceTitles) feedback.say("Next: ${currentTrack()?.title ?: ""}")
+    if (announceTitles && !forever) main.postDelayed({ feedback.say("Next: ${currentTrack()?.title ?: ""}") }, 2500)
     emit("onAction", mapOf("action" to if (hardCut) "cut" else "next"))
   }
 
   fun previous() {
-    if (player.currentPosition > 5000 || !player.hasPreviousMediaItem()) player.seekTo(0) else player.seekToPreviousMediaItem()
+    player.engine.previous()
     feedback.earcon("step")
     emit("onAction", mapOf("action" to "previous"))
   }
 
+  /** What the engine did, for spoken feedback and the app. */
+  private fun onEngineAction(kind: String, detail: String) {
+    when (kind) {
+      "version" -> if (!detail.endsWith("(song end)")) feedback.say(detail.replace('_', ' '))
+      "error" -> feedback.confirm("error", detail)
+    }
+    emit("onAction", mapOf("action" to kind, "detail" to detail))
+    saveState()
+    emitState()
+  }
+
   fun toggleForever() {
     forever = !forever
-    player.repeatMode = if (forever) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_ALL
+    player.engine.setForever(forever)
     feedback.confirm(if (forever) "on" else "off", if (forever) "Forever on" else "Forever off")
     saveSettings()
     emitState()
   }
 
   fun toggleVinyl() {
-    vinyl = !vinyl // audio effect arrives with the native engine (P6)
+    vinyl = !vinyl
+    player.engine.setVinyl(vinyl) // switches on the next bar, 200 ms crossfade
     feedback.confirm(if (vinyl) "on" else "off", if (vinyl) "Vinyl on" else "Vinyl off")
     saveSettings()
     emitState()
@@ -237,7 +236,10 @@ class PlaybackService : MediaLibraryService() {
   /** Builds the station's queue (two-stage shuffle: one version per song group) and plays. */
   fun startStation(index: Int, announce: Boolean) {
     station = index
-    if (index == 1) vinyl = true
+    if (index == 1) {
+      vinyl = true
+      player.engine.setVinyl(true)
+    }
     val pool = when (index) {
       2 -> library.filter { "slowed" in it.version }.ifEmpty { library } // Late Night
       else -> library
@@ -251,7 +253,6 @@ class PlaybackService : MediaLibraryService() {
       return
     }
     player.setMediaItems(queue.map { it.toMediaItem() })
-    player.repeatMode = if (forever) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_ALL
     player.prepare()
     player.play()
     if (announce) feedback.confirm("step", STATIONS[index])
@@ -260,26 +261,9 @@ class PlaybackService : MediaLibraryService() {
     emitState()
   }
 
-  /** Forever + Next: another version of the same song group (plain cut in milestone A). */
-  private fun switchVersion() {
-    val cur = currentTrack() ?: return
-    val others = library.filter { it.group.isNotEmpty() && it.group == cur.group && it.uri != cur.uri }
-    if (others.isEmpty()) {
-      feedback.confirm("error", "No other version")
-      return
-    }
-    val pick = others.random()
-    val idx = player.currentMediaItemIndex
-    player.addMediaItem(idx + 1, pick.toMediaItem())
-    player.seekToNextMediaItem()
-    feedback.confirm("step", pick.version)
-    emit("onAction", mapOf("action" to "version", "version" to pick.version))
-  }
-
   fun currentTrack(): Track? {
-    val id = player.currentMediaItem?.mediaId ?: return null
-    return library.firstOrNull { it.uri == id }
-      ?: player.currentMediaItem?.mediaMetadata?.title?.let { Track(id, it.toString(), "", "", "") }
+    val s = player.engine.current ?: return null
+    return library.firstOrNull { it.uri == s.id } ?: Track(s.id, s.title, "", s.group, s.version)
   }
 
   fun state(): Map<String, Any?> {
@@ -287,33 +271,9 @@ class PlaybackService : MediaLibraryService() {
     return mapOf(
       "isPlaying" to player.isPlaying, "title" to t?.title, "version" to t?.version, "group" to t?.group,
       "forever" to forever, "vinyl" to vinyl, "station" to STATIONS[station], "stationIndex" to station,
-      "queueLength" to player.mediaItemCount, "position" to player.currentPosition, "duration" to player.duration,
+      "queueLength" to player.mediaItemCount, "position" to player.engine.positionMs(), "duration" to player.engine.durationMs(),
       "libraryCount" to library.size,
     )
-  }
-
-  // ── volume ───────────────────────────────────────────────────────────────────
-
-  private fun applyVolume() {
-    player.volume = fadeLevel * duckLevel * gainLevel
-  }
-
-  /** Normalise the current track to -14 LUFS: cut with the player volume, boost (max +10 dB)
-   *  with a LoudnessEnhancer on the player's audio session. */
-  private fun applyGain() {
-    val g = (currentTrack()?.gainDb ?: 0.0).coerceIn(-30.0, MAX_BOOST_DB)
-    gainLevel = if (g < 0) Math.pow(10.0, g / 20).toFloat() else 1f
-    applyVolume()
-    val boostMb = if (g > 0) (g * 100).toInt() else 0
-    try {
-      if (boostMb > 0 && enhancer == null && player.audioSessionId != C.AUDIO_SESSION_ID_UNSET) {
-        enhancer = LoudnessEnhancer(player.audioSessionId)
-      }
-      enhancer?.setTargetGain(boostMb)
-      enhancer?.enabled = boostMb > 0
-    } catch (e: RuntimeException) {
-      enhancer = null // effect unavailable on this device: attenuation still applies
-    }
   }
 
   // ── never the phone speaker (Bluetooth drop, call end, resumption) ──────────
@@ -335,22 +295,11 @@ class PlaybackService : MediaLibraryService() {
     }
   }
 
-  private fun fadeTo(target: Float, ms: Long, done: () -> Unit) {
-    val steps = 10
-    val start = fadeLevel
-    for (i in 1..steps) {
-      main.postDelayed({
-        fadeLevel = start + (target - start) * i / steps
-        applyVolume()
-        if (i == steps) done()
-      }, ms * i / steps)
-    }
-  }
-
   // ── persistence (playback resumption) ───────────────────────────────────────
 
   fun setLibrary(tracks: List<Track>) {
     library = tracks
+    player.engine.setLibrary(tracks.map { it.toSong() })
     prefs.edit().putString("library", JSONArray(tracks.map { it.toJson() }).toString()).apply()
     emitState()
   }
@@ -420,7 +369,6 @@ class PlaybackService : MediaLibraryService() {
     val (items, index, pos) = savedQueue()
     if (items.isEmpty()) return
     player.setMediaItems(items, index, pos)
-    player.repeatMode = if (forever) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_ALL
     player.prepare()
   }
 
@@ -503,7 +451,8 @@ class PlaybackService : MediaLibraryService() {
 
   companion object {
     const val PREFS = "saics-player"
-    const val MAX_BOOST_DB = 10.0
+    /** Vinyl chain loudness compensation (D18): measured offline against versions.py. */
+    const val VINYL_COMP_DB = 3.0 // vinyl is -3.0 LU on average (12 library songs, sd 1.0)
     private val PRIVATE_OUTPUTS = setOf(
       AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET,
       AudioDeviceInfo.TYPE_BLE_SPEAKER, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET,
