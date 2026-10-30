@@ -29,3 +29,7 @@ reports/
 
 # eval clips are rendered audio; ratings stay local
 eval/clips/
+
+# generated triage reports (contain library file names)
+song_groups_review.csv
+groups_overrides.example.csv
