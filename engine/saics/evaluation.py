@@ -217,31 +217,36 @@ def report(clips_dir: Path, results_dir: Path) -> str:
     manifest = json.loads((Path(clips_dir) / "manifest.json").read_text("utf-8"))
     by_id = {c["id"]: c for c in manifest["clips"]}
     ratings: dict = {}
+    jitter: dict = {}
     for r in load_ratings(results_dir):
         if r["clip_id"] in by_id:
             ratings.setdefault(r["clip_id"], []).append(r["rating"])
+            jit = bool(r.get("jittery")) or r["rating"] == 1
+            jitter.setdefault(r["clip_id"], []).append(jit)
     rows = []
     variants = sorted({c["variant"] for c in manifest["clips"]})
     for v in variants:
         cs = [c for c in manifest["clips"] if c["variant"] == v]
         rated = [np.mean(ratings[c["id"]]) for c in cs if c["id"] in ratings]
+        jittery = [any(jitter[c["id"]]) for c in cs if c["id"] in jitter]
         m = {k: np.nanmedian([c["metrics"][k] for c in cs]) for k in cs[0]["metrics"]}
         phase = [c["metrics"]["beat_phase_ms"] for c in cs]
         over10 = sum(1 for p in phase if np.isfinite(p) and p > 10)
-        rows.append(
-            f"| {v} | {len(cs)} | {len(rated)} | "
-            f"{np.mean(rated):.2f} | {np.mean([x >= 4 for x in rated]) * 100:.0f}% | "
-            if rated
-            else f"| {v} | {len(cs)} | 0 | – | – | "
-        )
-        rows[-1] += (
+        if rated:
+            row = (f"| {v} | {len(cs)} | {len(rated)} | {np.mean(rated):.2f} | "
+                   f"{np.mean([x >= 4 for x in rated]) * 100:.0f}% | "
+                   f"{np.mean(jittery) * 100:.0f}% | ")  # fmt: skip
+        else:
+            row = f"| {v} | {len(cs)} | 0 | – | – | – | "
+        row += (
             f"{m['flux_spike']:.2f} | {m['chroma_jump']:.3f} | {m['loudness_step_db']:.2f} | "
             f"{m['beat_phase_ms']:.1f} | {over10} |"
         )
+        rows.append(row)
     head = (
-        "| variant | clips | rated | mean rating | rated ≥4 | median flux spike | "
+        "| variant | clips | rated | mean rating | rated ≥4 | jittery | median flux spike | "
         "median chroma jump | median loudness step (dB) | median beat-phase err (ms) | "
-        "clips >10 ms |\n|---|---|---|---|---|---|---|---|---|---|"
+        "clips >10 ms |\n|---|---|---|---|---|---|---|---|---|---|---|"
     )
     return head + "\n" + "\n".join(rows)
 

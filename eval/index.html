@@ -24,7 +24,12 @@
            border-radius: 10px; padding: 12px 0; cursor: pointer; }
   button:hover { border-color: var(--amber); }
   .play { width: 100%; background: var(--amber); color: #111; border: 0; font-weight: 600; }
-  .rates { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 16px; }
+  .rates { display: grid; gap: 8px; margin-top: 16px; }
+  .rates button { text-align: left; padding: 12px 14px; display: flex; gap: 12px; align-items: baseline; }
+  .rates b { color: var(--amber); font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .jitter { display: flex; gap: 10px; align-items: center; margin-top: 16px; padding: 12px 14px;
+            border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+  .jitter input { width: 18px; height: 18px; accent-color: var(--cyan); }
   .rates button:disabled { opacity: .35; cursor: default; }
   p.help { color: var(--muted); font-size: 14px; }
 </style>
@@ -38,8 +43,9 @@
     <p class="help">Each clip has one jump about <span class="seam">5 seconds in</span>.
       Listen across it and rate how seamless it sounds. Clips are shuffled and unlabeled.</p>
     <button class="play" id="play">▶ Play clip</button>
+    <label class="jitter"><input type="checkbox" id="jittery">
+      <span>Jittery playback: stutter/flutter anywhere in the clip, regardless of the seam</span></label>
     <div class="rates" id="rates"></div>
-    <p class="help mono">1 = obvious glitch · 3 = noticeable but musical · 5 = can't hear it</p>
   </div>
 </main>
 <script>
@@ -47,9 +53,17 @@
   const audio = new Audio();
   let todo = [], total = 0, rated = 0, heard = false;
   const $ = (id) => document.getElementById(id);
+  const LABELS = {
+    1: "Jittery playback (stutter/flutter, regardless of the seam)",
+    2: "Not jittery, but the transition is bad",
+    3: "Right idea, wrong spot: another part of the song would work",
+    4: "Almost perfect, off by a beat or two",
+    5: "Perfect",
+  };
   for (let r = 1; r <= 5; r++) {
     const b = document.createElement("button");
-    b.textContent = r; b.disabled = true; b.onclick = () => rate(r);
+    b.innerHTML = `<b>${r}</b><span>${LABELS[r]}</span>`;
+    b.disabled = true; b.onclick = () => rate(r);
     $("rates").appendChild(b);
   }
   function show() {
@@ -72,9 +86,9 @@
   async function rate(r) {
     const id = todo[0];
     const res = await fetch("rate", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clip_id: id, rating: r, rater }) });
+      body: JSON.stringify({ clip_id: id, rating: r, rater, jittery: r === 1 || $("jittery").checked }) });
     if (!res.ok) { alert("could not save rating"); return; }
-    audio.pause(); todo.shift(); rated++; heard = false; show();
+    audio.pause(); todo.shift(); rated++; heard = false; $("jittery").checked = false; show();
   }
   load();
 </script>
