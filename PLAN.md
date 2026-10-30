@@ -351,30 +351,45 @@ Also:
 - [x] `saics eval report`: mean rating, % rated ≥ 4 and median metrics per variant → `eval/report.md`.
 - [x] Clean renderer (`saics.render`): contiguous runs copied untouched, crossfade only at jumps (D8). The crossfade keeps power constant for the measured correlation of the two sides (flat for identical bars, equal-power for unrelated audio).
 - [ ] **Owner rates the baseline** (`uvicorn server.main:app` → http://localhost:8000/eval/). In progress: first 122 ratings show the old renderer at 60/61 rated 1 (jittery) vs 0/61 for the clean renderer, consistent with D8 being the jitter. Confirm once the owner has finished rating.
-- [ ] **P3 does not start until the owner has rated the baseline.**
+- [x] **Owner rated the baseline** (all 294 clips). Report: `eval/baseline_report.md`.
+- [ ] **Round 2** (owner, 2026-10-30):
+  - **seam clips:** 15 s of context on each side; after rating, the page reveals the from → to section labels;
+  - **new full-song test:** 6–8 minute Forever renders of 5 songs (*Racing into the Night* original + 4 from the set), listened start to finish. A button marks "felt wrong" moments with a timestamp, plus an overall 1–5. This is the P3 acceptance test; the jump log is revealed after rating.
 
 **Done when:** legacy-as-is and baseline are rated and the report renders. Every later algorithm change must beat **baseline** here.
 
-### P3 — Single-track infinite loop (jumps v6)
-- **Candidate pool:** downbeat-to-downbeat pairs only, |from − to| ≥ 8 bars.
-- **Score:**
-  - similarity of the 2 bars leading into the source vs. into the target, and of the 2 bars after the target vs. after the source (standardised features, no MFCC0; fixes D2, D3);
-  - a bonus for the same bar offset inside two segments of the same repeat group;
-  - a penalty for vocal activity in the beat before and after the seam on either side, with no jump while a vocal phrase spans the seam (D4);
-  - a penalty for a large loudness or energy step.
-- **Selection:**
-  - per track, top-N by score (N ≈ 1 per 20 s), with a floor taken from that track's score distribution (D5);
-  - **coverage constraint:** no stretch longer than ~25% of the song without a source, and at least one cycle covering most of the song with no dead end before the final bars (D20).
-- **Reachability and probabilities:** compute reachability for all targets, then normalise once, with explicit weights (D6, D7). The walk avoids recently played regions and keeps ≥ 8 bars between jumps.
-- **Breaks are first-class jump points:** a jump *out of* a break's start or *into* a break's end (`breaks[]`, especially `kind: silence` with `ramp_up`) gets a strong score bonus, and the beat-alignment requirement is relaxed there (silence hides small phase errors).
-- **Seam:** the cut lands on the downbeat transient, with an equal-power crossfade of 15–60 ms chosen per jump to minimise the seam metrics.
-- **Renderer:** `render.py` copies contiguous runs and crossfades only at jumps (D8), at the 44.1 kHz engine rate.
+### P3 — Single-track infinite loop (Forever): structural jumps
 
-**Done when:**
-- the mean blind jump rating is ≥ 1.0 above **baseline**;
-- ≥ 80% of clips are rated ≥ 4;
-- no clip has a beat-phase error above 10 ms;
-- the coverage constraint holds on every bundled song.
+**What the baseline taught us** (owner's ratings, 2026-10-30; `eval/baseline_report.md`):
+- **D8 confirmed as the jitter.** The old per-beat crossfade renderer was jittery on 98–100% of clips (146 of 147 rated 1); the clean renderer on 0–3%.
+- **Same jumps, clean renderer:** mean 2.38, with only 10 of 147 clips rated ≥ 4.
+- **Short jumps feel like hitting "skip +5 s".** The median jump was 16.8 s and 35% were under 10 s; those rated worst (2.20).
+- **5-second clips can't judge musical context.** The only 5 was a Biri Biri jump from bar 25 back to bar 12 (−25.8 s, between different section groups): smooth in isolation, wrong in the song.
+- Beat-phase error didn't predict ratings (2.40 / 2.35 / 2.40 for < 10 / 10–30 / > 30 ms). Choosing *where* to jump is the problem, not the seam itself.
+
+**Design (owner, 2026-10-30):**
+- **Structural jumps only.** A jump connects *equivalent positions in two instances of the same repeat group* (e.g. chorus 2 bar 5 → chorus 1 bar 5). The bars leading in and out must match too: the bar self-similarity diagonal must hold for at least 4 bars before and 4 bars after the seam. There are no jumps within a single section instance.
+- **Distance:** at least one full section *and* at least 16 bars; ≥ 30 s preferred (scored).
+- **Lyric/melody continuity:** vocal-stem chroma similarity of the bar after the seam vs the bar that would have played. A jump that changes the sung line scores low; instrumental-on-both-sides is neutral.
+- **Breaks are anchors:** break → equivalent break (same repeat context), and **song end → post-intro** (the last bar before the outro or end jumps to the first bar after the intro).
+- **Pacing (Forever):** one jump every **60–120 s** (randomised), never two jumps within one section, never landing in the last 60 s just played. It should feel like a longer song, not a remix.
+- **Seam:** cut on the downbeat with the correlation-aware equal-power crossfade (30 ms; 10 ms at silences).
+- **Renderer:** `render.py` copies contiguous runs and crossfades only at jumps (D8, done).
+- **Analysis prerequisites (D23–D25):**
+  - a regular bar grid (meter regularisation);
+  - correct keys;
+  - realistic tempo stability;
+  - bar features that keep within-bar order (4 beat slots of chroma + MFCC1–13 + onset).
+
+**Deliverables:**
+- [ ] `saics.jumps`: structural jump finder and Forever walk; bundle `jumps[]` with from/to bar, section labels (e.g. `B2:5 → B1:5`), kind (`repeat` | `break` | `end`) and score components. Schema `/8`, app type updated.
+- [ ] `saics render <file> --minutes 7`: an offline Forever render with a jump log (timestamps + from → to sections).
+- [ ] Eval round 2 (see P2 "round 2").
+
+**Done when** (the **full-song test is the acceptance test**; seam clips are secondary):
+- on the full-song test (5 songs × 6–8 min Forever renders, listened start to finish), the mean overall rating is **≥ 4.0**, no song is below 3, and at most one "felt wrong" mark per song falls within ±5 s of a jump;
+- seam clips (15 s context): mean ≥ 1.0 above baseline, 0% jittery;
+- every bundled song has at least one structural jump or an end → post-intro jump, or is listed as "no loop found" (plain playback).
 
 ### P4 — The Mix Web (headline feature: cross-track transitions and stations)
 
