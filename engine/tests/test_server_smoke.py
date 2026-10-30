@@ -70,3 +70,52 @@ def test_eval_page_and_validation():
     assert r.status_code == 200 and "Seam test" in r.text
     assert client.post("/eval/rate", json={"clip_id": "../etc", "rating": 3}).status_code == 422
     assert client.post("/eval/rate", json={"clip_id": "a" * 12, "rating": 9}).status_code == 422
+
+
+def test_round2_reveal_and_full_song_rating(tmp_path, monkeypatch):
+    import json
+
+    import server.eval_routes as er
+
+    (tmp_path / "round2").mkdir()
+    (tmp_path / "full").mkdir()
+    reveal = {"label": "B2:5 → B1:5", "text": "B2:5 → B1:5 (1:23 → 0:41)"}
+    (tmp_path / "round2" / "manifest.json").write_text(
+        json.dumps(
+            {"context_s": 15, "clips": [{"id": "ab" * 6, "variant": "current", "reveal": reveal}]}
+        )
+    )
+    (tmp_path / "full" / "manifest.json").write_text(
+        json.dumps(
+            {
+                "renders": [
+                    {
+                        "id": "cd" * 6,
+                        "song": "x.mp3",
+                        "title": "x",
+                        "duration_s": 420.0,
+                        "jumps": [{"at_s": 121.3, "from": "D2:2", "to": "D1:2", "kind": "repeat"}],
+                    }
+                ]
+            }
+        )
+    )
+    monkeypatch.setattr(er, "EVAL_DIR", tmp_path)
+    monkeypatch.setattr(er, "ROUNDS", {"1": tmp_path / "clips", "2": tmp_path / "round2"})
+    monkeypatch.setattr(er, "FULL_DIR", tmp_path / "full")
+
+    d = client.get("/eval/clips?round=2").json()
+    assert d["todo"] == ["ab" * 6] and d["context_s"] == 15
+    r = client.post("/eval/rate", json={"clip_id": "ab" * 6, "rating": 4}).json()
+    assert r["reveal"]["label"] == "B2:5 → B1:5"  # revealed only after rating
+    assert client.get("/eval/clips?round=2").json()["todo"] == []
+
+    assert client.get("/eval/full/list").json()["renders"][0]["rated"] is False
+    assert "jumps" not in client.get("/eval/full/list").json()["renders"][0]  # hidden
+    out = client.post(
+        "/eval/full/rate", json={"render_id": "cd" * 6, "overall": 4, "marks": [120.0, 300.5]}
+    ).json()
+    assert out["jumps"][0]["from"] == "D2:2"
+    saved = json.loads(next((tmp_path / "results").glob("full-*.json")).read_text())
+    assert saved["ratings"][0]["marks"] == [120.0, 300.5]
+    assert client.get("/eval/full/list").json()["renders"][0]["rated"] is True

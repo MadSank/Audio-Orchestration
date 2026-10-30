@@ -32,16 +32,23 @@
   .jitter input { width: 18px; height: 18px; accent-color: var(--cyan); }
   .rates button:disabled { opacity: .35; cursor: default; }
   p.help { color: var(--muted); font-size: 14px; }
+  .reveal { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--cyan);
+            background: #101418; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; }
+  .reveal b { color: var(--cyan); font-weight: 500; }
+  a.full { color: var(--amber); }
 </style>
 </head>
 <body>
 <main>
   <h1>Seam test</h1>
+  <p class="help">Main test: <a class="full" href="full/">full-song Forever renders →</a></p>
   <div class="mono" id="progress">loading…</div>
   <div class="bar"><div id="fill"></div></div>
   <div class="card">
-    <p class="help">Each clip has one jump about <span class="seam">5 seconds in</span>.
-      Listen across it and rate how seamless it sounds. Clips are shuffled and unlabeled.</p>
+    <p class="help">Each clip has one jump about <span class="seam" id="ctx">15 seconds in</span>.
+      Listen across it and rate it. Clips are shuffled and unlabeled; after you rate, the page
+      shows where that jump went in the song.</p>
+    <div class="reveal" id="reveal" hidden></div>
     <button class="play" id="play">▶ Play clip</button>
     <label class="jitter"><input type="checkbox" id="jittery">
       <span>Jittery playback: stutter/flutter anywhere in the clip, regardless of the seam</span></label>
@@ -49,7 +56,9 @@
   </div>
 </main>
 <script>
-  const rater = new URLSearchParams(location.search).get("rater") || "owner";
+  const params = new URLSearchParams(location.search);
+  const rater = params.get("rater") || "owner";
+  const round = params.get("round") || "2";
   const audio = new Audio();
   let todo = [], total = 0, rated = 0, heard = false;
   const $ = (id) => document.getElementById(id);
@@ -67,15 +76,18 @@
     $("rates").appendChild(b);
   }
   function show() {
-    $("progress").textContent = `${rated} / ${total} rated` + (todo.length ? "" : " · all done, thank you");
+    $("progress").textContent = `Round ${round} · ${rated} / ${total} rated`
+      + (todo.length ? "" : " · all done, thank you");
     $("fill").style.width = total ? `${100 * rated / total}%` : "0";
     $("play").disabled = !todo.length;
     [...$("rates").children].forEach((b) => (b.disabled = !heard || !todo.length));
   }
   async function load() {
-    const r = await fetch(`clips?rater=${encodeURIComponent(rater)}`);
+    const r = await fetch(`clips?rater=${encodeURIComponent(rater)}&round=${round}`);
     if (!r.ok) { $("progress").textContent = (await r.json()).detail; return; }
-    ({ todo, total, rated } = await r.json());
+    const d = await r.json();
+    ({ todo, total, rated } = d);
+    $("ctx").textContent = `${d.context_s} seconds in`;
     show();
   }
   $("play").onclick = () => {
@@ -88,6 +100,11 @@
     const res = await fetch("rate", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clip_id: id, rating: r, rater, jittery: r === 1 || $("jittery").checked }) });
     if (!res.ok) { alert("could not save rating"); return; }
+    const out = await res.json();
+    if (out.reveal) {
+      $("reveal").hidden = false;
+      $("reveal").innerHTML = `Previous clip (you rated ${r}): <b>${out.reveal.text}</b>`;
+    }
     audio.pause(); todo.shift(); rated++; heard = false; $("jittery").checked = false; show();
   }
   load();

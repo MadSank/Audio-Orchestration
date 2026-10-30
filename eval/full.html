@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAICS Forever Test</title>
+<style>
+  :root {
+    --bg: #0A0A0C; --fg: #F3EFE7; --muted: #8E8A82; --amber: #FFB547; --cyan: #6FD3FF;
+    --card: #15151A; --line: #2A2A31; --warn: #FF6B6B;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.5 "Archivo", system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-top: 16px; }
+  .songs { display: grid; gap: 8px; margin-top: 16px; }
+  button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line);
+           border-radius: 10px; padding: 12px 14px; cursor: pointer; text-align: left; }
+  button:hover:not(:disabled) { border-color: var(--amber); }
+  button:disabled { opacity: .35; cursor: default; }
+  .songs button.done { color: var(--muted); }
+  .songs button.active { border-color: var(--amber); }
+  audio { width: 100%; margin-top: 12px; }
+  .mark { width: 100%; margin-top: 12px; padding: 18px; font-size: 18px; font-weight: 600;
+          background: transparent; border: 2px solid var(--warn); color: var(--warn); text-align: center; }
+  .marks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; min-height: 28px; }
+  .chip { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; padding: 3px 10px;
+          border: 1px solid var(--warn); border-radius: 999px; color: var(--warn); cursor: pointer; }
+  .rates { display: grid; gap: 8px; margin-top: 12px; }
+  .rates b { color: var(--amber); font-family: "IBM Plex Mono", ui-monospace, monospace; margin-right: 10px; }
+  .rates button.sel { border-color: var(--amber); background: #1d1a12; }
+  textarea { width: 100%; min-height: 60px; margin-top: 12px; background: #101014; color: var(--fg);
+             border: 1px solid var(--line); border-radius: 10px; padding: 10px; font: inherit; }
+  .submit { width: 100%; margin-top: 12px; background: var(--amber); color: #111; border: 0;
+            font-weight: 600; text-align: center; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+  td { padding: 4px 6px; border-top: 1px solid var(--line); }
+  td.t { color: var(--cyan); width: 70px; }
+  .hit { color: var(--warn); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Forever test</h1>
+  <p class="muted">Each render is one song played as a ~7-minute Forever version. Listen start to finish.
+    Whenever something feels wrong, press <b style="color:var(--warn)">Felt wrong</b>; it records the time.
+    Then give an overall rating. The jump log is shown after you submit.
+    Seam clips: <a href="../" style="color:var(--amber)">← back</a></p>
+  <div class="songs" id="songs"></div>
+
+  <div class="card" id="player" hidden>
+    <div id="title"></div>
+    <audio id="audio" controls preload="auto"></audio>
+    <button class="mark" id="mark">⚑ Felt wrong (here)</button>
+    <div class="marks" id="marks"></div>
+    <p class="muted">Tap a mark to remove it.</p>
+    <div class="rates" id="rates"></div>
+    <textarea id="notes" placeholder="Optional notes"></textarea>
+    <button class="submit" id="submit" disabled>Submit rating</button>
+    <div id="result"></div>
+  </div>
+</main>
+<script>
+  const rater = new URLSearchParams(location.search).get("rater") || "owner";
+  const $ = (id) => document.getElementById(id);
+  const LABELS = {
+    1: "Jittery or broken playback",
+    2: "Not jittery, but the jumps are bad",
+    3: "Right idea, but jumps land in the wrong spots",
+    4: "Almost perfect: one or two moments",
+    5: "Perfect: sounds like a longer version of the song",
+  };
+  let current = null, marks = [], overall = 0;
+  const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+
+  for (let r = 1; r <= 5; r++) {
+    const b = document.createElement("button");
+    b.innerHTML = `<b>${r}</b>${LABELS[r]}`;
+    b.onclick = () => { overall = r; [...$("rates").children].forEach((x, i) => x.classList.toggle("sel", i + 1 === r)); $("submit").disabled = false; };
+    $("rates").appendChild(b);
+  }
+  function drawMarks() {
+    $("marks").innerHTML = "";
+    marks.sort((a, b) => a - b).forEach((t, i) => {
+      const c = document.createElement("span");
+      c.className = "chip"; c.textContent = fmt(t);
+      c.onclick = () => { marks.splice(i, 1); drawMarks(); };
+      $("marks").appendChild(c);
+    });
+  }
+  $("mark").onclick = () => { if (current) { marks.push(Math.round($("audio").currentTime * 10) / 10); drawMarks(); } };
+  async function load() {
+    const r = await fetch(`list?rater=${encodeURIComponent(rater)}`);
+    if (!r.ok) { $("songs").textContent = (await r.json()).detail; return; }
+    const { renders } = await r.json();
+    $("songs").innerHTML = "";
+    renders.forEach((x, i) => {
+      const b = document.createElement("button");
+      b.textContent = `${i + 1}. ${x.title}  ·  ${fmt(x.duration_s)}${x.rated ? "  ✓ rated" : ""}`;
+      if (x.rated) b.classList.add("done");
+      b.onclick = () => open(x, b);
+      $("songs").appendChild(b);
+    });
+  }
+  function open(x, btn) {
+    current = x; marks = []; overall = 0; drawMarks();
+    [...$("songs").children].forEach((b) => b.classList.toggle("active", b === btn));
+    [...$("rates").children].forEach((b) => b.classList.remove("sel"));
+    $("submit").disabled = true; $("notes").value = ""; $("result").innerHTML = "";
+    $("title").textContent = x.title;
+    $("audio").src = `audio/${x.id}.mp3`;
+    $("player").hidden = false;
+  }
+  $("submit").onclick = async () => {
+    const res = await fetch("rate", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ render_id: current.id, overall, marks, notes: $("notes").value, rater }) });
+    if (!res.ok) { alert("could not save rating"); return; }
+    const out = await res.json();
+    const near = (t) => marks.some((m) => Math.abs(m - t) <= 5);
+    $("result").innerHTML = `<p class="muted">Saved. Jumps in this render (marks within 5 s are highlighted):</p>
+      <table>${out.jumps.map((j) => `<tr class="${near(j.at_s) ? "hit" : ""}"><td class="t">${fmt(j.at_s)}</td>
+      <td>${j.from} → ${j.to}</td><td class="muted">${j.kind}</td></tr>`).join("")
+      || "<tr><td>no jumps</td></tr>"}</table>`;
+    load();
+  };
+  load();
+</script>
+</body>
+</html>

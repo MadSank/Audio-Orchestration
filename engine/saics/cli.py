@@ -68,19 +68,49 @@ def build_parser() -> argparse.ArgumentParser:
     )
     a.add_argument("--workers", type=int, default=3, help="processes (each loads the models)")
     a.add_argument("--limit", type=int, default=0)
+    a.add_argument("--only", default="", help="file listing songs to (re)analyse first")
     a.set_defaults(func=_analyze)
 
-    r = sub.add_parser("render", help="offline render (eval clips, exports)")
-    r.set_defaults(func=_not_yet("P3"))
+    r = sub.add_parser("render", help="offline Forever render of one song (+ jump log)")
+    r.add_argument("folder", help="music folder (with .saics/)")
+    r.add_argument("file", help="song, relative to the music folder")
+    r.add_argument("--minutes", type=float, default=7.0)
+    r.add_argument("--seed", type=int, default=0)
+    r.add_argument("--out", default="forever.mp3")
+    r.set_defaults(func=_render)
 
     e = sub.add_parser("eval", help="listening-test harness")
-    e.add_argument("action", choices=["build", "report"])
+    e.add_argument("action", choices=["build", "build2", "report"])
     e.add_argument("folder", nargs="?", default="", help="music folder (build)")
     e.add_argument("--set", default="eval/set.txt", help="songs to evaluate, one per line")
     e.add_argument("--eval-dir", default="eval", help="clips/, results/, report.md live here")
     e.add_argument("--per-song", type=int, default=10)
     e.set_defaults(func=_eval)
     return p
+
+
+def _render(args) -> int:
+    import json
+    from pathlib import Path
+
+    from saics.render import render_forever, write_audio
+    from saics.schema import TrackBundle
+
+    folder = Path(args.folder)
+    lib = json.loads((folder / ".saics" / "library.json").read_text("utf-8"))
+    rel = args.file.replace("\\", "/")
+    tid = next((t["id"] for t in lib["tracks"] if t["file"] == rel), None)
+    if tid is None:
+        print(f"no analysis bundle for {rel}", file=sys.stderr)
+        return 2
+    b = TrackBundle.model_validate_json(
+        (folder / ".saics" / "tracks" / f"{tid}.json").read_text("utf-8")
+    )
+    y, sr, log = render_forever(folder / rel, b, args.minutes, args.seed)
+    write_audio(args.out, y, sr)
+    for e in log:
+        print(f"{e['at_s']:7.1f}s  {e['from']} -> {e['to']}  ({e['kind']})")
+    return 0
 
 
 def _eval(args) -> int:

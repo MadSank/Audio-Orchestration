@@ -360,7 +360,7 @@ def read_triage(report: Path) -> dict:
 
 
 def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, limit: int = 0,
-            log=print) -> dict:  # fmt: skip
+            log=print, only: set | None = None) -> dict:  # fmt: skip
     folder = folder.resolve()
     out_dir = folder / ".saics"
     tracks_dir = out_dir / "tracks"
@@ -402,6 +402,10 @@ def analyze(folder: Path, triage_report: Path | None = None, workers: int = 3, l
             c = {"id": on_disk[rel], "size": st.st_size, "mtime_ns": st.st_mtime_ns,
                  "group": "", "version": ""}  # fmt: skip
             keep.append((rel, c, meta))
+            continue
+        if only is not None and rel not in only:
+            if c:  # leave other cached bundles untouched (even if older schema)
+                keep.append((rel, c, meta))
             continue
         todo.append((p, rel, meta, st))
     todo = todo[: limit or None]
@@ -483,21 +487,13 @@ def _bundles_by_file(tracks_dir: Path) -> dict:
 
 
 def _upgrade(path: Path, audio: Path) -> int:
-    """Bring a cached bundle from an older schema to SCHEMA by computing only new fields."""
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schema") == SCHEMA:
-        return 0
-    if data.get("schema") == "saics.analysis/6":  # /6 -> /7: add breaks
-        y = decode(audio, sr=SR)
-        data["breaks"] = [b.model_dump() for b in detect_breaks(y, SR, np.asarray(data["beats"]))]
-        data["schema"] = SCHEMA
-        path.write_text(TrackBundle.model_validate(data).dump(), encoding="utf-8")
-        return 1
-    raise ValueError(f"cannot upgrade {path.name} from {data.get('schema')}")
+    """Older-schema bundles can't be patched (/8 jumps need audio features); they stay as they
+    are until re-analysed, and the app plays those tracks plainly meanwhile."""
+    return 0
 
 
 def _relabel(path: Path, meta: dict) -> None:
-    if not meta.get("group"):
+    if not meta.get("group") or _schema_of(path) != SCHEMA:
         return
     b = TrackBundle.model_validate_json(path.read_text(encoding="utf-8"))
     if (b.group.id, b.group.version) != (meta["group"], meta.get("version") or b.group.version):
@@ -516,8 +512,16 @@ def _group_names(report) -> dict:
 
 def run_analyze(args) -> int:
     try:
+        only = None
+        if args.only:
+            lines = Path(args.only).read_text(encoding="utf-8").splitlines()
+            only = {
+                ln.strip().replace("\\", "/")
+                for ln in lines
+                if ln.strip() and not ln.startswith("#")
+            }
         analyze(Path(args.folder), Path(args.triage) if args.triage else None,
-                workers=args.workers, limit=args.limit)  # fmt: skip
+                workers=args.workers, limit=args.limit, only=only)  # fmt: skip
     except Exception as exc:
         print(f"analyze failed: {exc}", file=sys.stderr)
         return 1

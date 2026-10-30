@@ -97,7 +97,7 @@ def test_analyze_end_to_end(tmp_path):
         and abs(b.loudness.gain_db + b.loudness.integrated_lufs + 14) < 0.01
     )
     assert len(b.vocal_activity) == len(b.beats) and max(b.vocal_activity) < 0.5  # no vocals
-    assert json.loads(b.dump())["schema"] == "saics.analysis/7"
+    assert json.loads(b.dump())["schema"] == "saics.analysis/8"
 
     again = an.analyze(lib, None, workers=1, log=lambda *_: None)  # cached: nothing re-analysed
     assert again["bundles"] == 1

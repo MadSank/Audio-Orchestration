@@ -1,5 +1,21 @@
 # SAICS v6 — A0 Audit and overnight run log
 
+## Night (2026-10-30): baseline report, P3 structural jumps, eval round 2
+- **Baseline report** (`eval/baseline_report.md`), all 294 clips rated:
+  - **D8 confirmed:** the old renderer was jittery on 98–100% of clips; the clean renderer on 0–3%.
+  - The clean renderer with the old jump choices averaged 2.38. Short jumps (< 10 s) rated worst, at 2.20.
+  - The only 5 was *Biri Biri*, bar 25 → bar 12 (−25.8 s, different section groups).
+- **D23–D25 fixed**; details in PLAN P1. D23 was a chroma bin-count bug introduced by the earlier speed-up.
+- **P3 implemented:**
+  - structural jumps between repeat instances, with 4 bars matching on each side of the seam;
+  - minimum distance of one section and 16 bars;
+  - vocal-stem lyric continuity;
+  - break and end → post-intro anchors;
+  - the Forever walk with 60–120 s pacing.
+  - Schema is now `saics.analysis/8` (richer jumps; app type + contract test). 107 tests pass.
+- **Re-analysis:** the 19 eval songs are on /8. The rest of the library is still /7 (plain playback in the app) until the full re-analysis runs.
+- **Eval round 2 built:** 75 seam clips with 15 s context + reveal, and a 5-song full-song Forever test (P3 acceptance) at http://localhost:8000/eval/full/.
+
 ## Evening (2026-10-30): long files set aside, full analysis done
 - **Long class:** new triage class for files over 15 minutes. The owner approved the list; the 11 files were moved to `Music\songs\_set_aside\long\` (undo: `saics triage "C:\Users\ASUS\Music\songs" --undo`). Files of 8–15 minutes stay in the library.
 - **Library now:** 370 music + 6 short, 290 song groups, 6 duplicates, 4 unreadable (still in place; nothing else was moved).
