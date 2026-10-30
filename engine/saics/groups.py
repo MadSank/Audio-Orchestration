@@ -69,8 +69,10 @@ FILLER = re.compile(
     r"\bperfectly\b|\bto perfection\b|\bbut\b.*$|\bfrom\b.*$|\bost\b|\bsong\b|\bbgm\b",
     re.I,
 )
-STOP = {"the", "a", "an", "of", "and", "x", "vs", "with", "by", "in", "on", "to", "my", "me",
-        "you", "i", "it", "is", "no", "ni", "wo", "de", "la", "le", "s", "n"}  # fmt: skip
+# Only true function words: titles like "No No No" or "Stay With Me" must keep their words,
+# otherwise an artist name ends up as a file's only token and links unrelated songs.
+STOP = {"the", "a", "an", "of", "and", "x", "vs", "by", "in", "on", "to", "ni", "wo", "s", "n"}
+UNTITLED = re.compile(r"whatsapp audio|^(?:audio|track|recording)[\s_-]*\d", re.I)
 MASHUP = re.compile(r"\bmashup\b|\s[x×]\s|\bvs\.?\s|transitions?\s+into|\bmedley\b", re.I)
 _CJK = r"぀-ヿ㐀-鿿가-힯"
 TOKEN = re.compile(rf"[{_CJK}]+|[a-z0-9]+")
@@ -246,8 +248,9 @@ def gated_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 # ── grouping ──────────────────────────────────────────────────────────────────
 
-NAME_STRONG = 0.85  # containment for name-only grouping …
-NAME_STRONG_WEIGHT = 8  # … and at least this much shared title text
+NAME_FULL = 0.999  # name-only links: one title fully contained in the other …
+NAME_STRONG = 0.85  # … or 85% contained, when the audio also agrees
+NAME_STRONG_WEIGHT = 8  # and at least this much shared title text
 NAME_WEAK = 0.5  # name evidence that needs audio support
 AUDIO_STRONG = 0.25  # audio alone groups (true versions >= 0.26, noise <= 0.21 on the library)
 AUDIO_SUPPORT = 0.12  # audio that confirms a weak name match
@@ -285,8 +288,8 @@ def decide_link(na: NameInfo, nb: NameInfo, audio: float, bridge_a: bool, bridge
     name_weak = ns >= NAME_WEAK and nw >= 4
     if name_ok and audio >= AUDIO_SUPPORT:
         return "name+audio"
-    if name_ok:
-        return "name"
+    if ns >= NAME_FULL and nw >= NAME_STRONG_WEIGHT:
+        return "name"  # covers re-arranged beyond audio recognition (guitar, a cappella …)
     if not (bridge_a and bridge_b):
         return None
     if name_weak and audio >= AUDIO_SUPPORT:
@@ -353,8 +356,13 @@ def build_groups(files: list, names: list, sigs: list, durations: list, audio_fn
     display: dict = {}
     used: set = set()
     for members in roots.values():
-        canon = min(members, key=lambda k: (version[k] != "original", not bridge[k],
-                                            len(names[k].clean) or 999))  # fmt: skip
+        # Name the group after its most audio-central plain version.
+        def central(k, members=members):
+            return sum(audio_fn(min(k, o), max(k, o)) for o in members if o != k)
+
+        canon = max(members, key=lambda k: (version[k] == "original", bridge[k],
+                                            not UNTITLED.search(files[k]), central(k),
+                                            -len(names[k].clean)))  # fmt: skip
         gid = _slug(names[canon].clean or Path(files[canon]).stem)
         base, k = gid, 2
         while gid in used:
