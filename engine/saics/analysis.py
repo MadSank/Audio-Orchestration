@@ -252,8 +252,9 @@ def analyse_track(path: Path, rel: str, meta: dict) -> TrackBundle:
     chroma_b, bass_b, mfcc_b = per_beat(chroma), per_beat(bass), per_beat(mfcc)
     onset_b, rms_b = per_beat(onset)[0], per_beat(rms)[0]
     downbeats, bpb, meter_conf = regularize_downbeats(raw_db, len(beats), onset_b)  # D24
-    starts = np.zeros(len(beats), bool)
-    starts[[d for d in downbeats if d < len(beats)]] = True
+    nb = chroma_b.shape[1]  # can be one short of len(beats) when the last beat ends the audio
+    starts = np.zeros(nb, bool)
+    starts[[d for d in downbeats if d < nb]] = True
     tonic, mode, camelot, kconf = key_from_chroma(chroma_b, bass_b, starts)  # D23
 
     beat_feats = np.vstack([chroma_b, mfcc_b / 10.0, onset_b[None] / (onset_b.max() + 1e-9)])

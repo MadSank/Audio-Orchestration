@@ -177,3 +177,12 @@ def test_regularize_rejects_one_beat_bars():
 
     grid, m, _ = regularize_downbeats(list(range(0, 100)), 100)
     assert m in (3, 4) and all(b - a >= 2 for a, b in zip(grid[:-1], grid[1:], strict=True))
+
+
+def test_key_tolerates_a_mask_one_longer_than_the_chroma():
+    from saics.structure import key_from_chroma
+
+    prof = np.roll(an.MAJOR, 7)[:, None] * np.ones((1, 10))
+    mask = np.zeros(11, bool)
+    mask[::4] = True
+    assert key_from_chroma(prof, prof, mask)[:2] == ("G", "major")

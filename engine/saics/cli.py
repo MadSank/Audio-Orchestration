@@ -120,6 +120,13 @@ def _eval(args) -> int:
 
 
 def main(argv=None) -> int:
+    # Windows consoles default to a legacy code page; song titles (Japanese, emoji, ...) must
+    # never crash a long batch just by being logged.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     args = build_parser().parse_args(argv)
     return args.func(args)
 
