@@ -32,7 +32,7 @@ export default function Library() {
           <Pressable onPress={() => SaicsPlayer.playTrack(item.uri)} style={({ pressed }) => [s.row, pressed && { opacity: 0.6 }]}>
             <Text style={[type.body, { color: color.text }]} numberOfLines={1}>{item.title}</Text>
             <Text style={[type.mono, { color: item.version === "original" ? color.textMuted : color.cyan, fontFamily: "monospace" }]} numberOfLines={1}>
-              {item.version}{item.group ? ` · ${item.group}` : ""}
+              {item.version} · {item.gainDb >= 0 ? "+" : ""}{item.gainDb.toFixed(1)} dB{item.group ? ` · ${item.group}` : ""}
             </Text>
           </Pressable>
         )}

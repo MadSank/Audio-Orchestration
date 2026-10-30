@@ -8,6 +8,8 @@ export interface Track {
   path: string;
   group: string;
   version: string;
+  /** Gain to -14 LUFS from the track's analysis bundle (0 when missing). */
+  gainDb: number;
 }
 
 export interface PlayerState {

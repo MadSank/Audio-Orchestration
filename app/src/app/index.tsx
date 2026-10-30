@@ -1,6 +1,6 @@
 import { Link } from "expo-router";
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { AppState, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import SaicsPlayer, { STATIONS } from "../../modules/saics-player";
 import { Button, Card, Label } from "../ui";
@@ -18,6 +18,11 @@ export default function Home() {
   useEffect(() => {
     setFolder(SaicsPlayer.getFolder());
     setBatteryOk(SaicsPlayer.isIgnoringBatteryOptimizations());
+    // Re-check when returning from the system battery dialog or settings.
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") setBatteryOk(SaicsPlayer.isIgnoringBatteryOptimizations());
+    });
+    return () => sub.remove();
   }, []);
 
   async function scan() {
@@ -99,7 +104,7 @@ export default function Home() {
         </Link>
         {!batteryOk ? (
           <Button label="Allow background playback (battery)" kind="primary"
-            onPress={() => { SaicsPlayer.requestIgnoreBatteryOptimizations(); setTimeout(() => setBatteryOk(SaicsPlayer.isIgnoringBatteryOptimizations()), 4000); }} />
+            onPress={() => SaicsPlayer.requestIgnoreBatteryOptimizations()} />
         ) : (
           <Text style={[type.mono, { color: color.textMuted, fontFamily: "monospace" }]}>Battery optimisation: off for SAICS ✓</Text>
         )}

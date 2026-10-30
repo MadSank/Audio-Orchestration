@@ -1,10 +1,16 @@
 package com.saics.player
 
 import android.app.PendingIntent
+import android.content.Context
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.media.audiofx.LoudnessEnhancer
 import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -30,9 +36,11 @@ data class Track(
   val path: String,
   val group: String,
   val version: String,
+  val gainDb: Double = 0.0, // to -14 LUFS, from the track's analysis bundle (0 when missing)
 ) {
   fun toJson(): JSONObject = JSONObject()
     .put("uri", uri).put("title", title).put("path", path).put("group", group).put("version", version)
+    .put("gainDb", gainDb)
 
   fun toMediaItem(): MediaItem = MediaItem.Builder()
     .setMediaId(uri)
@@ -44,12 +52,12 @@ data class Track(
     .build()
 
   fun toMap(): Map<String, Any?> =
-    mapOf("uri" to uri, "title" to title, "path" to path, "group" to group, "version" to version)
+    mapOf("uri" to uri, "title" to title, "path" to path, "group" to group, "version" to version, "gainDb" to gainDb)
 
   companion object {
     fun fromJson(o: JSONObject) = Track(
       o.getString("uri"), o.optString("title"), o.optString("path"),
-      o.optString("group"), o.optString("version", "original"),
+      o.optString("group"), o.optString("version", "original"), o.optDouble("gainDb", 0.0),
     )
   }
 }
@@ -77,6 +85,16 @@ class PlaybackService : MediaLibraryService() {
 
   private var fadeLevel = 1f
   private var duckLevel = 1f
+  private var gainLevel = 1f // loudness normalisation: attenuation part (boosts go to the enhancer)
+  private var enhancer: LoudnessEnhancer? = null
+  private val audio by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+
+  /** Playback started from the app screen may use the phone speaker (owner testing at home);
+   *  anything else (helmet keys, focus regain after a call, resumption) never may. */
+  private var uiPlayUntil = 0L
+  fun allowSpeakerBriefly() {
+    uiPlayUntil = SystemClock.elapsedRealtime() + 3000
+  }
   private val prefs by lazy { getSharedPreferences(PREFS, MODE_PRIVATE) }
 
   override fun onCreate() {
@@ -101,15 +119,24 @@ class PlaybackService : MediaLibraryService() {
     loadSettings()
     player.addListener(object : Player.Listener {
       override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        applyGain()
         saveState()
         emitState()
       }
 
       override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (isPlaying) guardSpeaker()
         saveState()
         emitState()
       }
+
+      override fun onAudioSessionIdChanged(audioSessionId: Int) {
+        enhancer?.release()
+        enhancer = null
+        applyGain()
+      }
     })
+    audio.registerAudioDeviceCallback(deviceCallback, main)
     val launch = packageManager.getLaunchIntentForPackage(packageName)
     val builder = MediaLibrarySession.Builder(this, player, Callback())
     if (launch != null) {
@@ -130,6 +157,8 @@ class PlaybackService : MediaLibraryService() {
 
   override fun onDestroy() {
     saveState()
+    audio.unregisterAudioDeviceCallback(deviceCallback)
+    enhancer?.release()
     session?.run {
       player.release()
       release()
@@ -266,7 +295,44 @@ class PlaybackService : MediaLibraryService() {
   // ── volume ───────────────────────────────────────────────────────────────────
 
   private fun applyVolume() {
-    player.volume = fadeLevel * duckLevel
+    player.volume = fadeLevel * duckLevel * gainLevel
+  }
+
+  /** Normalise the current track to -14 LUFS: cut with the player volume, boost (max +10 dB)
+   *  with a LoudnessEnhancer on the player's audio session. */
+  private fun applyGain() {
+    val g = (currentTrack()?.gainDb ?: 0.0).coerceIn(-30.0, MAX_BOOST_DB)
+    gainLevel = if (g < 0) Math.pow(10.0, g / 20).toFloat() else 1f
+    applyVolume()
+    val boostMb = if (g > 0) (g * 100).toInt() else 0
+    try {
+      if (boostMb > 0 && enhancer == null && player.audioSessionId != C.AUDIO_SESSION_ID_UNSET) {
+        enhancer = LoudnessEnhancer(player.audioSessionId)
+      }
+      enhancer?.setTargetGain(boostMb)
+      enhancer?.enabled = boostMb > 0
+    } catch (e: RuntimeException) {
+      enhancer = null // effect unavailable on this device: attenuation still applies
+    }
+  }
+
+  // ── never the phone speaker (Bluetooth drop, call end, resumption) ──────────
+
+  private fun hasPrivateOutput(): Boolean = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+    it.type in PRIVATE_OUTPUTS
+  }
+
+  private fun guardSpeaker() {
+    if (hasPrivateOutput() || SystemClock.elapsedRealtime() < uiPlayUntil) return
+    player.pause()
+    emit("onAction", mapOf("action" to "speaker-blocked"))
+  }
+
+  private val deviceCallback = object : AudioDeviceCallback() {
+    override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) {
+      // Helmet off or out of range: pause (becoming-noisy also does this; belt and braces).
+      if (removed.any { it.type in PRIVATE_OUTPUTS } && !hasPrivateOutput() && player.isPlaying) player.pause()
+    }
   }
 
   private fun fadeTo(target: Float, ms: Long, done: () -> Unit) {
@@ -437,6 +503,12 @@ class PlaybackService : MediaLibraryService() {
 
   companion object {
     const val PREFS = "saics-player"
+    const val MAX_BOOST_DB = 10.0
+    private val PRIVATE_OUTPUTS = setOf(
+      AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET,
+      AudioDeviceInfo.TYPE_BLE_SPEAKER, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET,
+      AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_HEARING_AID,
+    )
     val STATIONS = listOf("Infinite Ride", "Vinyl Ride", "Late Night", "Liked")
 
     @Volatile
