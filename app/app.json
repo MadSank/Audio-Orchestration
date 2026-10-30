@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "SAICS",
+    "slug": "saics",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0C",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.saics.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "./plugins/withShortCxxPath"
+    ],
+    "scheme": "saics",
+    "backgroundColor": "#0A0A0C"
+  }
+}

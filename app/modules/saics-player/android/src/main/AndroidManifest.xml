@@ -1,0 +1,30 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+  <application>
+    <!-- Media3 session service: the target of the Cardo's Bluetooth media buttons (AVRCP).
+         Foreground while playing (type mediaPlayback) so it keeps the buttons with the screen off. -->
+    <service
+      android:name="com.saics.player.PlaybackService"
+      android:exported="true"
+      android:foregroundServiceType="mediaPlayback">
+      <intent-filter>
+        <action android:name="androidx.media3.session.MediaLibraryService" />
+        <action android:name="android.media.browse.MediaBrowserService" />
+      </intent-filter>
+    </service>
+
+    <!-- Playback resumption: a Play press on the helmet after the app was killed restarts it. -->
+    <receiver
+      android:name="androidx.media3.session.MediaButtonReceiver"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MEDIA_BUTTON" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>
