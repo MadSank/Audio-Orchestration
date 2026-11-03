@@ -529,7 +529,14 @@ Each edge stores its score breakdown and its **chosen transition style**:
   - Kotlin unit tests: crossfade power, sample-exact jump positions, no allocations in the render loop;
   - an instrumented click-track test on the device, including one AAC and one 48 kHz file.
 
-**Status (2026-10-31, work in progress; the phone still runs the P5 build):**
+**Status (2026-11-03): engine on the phone, first device checks pass.** (P5 rollback APK: `C:\Users\ASUS\.saics-tools\saics-p5-rollback.apk`.)
+- [x] JVM tests, 23 passing: scipy filter parity, sample-exact jumps, centred crossfade, rho = 1 → no bump, rho = 0 → constant power, gap, stale instructions dropped, **no allocations in the render loop**, Forever rules, vinyl parity (the port's miss rate is within the Python chain's own 12-seed spread).
+- [x] On device (vivo V2515, speaker): plain playback; Forever on *floki & lost soul remix* takes C2:5 → C1:5 (124.0 s → 47.8 s) twice, then plays to the end and restarts, exactly as `forever_path`; Next in Forever switches version on the next bar (0.9 s) at the mapped bar; Vinyl (Play/Pause ×2) switches on the next bar; pause; the speaker guard blocks helmet resume without Bluetooth; lock-screen media controls show the playing version. CPU 3.7% playing with the screen on.
+- Fixed on device: one decoder queue made a requested version wait behind a preload (now one low-priority thread per song); bar positions come from the bundle while a song is still decoding.
+- Debug: this phone filters app logcat output; the engine keeps a trace readable with `adb shell dumpsys activity service com.saics.app/com.saics.player.PlaybackService`.
+- [ ] With the Cardo: buttons, BT disconnect pause, call pause/resume, navigation ducking, CPU playing with the screen off, a 2-hour ride.
+
+**Earlier status (2026-10-31):**
 - Written and compiling (`app/modules/saics-player/.../engine/`), **not yet built into an APK or tested on the device**:
   - `Butter.kt`: scipy-equivalent Butterworth SOS design; `Vinyl.kt`: streaming port of `_apply_vinyl_crackle`.
   - `Pcm.kt` (whole song as 16-bit PCM, off-heap) + Kaiser windowed-sinc resampler (88 library MP3s are 48 kHz); `Decoder.kt` (MediaCodec, encoder-delay trim).
