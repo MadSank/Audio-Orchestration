@@ -143,6 +143,11 @@ class PlaybackService : MediaLibraryService() {
 
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
+  /** `adb shell dumpsys activity service com.saics.app/com.saics.player.PlaybackService` */
+  override fun dump(fd: java.io.FileDescriptor?, writer: java.io.PrintWriter, args: Array<out String>?) {
+    writer.println(player.engine.dump())
+  }
+
   override fun onTaskRemoved(rootIntent: Intent?) {
     // Swiping the app away must not stop a ride; only stop when nothing is playing.
     if (!player.playWhenReady || player.mediaItemCount == 0) stopSelf()
