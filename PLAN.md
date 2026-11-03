@@ -423,6 +423,17 @@ Also:
 
 ### P4 — The Mix Web (headline feature: cross-track transitions and stations)
 
+**Revision (owner, 2026-11-03; research in `docs/research/2026-11-03-mix-web-and-radio-jockey.md`).** The Mix Web becomes a graph of **portals**: seamless mid-song jumps *between* songs, found by running the P3 jump matcher across the library (AutoMashUpper-style mashability: key-shifted beat chroma, rhythm, spectral balance, vocal continuity). Blends and cuts remain as fallbacks. It is built in two steps:
+
+- **P4a: Portals (no time-stretch; existing engine).**
+  - [ ] `saics portals`: bucket bars by tempo (±2%) and key class, compare 4-bar fingerprints from the feature cache, then rescore the top-K with the jump scorer. Output: `portals[]` per song (from bar → song, bar, score, kind, two-way flag) in `library.json` (`saics.library/8` and the app type, hard rule 8).
+  - [ ] Fallback exits so no song is a trap: compute strongly connected components; for every song with no portal out, add (a) the reverse of the edge it came in on, (b) a cut into a break or a phrase-end blend, (c) a version switch. Report any song that still has no exit.
+  - [ ] `MixWalk` (generalises `forever_path` / `ForeverWalk`): dwell 60–120 s or one chorus; Forever loops continue inside a song; pick the next song ≥ 30 s ahead so it is decoded; portal > blend > break > version; song-group no-repeat window; station energy target; likes/skips weight edges.
+  - [ ] `saics render --mix` 20-minute renders + portal seam clips on the eval page; regression tests for every portal rated 5.
+  - [ ] Phone: library schema `/8`, `MixWalk` in the engine scheduler (cross-slot `Instruction`s already work), Infinite Ride walks it, and the record visualiser shows portals.
+  - **Done when:** portal clips mean ≥ 4.0 with 0% jittery; 20-minute renders mean ≥ 4.0 with at most one mark near a transition per render; no walk gets stuck (property test).
+- **P4b: Blends and stretch.** Signalsmith Stretch (MIT) in the NDK as a real-time per-slot stage, a 3-band EQ per slot (bass swap), ±6% tempo portals and the blend/build styles below. Allocation-free render path (hard rule 9). Done when the original P4 criteria below pass.
+
 The Mix Web is a library-wide graph of **exit → entry** transitions, computed on the PC and stored in `library.json`, so the phone never computes pairwise analysis. The Infinite Ride station walks it live, and `saics mix` renders it offline.
 
 **Per song: exit and entry points** (all on downbeats, from the `/7` bundle):
@@ -566,6 +577,25 @@ Each edge stores its score breakdown and its **chosen transition style**:
 - Rebuild `web/` on the same engine and API with a proper design pass (frontend-design plugin + Playwright screenshots).
 - Fix D14 (or replace the page) and remove the Tone.js version chains in favour of the reference chains.
 - Out of scope until P6 is done.
+
+### P9 — Virtual radio jockey (RJ) (after P4a; research in `docs/research/2026-11-03-mix-web-and-radio-jockey.md`)
+A spoken host that knows the time, the weather and the route, and talks like a DJ who is looping songs by hand, to keep the rider awake.
+
+- **When it talks:** about one segment every 3–5 songs, at the top of the hour, at ETA milestones, and over Forever loops and breaks. Each line is timed to **hit the post**: it ends on the first vocal downbeat (from `vocal_activity`), or fits inside an instrumental stretch.
+- **What it says:** time-of-day greetings, weather (Open-Meteo, non-commercial), ETA, next turn and delay (Google Maps navigation notification via `NotificationListenerService`, user-granted; Google Routes API traffic as an optional upgrade), song intros and back-announces, banter about loops and portals, and hype on break returns and chorus entries. **No singing**: excitement comes from timing and ad-libs; real singing voice synthesis is a research item only if the owner asks.
+- **How:**
+  - Lines are written by the Claude API 1–2 songs ahead from the foreground service (cached persona prompt; model is the owner's choice, ~$0.30/h on Opus 5.5 or ~$0.01/h on Haiku 5.5), with offline template lines when there's no network.
+  - Speech comes from Android `TextToSpeech` first. sherpa-onnx + Kokoro (Apache-2.0) is the upgrade, but it **needs the owner's OK for espeak-ng (GPL-3.0)**, hard rule 11.
+  - The speech is rendered to PCM and **mixed by the engine** with sidechain ducking, starting on a downbeat.
+- **Safety:** lines ≤ 12 s; never a question; never over a navigation prompt (check active `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` playback) or a call; RJ on/off from the helmet with audio confirmation.
+- **Deliverables:**
+  - [ ] RJ director (when/what/how long) with unit tests for post timing.
+  - [ ] Context providers (clock, weather, Maps notification).
+  - [ ] Claude script client + templates.
+  - [ ] TTS → PCM → engine voice channel with ducking.
+  - [ ] Helmet toggle.
+  - [ ] An eval: rated full rides (talk frequency, timing, usefulness, annoyance).
+- **Done when:** on three real rides the owner rates the RJ ≥ 4 for "keeps me awake / useful" and ≤ 1 annoyance mark per hour, with no speech ever over a navigation prompt.
 
 ---
 
