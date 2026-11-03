@@ -6,9 +6,15 @@ import { color, radius, space, type } from "../theme/tokens";
 
 export default function Library() {
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   useEffect(() => {
-    SaicsPlayer.scanLibrary().then(setTracks).catch(() => setTracks([]));
+    // The service keeps the last scan; only walk the folder if there is none yet.
+    SaicsPlayer.getLibrary()
+      .then((t) => (t.length ? t : SaicsPlayer.scanLibrary()))
+      .then(setTracks)
+      .catch(() => setTracks([]))
+      .finally(() => setLoading(false));
   }, []);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -20,7 +26,7 @@ export default function Library() {
       <TextInput
         value={q}
         onChangeText={setQ}
-        placeholder={`Search ${tracks.length} songs`}
+        placeholder={loading ? "Loading library…" : `Search ${tracks.length} songs`}
         placeholderTextColor={color.textMuted}
         style={s.search}
       />

@@ -48,13 +48,16 @@ export interface PlayerSettings {
 type Events = {
   onButton(e: ButtonEvent): void;
   onState(s: PlayerState): void;
-  onAction(a: { action: string; version?: string }): void;
+  /** Button actions and engine events: "jump" | "version" | "track" | "repeat" | "error" | ... */
+  onAction(a: { action: string; detail?: string; version?: string }): void;
 };
 
 declare class SaicsPlayerModule extends NativeModule<Events> {
   pickFolder(): Promise<string | null>;
   getFolder(): string | null;
   scanLibrary(): Promise<Track[]>;
+  /** The last scan's result, without walking the folder again. */
+  getLibrary(): Promise<Track[]>;
   startStation(index: number): Promise<void>;
   playTrack(uri: string): Promise<void>;
   togglePlay(): Promise<void>;

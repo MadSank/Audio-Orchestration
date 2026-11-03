@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AppState, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import SaicsPlayer, { STATIONS } from "../../modules/saics-player";
+import { Record } from "../Record";
 import { Button, Card, Label } from "../ui";
 import { usePlayerState } from "../usePlayer";
 import { color, space, type } from "../theme/tokens";
@@ -59,6 +60,7 @@ export default function Home() {
           {state?.forever ? " · FOREVER" : ""}
           {state?.vinyl ? " · VINYL" : ""}
         </Text>
+        <Record position={state?.position ?? 0} duration={state?.duration ?? 0} playing={!!state?.isPlaying} />
         <View style={s.row}>
           <Button label="⏮" onPress={() => SaicsPlayer.previous()} style={s.flex} />
           <Button label={state?.isPlaying ? "Pause" : "Play"} kind="primary" onPress={() => SaicsPlayer.togglePlay()} style={s.flex2} />

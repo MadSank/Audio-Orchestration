@@ -165,6 +165,11 @@ class SaicsPlayerModule : Module() {
       }
     }
 
+    /** The library from the last scan (kept by the service), instantly; no folder walk. */
+    AsyncFunction("getLibrary") { promise: Promise ->
+      onService(promise) { svc -> svc.library.map { it.toMap() } }
+    }
+
     // ── playback ──────────────────────────────────────────────────────────────
     AsyncFunction("startStation") { index: Int, promise: Promise ->
       onUiAction(promise) { it.startStation(index, announce = true); null }
