@@ -100,6 +100,8 @@ class Engine(private val context: Context, private val listener: Listener) {
   private var lastKey = Long.MIN_VALUE
   private var landBar = -1 // where a version switch lands (walk.reset)
   private var endRetry = -1 // slot whose song end couldn't be handed over yet (next song loading)
+  private var jumpPending: String? = null // the scheduled Forever jump, announced once executed
+  private var executedSeen = 0
   private val rng = Random(System.nanoTime())
 
   @Volatile var current: Song? = null
@@ -262,6 +264,13 @@ class Engine(private val context: Context, private val listener: Listener) {
   private fun tick() {
     val cs = renderer.slot
     if (cs != lastSlot) songStarted(cs)
+    if (renderer.executed != executedSeen) {
+      executedSeen = renderer.executed
+      jumpPending?.let { event("jump", it) }
+      jumpPending = null
+    } else if (jumpPending != null && renderer.pending.get() == null && renderer.armedSlot < 0) {
+      jumpPending = null // dropped (Forever turned off, or a button replaced it)
+    }
     resolveIntent()
     val cur = loaded.getOrNull(cs) ?: run { preload(); return }
     val bar = cur.barAt(renderer.frame)
@@ -300,7 +309,7 @@ class Engine(private val context: Context, private val listener: Listener) {
           val rho = correlation(cur.pcm, at, cur.pcm, to, XF_HALF)
           renderer.pending.set(Instruction(cs, at, cs, to, XF_HALF, rho, tag = TAG_JUMP))
           log("jump ${j.label} (${step.why}) at ${at / ENGINE_RATE.toDouble()}s rho=%.2f".format(rho))
-          event("jump", "${j.label} (${step.why})")
+          jumpPending = "${j.label} (${step.why})" // reported when it executes (see tick)
         }
         ForeverWalk.Step.End -> songEnd(cs, cur)
       }
