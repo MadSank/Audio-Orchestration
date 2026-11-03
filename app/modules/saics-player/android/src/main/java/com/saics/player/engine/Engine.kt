@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
+import android.util.Log
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -43,11 +44,19 @@ class Engine(private val context: Context, private val listener: Listener) {
 
   private class Loaded(val song: Song, val pcm: Pcm, val bundle: Bundle?) {
     var barFrames: IntArray? = null // bar starts (frames); last entry = end of audio
+    private var provisional = true
     var walk: ForeverWalk? = null
+    var landBar = -1
+    /** Bar starts from the bundle. While the song is still decoding they are provisional (the
+     *  last bar's end is unknown): good for finding bars, not for the walk or the song end. */
     fun bars(): IntArray? {
-      if (barFrames == null && bundle != null && pcm.complete) {
-        val t = bundle.barTimes(pcm.frames.toDouble() / ENGINE_RATE)
+      val b = bundle ?: return null
+      if (pcm.complete && provisional) {
+        val t = b.barTimes(pcm.frames.toDouble() / ENGINE_RATE)
         barFrames = IntArray(t.size) { (t[it] * ENGINE_RATE).roundToInt().coerceIn(0, pcm.frames) }
+        provisional = false
+      } else if (barFrames == null && b.downbeats.size > 1) {
+        barFrames = IntArray(b.downbeats.size) { (b.beats[b.downbeats[it]] * ENGINE_RATE).roundToInt() }
       }
       return barFrames
     }
@@ -73,7 +82,10 @@ class Engine(private val context: Context, private val listener: Listener) {
   val renderer = Renderer(slots)
   private val main = Handler(Looper.getMainLooper())
   private val work = LinkedBlockingQueue<() -> Unit>()
-  private val decoder = Executors.newSingleThreadExecutor { Thread(it, "saics-decode") }
+  // One thread per song being decoded, so a requested version never waits behind a preload.
+  private val decoder = Executors.newCachedThreadPool {
+    Thread({ Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND); it.run() }, "saics-decode")
+  }
   @Volatile private var running = true
 
   // Scheduler-thread state.
@@ -123,6 +135,7 @@ class Engine(private val context: Context, private val listener: Listener) {
   val isPlaying get() = renderer.playing
 
   fun next(hard: Boolean) = post {
+    log("next(hard=$hard) forever=$forever current=${current?.title} versions=${current?.let { versionsOf(it).size }} alt=${alt?.version}")
     if (forever && current != null && versionsOf(current!!).isNotEmpty()) {
       intent = Intent(Kind.VERSION, alt ?: versionsOf(current!!).random(rng))
     } else {
@@ -162,6 +175,29 @@ class Engine(private val context: Context, private val listener: Listener) {
     schedThread.interrupt()
     decoder.shutdownNow()
     loaded.forEach { it?.pcm?.cancelled = true }
+  }
+
+  /** Recent scheduler decisions, for `adb shell dumpsys activity service ...PlaybackService`
+   *  (this phone filters app logcat output). Never written from the audio thread. */
+  private val trace = ArrayDeque<String>()
+
+  private fun log(msg: String) {
+    Log.i(TAG, msg)
+    synchronized(trace) {
+      trace.addLast("%.1f %s".format(android.os.SystemClock.elapsedRealtime() / 1000.0, msg))
+      while (trace.size > 200) trace.removeFirst()
+    }
+  }
+
+  fun dump(): String {
+    val head = "slot=${renderer.slot} frame=${renderer.frame} executed=${renderer.executed} playing=${renderer.playing} " +
+      "forever=$forever vinyl=$vinylWanted/${renderer.vinylOn} intent=${intent?.kind}->${intent?.target?.title} " +
+      "pending=${renderer.pending.get()?.let { "${it.from}@${it.at}->${it.toSlot}:${it.to}" }} alt=${alt?.version}\n" +
+      loaded.mapIndexed { i, l ->
+        "  slot $i: ${l?.song?.title} [${l?.song?.version}] frames=${l?.pcm?.frames} complete=${l?.pcm?.complete} " +
+          "failed=${l?.pcm?.failed} bundle=${l?.bundle != null} walk=${l?.walk != null}"
+      }.joinToString("\n")
+    return head + "\n" + synchronized(trace) { trace.joinToString("\n") }
   }
 
   private fun post(f: () -> Unit) {
@@ -218,7 +254,7 @@ class Engine(private val context: Context, private val listener: Listener) {
       } catch (e: InterruptedException) {
         return
       } catch (e: Exception) {
-        // keep the scheduler alive; a bad bundle must never stop the music
+        log("scheduler error: $e") // keep the scheduler alive; a bad bundle must never stop the music
       }
     }
   }
@@ -243,7 +279,7 @@ class Engine(private val context: Context, private val listener: Listener) {
 
   /** What follows the bar now playing (one bar ahead), as forever_path would choose. */
   private fun decide(cs: Int, cur: Loaded, bar: Int) {
-    if (renderer.pending.get() != null) return
+    if (renderer.pending.get() != null || !cur.pcm.complete) return
     val bars = cur.bars()
     if (bars == null) {
       val p = cur.pcm
@@ -263,6 +299,7 @@ class Engine(private val context: Context, private val listener: Listener) {
           if (to + XF_HALF > cur.pcm.frames) return // target not decoded yet: carry on
           val rho = correlation(cur.pcm, at, cur.pcm, to, XF_HALF)
           renderer.pending.set(Instruction(cs, at, cs, to, XF_HALF, rho, tag = TAG_JUMP))
+          log("jump ${j.label} (${step.why}) at ${at / ENGINE_RATE.toDouble()}s rho=%.2f".format(rho))
           event("jump", "${j.label} (${step.why})")
         }
         ForeverWalk.Step.End -> songEnd(cs, cur)
@@ -333,13 +370,14 @@ class Engine(private val context: Context, private val listener: Listener) {
           ab[b]
         } else {
           landBar = -1
-          (now.toLong() * other.pcm.frames / maxOf(1, cur?.pcm?.frames ?: 1)).toInt()
+          (now.toLong() * other.pcm.capacity / maxOf(1, cur?.pcm?.capacity ?: 1)).toInt()
         }
-        if (land + SWITCH_HALF > other.pcm.frames) return // not decoded that far yet
+        if (land + SWITCH_HALF > other.pcm.frames) return // not decoded that far yet (retried each tick)
         Instruction(cs, at, s, land, SWITCH_HALF, tag = TAG_VERSION)
       }
     }
     renderer.pending.set(ins)
+    log("${it.kind} -> ${target.title} [${target.version}] at ${ins.at} to ${ins.to} (now $now)")
     it.issuedAt = renderer.executed
     when (it.kind) {
       Kind.VERSION -> event("version", target.version)
@@ -361,17 +399,21 @@ class Engine(private val context: Context, private val listener: Listener) {
     current = l?.song
     if (l != null) {
       index = queue.indexOfFirst { it.id == l.song.id }.let { if (it >= 0) it else index }
-      if (l.bundle != null && l.walk == null && l.bars() != null) {
-        l.walk = ForeverWalk(l.bundle.barTimes(l.pcm.frames.toDouble() / ENGINE_RATE), l.bundle.sections, l.bundle.jumps,
-          l.bundle.outroBar, l.bundle.loopable, rng.nextLong())
-      }
-      if (landBar >= 0) {
-        l.walk?.reset(landBar)
-        landBar = -1
-      }
+      log("playing ${l.song.title} [${l.song.version}] bundle=${l.bundle != null} decoded=${l.pcm.complete}")
+      l.landBar = landBar // a version switch landed mid-song: the walk starts there
+      landBar = -1
+      initWalk(l)
       alt = null
     }
     main.post { listener.onSong(l?.song) }
+  }
+
+  /** The Forever walk needs the final bar grid, i.e. the whole song decoded. */
+  private fun initWalk(l: Loaded) {
+    if (l.bundle == null || l.walk != null || !l.pcm.complete || l.bars() == null) return
+    l.walk = ForeverWalk(l.bundle.barTimes(l.pcm.frames.toDouble() / ENGINE_RATE), l.bundle.sections, l.bundle.jumps,
+      l.bundle.outroBar, l.bundle.loopable, rng.nextLong())
+    if (l.landBar >= 0) l.walk?.reset(l.landBar)
   }
 
   // ── slots and preloading ───────────────────────────────────────────────────
@@ -385,10 +427,11 @@ class Engine(private val context: Context, private val listener: Listener) {
       if (alt == null) alt = versionsOf(c).randomOrNull(rng)
       alt?.let { slotOf(it) ?: load(it) }
     }
-    queue.getOrNull(index + 1)?.let { slotOf(it) ?: load(it) }
+    // The next song is only needed when this one can end into it.
+    if (!forever || c == null || versionsOf(c).isEmpty()) queue.getOrNull(index + 1)?.let { slotOf(it) ?: load(it) }
     // Bars become available once decoding completes; the walk needs them.
     val l = loaded.getOrNull(renderer.slot)
-    if (l != null && l.walk == null && l.bundle != null && l.bars() != null) songStarted(renderer.slot)
+    if (l != null) initWalk(l)
   }
 
   private fun slotOf(s: Song): Int? = loaded.indexOfFirst { it?.song?.id == s.id }.takeIf { it >= 0 }
@@ -406,7 +449,9 @@ class Engine(private val context: Context, private val listener: Listener) {
       ?: (0 until SLOTS).firstOrNull { it !in busy && loaded[it]?.song?.id !in keep }
       ?: return null
     loaded[free]?.pcm?.cancelled = true
+    log("load ${song.title} [${song.version}] into slot $free")
     val opened = Decoder.open(context, song.uri) ?: run {
+      log("can't open ${song.title}")
       event("error", "can't decode ${song.title}")
       if (intent?.target?.id == song.id) intent = null
       return null
@@ -429,6 +474,7 @@ class Engine(private val context: Context, private val listener: Listener) {
   private fun event(kind: String, detail: String) = main.post { listener.onAction(kind, detail) }
 
   companion object {
+    private const val TAG = "SaicsEngine"
     const val SLOTS = 4
     const val BLOCK = 512
     const val TICK_MS = 10L
