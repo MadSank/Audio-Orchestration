@@ -234,7 +234,7 @@ The owner keeps many versions of the same song (originals, slowed, sped up, nigh
 |-------------|--------|
 | Play/Pause ×1 | Pause on the next beat (100 ms fade); resume in sync |
 | Next ×1 | Forever **off**: mix into the next song (next group from the two-stage shuffle) at the next phrase, in the station's transition style. Forever **on**: switch to another version of the same song at the next phrase: beat-matched if the tempos differ, otherwise a cut on the downbeat (earcon + optional TTS "<version>") |
-| Next ×2 within 700 ms | Hard cut to the next song on the next downbeat |
+| Next ×2 within 700 ms | A **completely different song** on the next downbeat, also in Forever, where Forever stays on and loops the new song (owner, 2026-11-04). A portal if one is on the next two bars. Same on the phone's Next button. |
 | Previous ×1 | Restart the current song from its first downbeat (within 5 s of the start: go to the previous song) |
 | Previous ×2 within 700 ms | Toggle **Forever** (loop the current song seamlessly; the primary mode, and the default when a ride starts, configurable) |
 | Play/Pause ×2 within 700 ms | Toggle **Vinyl** |

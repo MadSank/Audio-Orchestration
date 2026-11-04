@@ -106,6 +106,7 @@ class Engine(private val context: Context, private val listener: Listener) {
   private var endRetry = -1 // slot whose song end couldn't be handed over yet (next song loading)
   private var jumpPending: String? = null // the scheduled Forever jump, announced once executed
   private var executedSeen = 0
+  private val bad = HashSet<String>() // songs that won't open or decode on this phone
 
   // Mix Web (P4a).
   private var graph: PortalGraph? = null
@@ -221,6 +222,22 @@ class Engine(private val context: Context, private val listener: Listener) {
     log("next(hard=$hard) forever=$forever current=${current?.title} versions=${current?.let { versionsOf(it).size }} alt=${alt?.version}")
     val w = mix
     val here = loaded.getOrNull(renderer.slot)
+    if (hard && forever) { // a completely different song; Forever stays on
+      val m = if (w != null && here != null && here.entered) w.newSong(here.barAt(renderer.frame)) else null
+      val song = m?.let { byTrack[it.to] }
+      if (m != null && song != null) {
+        renderer.pending.get()?.let { if (it.tag == TAG_JUMP) renderer.pending.compareAndSet(it, null) }
+        intent = Intent(Kind.MOVE, song, move = m)
+        return@post
+      }
+      val c = current
+      val other = library.filter { it.id !in bad && (c == null || (it.id != c.id && (c.group.isEmpty() || it.group != c.group))) }.randomOrNull(rng)
+      if (other != null) {
+        renderer.pending.get()?.let { if (it.tag == TAG_JUMP) renderer.pending.compareAndSet(it, null) }
+        intent = Intent(Kind.HARD_NEXT, other)
+      }
+      return@post
+    }
     if (w != null && mixActive && here != null && here.entered) {
       val move = w.nextNow(here.barAt(renderer.frame))
       val song = move?.let { byTrack[it.to] }
@@ -230,8 +247,10 @@ class Engine(private val context: Context, private val listener: Listener) {
         return@post
       }
     }
-    if (forever && current != null && versionsOf(current!!).isNotEmpty()) {
-      intent = Intent(Kind.VERSION, alt ?: versionsOf(current!!).random(rng))
+    if (forever && current != null) { // x1 stays in the song: only x2 changes songs
+      val versions = versionsOf(current!!).filter { it.id !in bad }
+      if (versions.isEmpty()) event("error", "No other version")
+      else intent = Intent(Kind.VERSION, alt ?: versions.random(rng))
     } else {
       queue.getOrNull(index + 1)?.let { intent = Intent(if (hard) Kind.HARD_NEXT else Kind.NEXT, it) }
         ?: queue.firstOrNull()?.let { index = -1; intent = Intent(Kind.NEXT, it) }
@@ -445,6 +464,11 @@ class Engine(private val context: Context, private val listener: Listener) {
       moveRetry = null
       return false
     }
+    if (song.id in bad || slotOf(song)?.let { loaded[it]?.pcm?.failed } == true) {
+      unplayable(song)
+      moveRetry = if (atEnd) mix?.fallback?.let { m.copy(to = it, toBar = 0) } else null // pick again
+      return false
+    }
     val s = slotOf(song) ?: load(song)
     val other = s?.let { loaded[it] }
     val ab = other?.bars()
@@ -514,7 +538,7 @@ class Engine(private val context: Context, private val listener: Listener) {
         event("repeat", "repeat one")
       }
     } else {
-      val nextSong = queue.getOrNull(index + 1) ?: queue.firstOrNull() ?: return
+      val nextSong = nextInQueue() ?: return
       val s = slotOf(nextSong) ?: return
       if (!ready(s)) return
       renderer.pending.set(Instruction(cs, end, s, 0, 0, tag = TAG_TRACK))
@@ -535,6 +559,10 @@ class Engine(private val context: Context, private val listener: Listener) {
       } else if (renderer.pending.get() == null && renderer.armedSlot != s) {
         it.issuedAt = -1 // something else ran first: issue again
       }
+      return
+    }
+    if (loaded[s]?.pcm?.failed == true) {
+      unplayable(target)
       return
     }
     if (!ready(s)) return
@@ -575,7 +603,8 @@ class Engine(private val context: Context, private val listener: Listener) {
         Instruction(cs, at, s, land, SWITCH_HALF, tag = TAG_VERSION)
       }
     }
-    renderer.pending.set(ins)
+    // Nothing is playing: the position won't advance to any "at", so start right away.
+    renderer.pending.set(if (cs < 0) Instruction(-1, -1, s, ins.to, 0, tag = ins.tag) else ins)
     log("${it.kind} -> ${target.title} [${target.version}] at ${ins.at} to ${ins.to} (now $now)")
     it.issuedAt = renderer.executed
     when (it.kind) {
@@ -584,6 +613,36 @@ class Engine(private val context: Context, private val listener: Listener) {
       else -> event("track", target.title)
     }
   }
+
+  /** A song that won't open or decode: never again this session, and whoever wanted it moves on. */
+  private fun unplayable(song: Song) {
+    if (bad.add(song.id)) {
+      log("can't play ${song.title}: skipping it")
+      event("error", "Skipping a song that won't play")
+    }
+    mix?.markBad(song.trackId)
+    if (alt?.id == song.id) alt = null
+    if (plan?.to == song.trackId) plan = null
+    val i = slotOf(song)
+    if (i != null && i != renderer.slot && i != renderer.armedSlot) {
+      loaded[i]?.pcm?.cancelled = true
+      loaded[i] = null
+      slots[i].pcm = null
+    }
+    val it = intent
+    if (it?.target?.id == song.id) {
+      intent = null
+      if (it.kind == Kind.TRACK || it.kind == Kind.NEXT || it.kind == Kind.HARD_NEXT) {
+        val at = queue.indexOfFirst { q -> q.id == song.id }
+        val next = (1..queue.size).map { k -> queue[(maxOf(at, 0) + k) % queue.size] }.firstOrNull { q -> q.id !in bad }
+        if (next != null) intent = Intent(it.kind, next)
+      }
+    }
+  }
+
+  /** The next song in the queue that can play. */
+  private fun nextInQueue(): Song? =
+    (1..queue.size).map { queue[(index + it) % queue.size] }.firstOrNull { it.id !in bad }
 
   private fun nextBarFrame(cur: Loaded?, now: Int): Int {
     val b = cur?.bars() ?: return now + 2048
@@ -645,7 +704,7 @@ class Engine(private val context: Context, private val listener: Listener) {
   private fun preload() {
     val c = current
     if (forever && c != null) {
-      if (alt == null) alt = versionsOf(c).randomOrNull(rng)
+      if (alt == null) alt = versionsOf(c).filter { it.id !in bad }.randomOrNull(rng)
       alt?.let { slotOf(it) ?: load(it) }
     }
     // Near the end of a song on the walk: the fallback target must be ready.
@@ -654,7 +713,7 @@ class Engine(private val context: Context, private val listener: Listener) {
       mix?.fallback?.let { byTrack[it] }?.let { slotOf(it) ?: load(it) }
     }
     // The next song is only needed when this one can end into it.
-    if (!mixOn && (!forever || c == null || versionsOf(c).isEmpty())) queue.getOrNull(index + 1)?.let { slotOf(it) ?: load(it) }
+    if (!mixOn && (!forever || c == null || versionsOf(c).isEmpty())) nextInQueue()?.let { slotOf(it) ?: load(it) }
     // Bars become available once decoding completes; the walk needs them.
     val l = loaded.getOrNull(renderer.slot)
     if (l != null) initWalk(l)
@@ -669,9 +728,10 @@ class Engine(private val context: Context, private val listener: Listener) {
 
   /** Decode [song] into a free slot (never one in use or about to be). */
   private fun load(song: Song): Int? {
+    if (song.id in bad) return null
     val busy = setOf(renderer.slot, renderer.armedSlot, renderer.pending.get()?.toSlot ?: -1)
     val keep = setOfNotNull(
-      alt?.id, queue.getOrNull(index + 1)?.id.takeIf { !mixOn }, intent?.target?.id,
+      alt?.id, nextInQueue()?.id.takeIf { !mixOn }, intent?.target?.id,
       plan?.let { byTrack[it.to]?.id }, moveInFlight?.let { byTrack[it.to]?.id }, moveRetry?.let { byTrack[it.to]?.id },
     )
     val free = (0 until SLOTS).firstOrNull { loaded[it] == null }
@@ -680,9 +740,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     loaded[free]?.pcm?.cancelled = true
     log("load ${song.title} [${song.version}] into slot $free")
     val opened = Decoder.open(context, song.uri) ?: run {
-      log("can't open ${song.title}")
-      event("error", "can't decode ${song.title}")
-      if (intent?.target?.id == song.id) intent = null
+      unplayable(song)
       return null
     }
     val (pcm, job) = opened

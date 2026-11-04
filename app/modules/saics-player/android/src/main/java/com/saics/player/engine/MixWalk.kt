@@ -72,6 +72,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
   var forever = false
   var pool: Set<String>? = null
 
+  private val bad = HashSet<String>()
   private val history = ArrayList<Pair<String, Double>>() // song group, time it was left
   var t = 0.0
     private set
@@ -123,8 +124,15 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
     cur?.let { history.add(it.key to t) }
   }
 
+  /** This song won't play on the phone: never walk into it. */
+  fun markBad(id: String) {
+    bad.add(id)
+    if (fallback == id) fallback = pickTarget()
+  }
+
   private fun allowed(id: String): Boolean {
     val g = graph.tracks[id] ?: return false
+    if (id in bad) return false
     if (pool?.contains(id) == false) return false
     if (g.key == cur?.key) return false
     return history.takeLast(NO_REPEAT_COUNT).none { (k, at) -> k == g.key && t - at < NO_REPEAT_S }
@@ -137,7 +145,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
 
   private fun edgeOk(e: PortalGraph.Edge): Boolean {
     if (Triple(e.fromBar, e.to, e.toBar) in stays || e.score < PORTAL_SCORE_MIN) return false
-    if (forever) return e.sameGroup && e.to in graph.tracks // Forever stays in the song
+    if (forever) return e.sameGroup && e.to in graph.tracks && e.to !in bad // Forever stays in the song
     return !e.sameGroup && allowed(e.to)
   }
 
@@ -258,13 +266,13 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
   }
 
   private fun cut(kind: String, bar: Int): Move? {
-    val id = fallback?.takeIf { it in graph.tracks } ?: pickTarget() ?: return null
+    val id = fallback?.takeIf { it in graph.tracks && it !in bad } ?: pickTarget() ?: return null
     return Move(kind, id, graph.tracks.getValue(id).entries.first(), bar, "cut")
   }
 
   private fun versions(): List<String> {
     val g = cur?.group.orEmpty()
-    return if (g.isEmpty()) emptyList() else graph.tracks.values.filter { it.group == g && it.id != cur?.id }.map { it.id }
+    return if (g.isEmpty()) emptyList() else graph.tracks.values.filter { it.group == g && it.id != cur?.id && it.id !in bad }.map { it.id }
   }
 
   private fun fallbackMove(bar: Int, looped: Double): Move? {
@@ -306,6 +314,21 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
     cur?.portals.orEmpty().filter { edgeOk(it) && it.fromBar > bar }.maxByOrNull(::rank)?.let {
       return Move("cut", it.to, it.toBar, at, it.pair, it.score)
     }
+    return cut("cut", at)
+  }
+
+  /**
+   * Next x2 in Forever: a completely different song, now (Forever stays on and loops it). A
+   * portal if one is on the next two bars, else a cut on the next downbeat, into a portal's
+   * landing if this song has one, else the fallback song's best entry. Null: nowhere to go.
+   */
+  fun newSong(bar: Int): Move? {
+    val others = cur?.portals.orEmpty().filter { !it.sameGroup && it.score >= PORTAL_SCORE_MIN && allowed(it.to) }
+    val at = maxOf(0, bar + 1)
+    others.filter { it.fromBar == at || it.fromBar == at + 1 }.maxByOrNull(::rank)?.let {
+      return Move("portal", it.to, it.toBar, it.fromBar, it.pair, it.score)
+    }
+    others.maxByOrNull(::rank)?.let { return Move("cut", it.to, it.toBar, at, it.pair, it.score) }
     return cut("cut", at)
   }
 

@@ -99,7 +99,7 @@ export default function NowPlaying() {
         <IconBtn size={80} bg={color.amber} onPress={() => SaicsPlayer.togglePlay()} accessibilityLabel={state?.isPlaying ? "Pause" : "Play"}>
           {state?.isPlaying ? <Pause size={30} c={color.amberInk} /> : <Play size={30} c={color.amberInk} />}
         </IconBtn>
-        <IconBtn size={56} bg="transparent" onPress={() => SaicsPlayer.next()} accessibilityLabel="Take the next portal"><Next size={28} /></IconBtn>
+        <IconBtn size={56} bg="transparent" onPress={() => SaicsPlayer.simulatePress("NEXT")} accessibilityLabel="Next: once for the next portal, twice for a new song"><Next size={28} /></IconBtn>
         <IconBtn size={48} bg="transparent" border={color.border} onPress={() => router.push("/versions")} accessibilityLabel="All versions"><ListIcon c={color.textMuted} /></IconBtn>
       </View>
     </SafeAreaView>

@@ -130,6 +130,36 @@ class MixWalkTest {
     assertEquals("c", far.to)
   }
 
+  @Test fun doubleNextInForeverGoesToADifferentSong() {
+    val g = graph(
+      track("a", "song", listOf(edge(40, "v", 8, same = true), edge(40, "c", 8), edge(70, "d", 16))),
+      track("v", "song"), track("c"), track("d"), track("e"),
+    )
+    val w = MixWalk(g, Random(3)).also { it.forever = true }
+    w.go(g, "a")
+    val close = w.newSong(38)!!
+    assertEquals("portal", close.kind)
+    assertEquals(40, close.at)
+    assertEquals("c", close.to)
+    val far = w.newSong(10)!!
+    assertEquals("cut", far.kind)
+    assertEquals(11, far.at)
+    assertTrue(far.to == "c" || far.to == "d")
+    val lone = graph(track("a", "song"), track("v", "song"), track("e"))
+    val l = MixWalk(lone, Random(3)).also { it.forever = true }
+    l.go(lone, "a")
+    assertEquals("e", l.newSong(10)!!.to)
+  }
+
+  @Test fun aSongThatWontPlayIsNeverWalkedInto() {
+    val g = graph(track("a", portals = listOf(edge(40, "b", 8), edge(48, "c", 8))), track("b"), track("c"))
+    val w = MixWalk(g, Random(1))
+    w.go(g, "a")
+    w.markBad("b")
+    assertEquals("c", w.playUntilLeave()!!.to)
+    assertTrue("the fallback isn't it either", w.fallback != "b")
+  }
+
   @Test fun graphParses() {
     val g = PortalGraph.parse(
       """{"schema":"saics.portals/1","generated":"x","tracks":{"a":{"file":"a.mp3","group":"g","bpm":120.0,"camelot":"8A",

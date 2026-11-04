@@ -198,3 +198,25 @@ def test_next_takes_a_close_portal_at_its_own_bar_else_cuts_on_the_phrase():
     assert (
         m.kind == "cut" and m.to == "c" and m.at == 52 and m.to_bar == 8
     )  # next phrase, 4-bar grid
+
+
+def test_double_next_in_forever_goes_to_a_different_song():
+    g = {
+        "a": _track(
+            "a",
+            "song",
+            portals=[_edge(40, "v", 8, same=True), _edge(40, "c", 8), _edge(70, "d", 16)],
+        ),
+        "v": _track("v", "song"),
+        "c": _track("c"),
+        "d": _track("d"),
+        "e": _track("e"),
+    }
+    w = MixWalk(g, "a", seed=3, forever=True)
+    m = w.new_song(38)  # a real portal on the next two bars: taken at its own bar
+    assert (m.kind, m.at, m.to) == ("portal", 40, "c")
+    m = w.new_song(10)  # none close: a cut on the next downbeat, still not another version
+    assert m.kind == "cut" and m.at == 11 and m.to in ("c", "d")
+    lone = {"a": _track("a", "song"), "v": _track("v", "song"), "e": _track("e")}
+    m = MixWalk(lone, "a", seed=3, forever=True).new_song(10)
+    assert m.to == "e" and m.at == 11  # no portals at all: still leaves the song group
