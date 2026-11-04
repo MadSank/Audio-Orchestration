@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>On the ride</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0C}
+a{color:#FFB547}a:hover{color:#FFCB7A}
+</style>
+</helmet>
+<div style="width: 1330px; height: 844px; box-sizing: border-box; background: #0A0A0C; color: #F3EFE7; font-family: 'Archivo', system-ui, sans-serif; padding: 48px 56px; display: flex; flex-direction: column; gap: 28px; overflow: hidden">
+
+  <header style="display: flex; align-items: flex-end; justify-content: space-between">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.14em; color: #FFB547">CARDO BUTTONS · VOICE · AUDIO FEEDBACK</span>
+      <h1 style="margin: 0; font-size: 44px; line-height: 1; font-weight: 900; font-stretch: 125%">ON THE RIDE</h1>
+    </div>
+    <p style="margin: 0; max-width: 480px; font-size: 15px; line-height: 1.5; color: #A9A6AE">Phone in the bag, screen off. Three helmet buttons and your voice run everything, and every change is confirmed by sound in the helmet.</p>
+  </header>
+
+  <div style="display: flex; gap: 24px; flex-grow: 1">
+
+    <section style="flex: 1.35 1 0; border-radius: 24px; background: #141417; border: 1px solid #2A2A31; padding: 24px; display: flex; flex-direction: column; gap: 6px">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 800; font-stretch: 125%; letter-spacing: 0.06em">BUTTON MAP</h2>
+        <div style="display: flex; gap: 8px" aria-hidden="true">
+          <span style="width: 40px; height: 40px; border-radius: 20px; background: #0A0A0C; border: 1px solid #2A2A31; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="#F3EFE7"><path d="M5 5h2.5v14H5zM20 5v14L9 12z"></path></svg></span>
+          <span style="width: 40px; height: 40px; border-radius: 20px; background: #0A0A0C; border: 1px solid #FFB547; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="#FFB547"><path d="M5 5v14l7-7zM14 5h3v14h-3zM19 5h2v14h-2z"></path></svg></span>
+          <span style="width: 40px; height: 40px; border-radius: 20px; background: #0A0A0C; border: 1px solid #2A2A31; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="#F3EFE7"><path d="M16.5 5H19v14h-2.5zM4 5v14l11-7z"></path></svg></span>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px; gap: 12px; padding: 0 0 8px 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.1em; color: #85828A; border-bottom: 1px solid #2A2A31">
+        <span>PRESS</span><span>WHAT HAPPENS</span><span>YOU HEAR</span>
+      </div>
+      <sc-for list="{{controls}}" as="c" hint-placeholder-count="7">
+        <div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #222228">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 600; color: #FFB547">{{c.press}}</span>
+          <span style="font-size: 15px; line-height: 1.35">{{c.action}}</span>
+          <span style="font-size: 13px; color: #6FD3FF">{{c.sound}}</span>
+        </div>
+      </sc-for>
+      <p style="margin: auto 0 0 0; padding-top: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; line-height: 1.5; color: #A9A6AE">Multi-press window 700 ms by default, tuned with your Cardo in Settings → Button test.</p>
+    </section>
+
+    <div style="flex: 1 1 0; display: flex; flex-direction: column; gap: 24px">
+      <section style="border-radius: 24px; background: #141417; border: 1px solid #2A2A31; padding: 24px; display: flex; flex-direction: column; gap: 12px">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 800; font-stretch: 125%; letter-spacing: 0.06em">AUTOMATIC</h2>
+        <sc-for list="{{auto}}" as="a" hint-placeholder-count="4">
+          <div style="display: flex; flex-direction: column; gap: 2px; padding-bottom: 10px; border-bottom: 1px solid #222228">
+            <span style="font-size: 15px; font-weight: 700">{{a.when}}</span>
+            <span style="font-size: 14px; color: #A9A6AE">{{a.then}}</span>
+          </div>
+        </sc-for>
+      </section>
+
+      <section style="border-radius: 24px; background: #0B1A21; padding: 24px; display: flex; flex-direction: column; gap: 10px; flex-grow: 1">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 800; font-stretch: 125%; letter-spacing: 0.06em; color: #6FD3FF">VOICE</h2>
+        <p style="margin: 0; font-size: 20px; line-height: 1.35; font-weight: 700">"Hey Google, play Vinyl Ride on Infinite Radio"</p>
+        <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #A9A6AE">Works through the Cardo's assistant button. Cardo voice commands like "next track" arrive as the same button presses above.</p>
+      </section>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1330,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      controls: [
+        { press: 'Play/Pause ×1', action: 'Pause on the beat, resume in sync', sound: 'Soft tick' },
+        { press: 'Next ×1', action: 'Mix into the next song at the next phrase', sound: '"Next: <song>"' },
+        { press: 'Next ×2', action: 'Hard cut on the next downbeat', sound: 'Double tick' },
+        { press: 'Previous ×1', action: 'Restart this song (near the start: previous song)', sound: 'Tick' },
+        { press: 'Previous ×2', action: 'Toggle Forever: loop this song seamlessly', sound: '"Forever on/off"' },
+        { press: 'Play/Pause ×2', action: 'Toggle Vinyl', sound: '"Vinyl on/off"' },
+        { press: 'Play/Pause ×3', action: 'Cycle station: Infinite → Vinyl → Late Night → Liked', sound: 'Station name' }
+      ],
+      auto: [
+        { when: 'Maps gives a direction', then: 'Music ducks under the prompt, then comes back' },
+        { when: 'A call or intercom starts', then: 'Pauses, resumes when it ends' },
+        { when: 'Helmet off or out of range', then: 'Pauses instantly, never plays from the phone speaker' },
+        { when: 'Play pressed after the app was closed', then: 'Resumes the last station' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
