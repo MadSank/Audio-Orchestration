@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Library</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0C}
+a{color:#FFB547}a:hover{color:#FFCB7A}
+input::placeholder{color:#85828A}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #0A0A0C; color: #F3EFE7; font-family: 'Archivo', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden">
+
+  <header style="display: flex; align-items: baseline; justify-content: space-between; padding: 22px 20px 10px 20px">
+    <h1 style="margin: 0; font-size: 26px; font-weight: 900; font-stretch: 125%">LIBRARY</h1>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #A9A6AE">[n] SONGS · [n] VERSIONS</span>
+  </header>
+
+  <div style="padding: 0 20px; display: flex; flex-direction: column; gap: 12px">
+    <label style="display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 14px; border-radius: 16px; background: #141417; border: 1px solid #2A2A31">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A9A6AE" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+      <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search songs</span>
+      <input type="search" placeholder="Song, artist, key (8A) or BPM" style="flex-grow: 1; min-width: 0; height: 44px; background: transparent; border: none; outline: none; color: #F3EFE7; font-family: inherit; font-size: 15px">
+    </label>
+
+    <div style="display: flex; gap: 8px; overflow: hidden">
+      <button aria-pressed="true" style="height: 36px; padding: 0 14px; border-radius: 18px; background: #F3EFE7; border: none; color: #0A0A0C; font-family: inherit; font-size: 13px; font-weight: 800; white-space: nowrap; flex-shrink: 0">All</button>
+      <button aria-pressed="false" style="height: 36px; padding: 0 14px; border-radius: 18px; background: transparent; border: 1px solid #2A2A31; color: #F3EFE7; font-family: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0">By key</button>
+      <button aria-pressed="false" style="height: 36px; padding: 0 14px; border-radius: 18px; background: transparent; border: 1px solid #2A2A31; color: #F3EFE7; font-family: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0">By tempo</button>
+      <button aria-pressed="false" style="height: 36px; padding: 0 14px; border-radius: 18px; background: transparent; border: 1px solid #2A2A31; color: #F3EFE7; font-family: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0">Liked</button>
+      <button aria-pressed="false" style="height: 36px; padding: 0 14px; border-radius: 18px; background: transparent; border: 1px solid #2A2A31; color: #F3EFE7; font-family: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0">Not analysed</button>
+    </div>
+  </div>
+
+  <div style="padding: 16px 20px 0 20px; display: flex; flex-direction: column; gap: 4px; flex-grow: 1; overflow: hidden">
+    <h2 style="margin: 0 0 4px 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.12em; color: #6FD3FF">PORTALS FROM MONSOON STATIC</h2>
+    <sc-for list="{{suggested}}" as="t" hint-placeholder-count="3">
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 58px">
+        <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true" style="flex-shrink: 0"><rect width="44" height="44" rx="12" fill="#141417"></rect><circle cx="22" cy="22" r="16" fill="#0A0A0C"></circle><circle cx="22" cy="22" r="6.5" fill="{{t.color}}"></circle></svg>
+        <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0">
+          <span style="font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{t.title}}</span>
+          <span style="font-size: 13px; color: #A9A6AE">{{t.artist}}</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; color: #6FD3FF">{{t.match}}</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #A9A6AE">{{t.meta}}</span>
+        </div>
+      </div>
+    </sc-for>
+
+    <h2 style="margin: 14px 0 4px 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.12em; color: #A9A6AE">SONGS · A–Z · TAP FOR VERSIONS</h2>
+    <sc-for list="{{all}}" as="t" hint-placeholder-count="5">
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 58px">
+        <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true" style="flex-shrink: 0"><rect width="44" height="44" rx="12" fill="#141417"></rect><circle cx="22" cy="22" r="16" fill="#0A0A0C"></circle><circle cx="22" cy="22" r="6.5" fill="{{t.color}}"></circle></svg>
+        <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0">
+          <span style="font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{t.title}}</span>
+          <span style="font-size: 13px; color: #A9A6AE">{{t.artist}}</span>
+        </div>
+        <sc-if value="{{t.analysed}}" hint-placeholder-val="{{true}}">
+          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: #2A1C0A; color: #FFB547">{{t.versions}}</span>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #A9A6AE">{{t.meta}}</span>
+          </div>
+        </sc-if>
+        <sc-if value="{{t.pending}}" hint-placeholder-val="{{false}}">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 4px 8px; border-radius: 8px; border: 1px solid #5A4520; color: #FFB547">NOT ANALYSED</span>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+
+  <nav style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 8px 12px 20px 12px; border-top: 1px solid #1C1C21; background: #0A0A0C">
+    <a href="Main.dc.html" style="text-decoration: none; height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #A9A6AE; font-size: 12px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="3"></circle></svg>Stations
+    </a>
+    <a href="Library.dc.html" style="text-decoration: none; height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #FFB547; font-size: 12px; font-weight: 700">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 4v16M10 4v16M15 4l4 16"></path></svg>Library
+    </a>
+    <a href="Drive.dc.html" style="text-decoration: none; height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #A9A6AE; font-size: 12px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 17a8.5 8.5 0 0 1 17 0v2h-17z"></path><path d="M11 13h9"></path></svg>Ride
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      suggested: [
+        { title: 'Neon Highway', artist: 'Sample Artist', match: '4 PORTALS', meta: 'chorus → chorus', color: '#6FD3FF' },
+        { title: 'Glass Coast', artist: 'Another Artist', match: '2 PORTALS', meta: 'break → intro', color: '#FFB547' },
+        { title: 'Low Tide Engine', artist: 'Sample Artist', match: '1 PORTAL', meta: 'verse → verse', color: '#C9B8FF' }
+      ],
+      all: [
+        { title: 'After the Rain', artist: 'Another Artist', versions: '1 VERSION', meta: '84 · 4A', color: '#FF8FA3', analysed: true, pending: false },
+        { title: 'Back Roads (Live)', artist: 'Third Artist', versions: '', meta: '', color: '#85828A', analysed: false, pending: true },
+        { title: 'Cinder Lights', artist: 'Sample Artist', versions: '3 VERSIONS', meta: '124 · 10B', color: '#FFB547', analysed: true, pending: false },
+        { title: 'Desert FM', artist: 'Third Artist', versions: '1 VERSION', meta: '110 · 2A', color: '#6FD3FF', analysed: true, pending: false },
+        { title: 'Echo Lanes', artist: 'Another Artist', versions: '19 VERSIONS', meta: '90 · 6A', color: '#C9B8FF', analysed: true, pending: false }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

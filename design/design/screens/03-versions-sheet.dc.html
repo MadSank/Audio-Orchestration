@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Versions</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0C}
+a{color:#FFB547}a:hover{color:#FFCB7A}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #050506; color: #F3EFE7; font-family: 'Archivo', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden; position: relative">
+
+  <div aria-hidden="true" style="height: 118px; display: flex; justify-content: center; align-items: flex-end; opacity: 0.35">
+    <svg width="220" height="130" viewBox="0 0 220 130"><circle cx="110" cy="120" r="108" fill="#0E0E11"></circle><circle cx="110" cy="120" r="90" fill="none" stroke="#1C1C21" stroke-width="2"></circle><circle cx="110" cy="120" r="72" fill="none" stroke="#1C1C21" stroke-width="2"></circle><circle cx="110" cy="120" r="36" fill="#FFB547"></circle></svg>
+  </div>
+
+  <section style="flex-grow: 1; background: #141417; border-top-left-radius: 28px; border-top-right-radius: 28px; border-top: 1px solid #2A2A31; padding: 10px 16px 20px 16px; display: flex; flex-direction: column; gap: 12px">
+    <div style="width: 40px; height: 4px; border-radius: 2px; background: #3A3A43; align-self: center"></div>
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <div style="display: flex; flex-direction: column">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 900; font-stretch: 125%">VERSIONS</h1>
+        <span style="font-size: 13px; color: #A9A6AE">Live effects · switches on the next bar</span>
+      </div>
+      <a href="NowPlaying.dc.html" aria-label="Close" style="width: 44px; height: 44px; border-radius: 22px; background: #1C1C21; color: #F3EFE7; display: flex; align-items: center; justify-content: center">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+      </a>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <sc-for list="{{items}}" as="it" hint-placeholder-count="8">
+        <sc-if value="{{it.selected}}" hint-placeholder-val="{{false}}">
+          <button onClick="{{it.pick}}" aria-pressed="true" style="width: 100%; text-align: left; min-height: 52px; padding: 6px 14px; border-radius: 16px; background: #2A1C0A; border: 1.5px solid #FFB547; color: #F3EFE7; display: flex; align-items: center; gap: 12px; font-family: inherit">
+            <span style="width: 12px; height: 12px; border-radius: 6px; background: #FFB547; flex-shrink: 0"></span>
+            <span style="display: flex; flex-direction: column; flex-grow: 1">
+              <span style="font-size: 16px; font-weight: 800">{{it.label}}</span>
+              <span style="font-size: 12px; color: #D9C9AE">{{it.desc}}</span>
+            </span>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; color: #FFB547">ON</span>
+          </button>
+        </sc-if>
+        <sc-if value="{{it.unselected}}" hint-placeholder-val="{{true}}">
+          <button onClick="{{it.pick}}" aria-pressed="false" style="width: 100%; text-align: left; min-height: 52px; padding: 6px 14px; border-radius: 16px; background: transparent; border: 1px solid #2A2A31; color: #F3EFE7; display: flex; align-items: center; gap: 12px; font-family: inherit">
+            <span style="width: 12px; height: 12px; border-radius: 6px; border: 1.5px solid #85828A; flex-shrink: 0; box-sizing: border-box"></span>
+            <span style="display: flex; flex-direction: column; flex-grow: 1">
+              <span style="font-size: 16px; font-weight: 700">{{it.label}}</span>
+              <span style="font-size: 12px; color: #A9A6AE">{{it.desc}}</span>
+            </span>
+          </button>
+        </sc-if>
+      </sc-for>
+    </div>
+
+    <div style="margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-radius: 16px; background: #1C1C21">
+      <label for="whole-station" style="display: flex; flex-direction: column">
+        <span style="font-size: 15px; font-weight: 700">Keep for the whole station</span>
+        <span style="font-size: 12px; color: #A9A6AE">Otherwise it resets on the next song</span>
+      </label>
+      <button id="whole-station" role="switch" aria-checked="true" aria-label="Keep for the whole station" style="width: 52px; height: 32px; border-radius: 16px; background: #FFB547; border: none; padding: 3px; display: flex; justify-content: flex-end">
+        <span style="width: 26px; height: 26px; border-radius: 13px; background: #1A1206"></span>
+      </button>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { picked: 'vinyl' };
+  }
+  renderVals() {
+    var self = this;
+    var all = [
+      { id: 'original', label: 'Original', desc: 'As recorded, loudness-matched' },
+      { id: 'vinyl', label: 'Vinyl', desc: 'Warm band-pass, crackle, wow and flutter' },
+      { id: 'slowed', label: 'Slowed + Reverb', desc: '0.8x speed in a large room' },
+      { id: 'sped', label: 'Sped Up', desc: '1.25x, brighter and tighter' },
+      { id: 'nightcore', label: 'Nightcore', desc: '1.3x and pitched up' },
+      { id: 'lofi', label: 'Lo-fi VHS', desc: 'Tape wobble and soft highs' },
+      { id: 'bass', label: 'Bass Boost', desc: 'Low-end lift for car speakers' },
+      { id: '8d', label: '8D Audio', desc: 'Slow left-right orbit' }
+    ];
+    return {
+      items: all.map(function (v) {
+        var sel = self.state.picked === v.id;
+        return { label: v.label, desc: v.desc, selected: sel, unselected: !sel, pick: function () { self.setState({ picked: v.id }); } };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

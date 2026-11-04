@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ride mode</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#000000}
+a{color:#FFB547}a:hover{color:#FFCB7A}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #000000; color: #F3EFE7; font-family: 'Archivo', system-ui, sans-serif; display: flex; flex-direction: column; gap: 14px; padding: 18px 16px 24px 16px; overflow: hidden">
+
+  <header style="display: flex; align-items: center; justify-content: space-between">
+    <div style="display: flex; flex-direction: column">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.16em; color: #FFB547">RIDE</span>
+      <span style="font-size: 15px; font-weight: 700; color: #A9A6AE">Infinite Ride</span>
+    </div>
+    <a href="Main.dc.html" style="text-decoration: none; height: 56px; padding: 0 22px; border-radius: 28px; border: 1.5px solid #2A2A31; color: #F3EFE7; display: flex; align-items: center; font-size: 16px; font-weight: 800">Exit</a>
+  </header>
+
+  <div style="display: flex; flex-direction: column; gap: 4px; padding-top: 6px">
+    <h1 style="margin: 0; font-size: 42px; line-height: 0.98; font-weight: 900; font-stretch: 125%; letter-spacing: -0.01em">MONSOON STATIC</h1>
+    <span style="font-size: 20px; font-weight: 500; color: #A9A6AE">Sample Artist</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 18px; background: #0B1A21">
+    <div style="display: flex; justify-content: space-between; align-items: baseline">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #6FD3FF">NEXT MIX IN 6 BARS</span>
+      <span style="font-size: 16px; font-weight: 800">Neon Highway</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px" aria-hidden="true">
+      <div style="height: 6px; border-radius: 3px; background: #6FD3FF"></div>
+      <div style="height: 6px; border-radius: 3px; background: #6FD3FF"></div>
+      <div style="height: 6px; border-radius: 3px; background: #1F3A47"></div>
+      <div style="height: 6px; border-radius: 3px; background: #1F3A47"></div>
+      <div style="height: 6px; border-radius: 3px; background: #1F3A47"></div>
+      <div style="height: 6px; border-radius: 3px; background: #1F3A47"></div>
+      <div style="height: 6px; border-radius: 3px; background: #1F3A47"></div>
+      <div style="height: 6px; border-radius: 3px; background: #1F3A47"></div>
+    </div>
+  </div>
+
+  <button onClick="{{togglePlay}}" aria-label="{{playLabel}}" style="flex-grow: 1; min-height: 190px; border-radius: 32px; background: #121214; border: none; color: #FFB547; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-family: inherit">
+    <sc-if value="{{playing}}" hint-placeholder-val="{{true}}">
+      <svg width="96" height="96" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z"></path></svg>
+    </sc-if>
+    <sc-if value="{{paused}}" hint-placeholder-val="{{false}}">
+      <svg width="96" height="96" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"></path></svg>
+    </sc-if>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.12em; color: #85828A">TAP ANYWHERE HERE</span>
+  </button>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+    <button aria-label="Back" style="height: 120px; border-radius: 28px; background: #121214; border: none; color: #F3EFE7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-family: inherit">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 5h2.5v14H5zM20 5v14L9 12z"></path></svg>
+      <span style="font-size: 16px; font-weight: 800; font-stretch: 125%">BACK</span>
+    </button>
+    <button aria-label="Mix into next song" style="height: 120px; border-radius: 28px; background: #F3EFE7; border: none; color: #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-family: inherit">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.5 5H19v14h-2.5zM4 5v14l11-7z"></path></svg>
+      <span style="font-size: 16px; font-weight: 800; font-stretch: 125%">NEXT MIX</span>
+    </button>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+    <sc-for list="{{toggles}}" as="t" hint-placeholder-count="3">
+      <sc-if value="{{t.on}}" hint-placeholder-val="{{false}}">
+        <button onClick="{{t.flip}}" role="switch" aria-checked="true" style="height: 64px; border-radius: 20px; background: #2A1C0A; border: 2px solid #FFB547; color: #FFB547; font-family: inherit; font-size: 15px; font-weight: 800">{{t.label}}</button>
+      </sc-if>
+      <sc-if value="{{t.off}}" hint-placeholder-val="{{true}}">
+        <button onClick="{{t.flip}}" role="switch" aria-checked="false" style="height: 64px; border-radius: 20px; background: #121214; border: 2px solid #121214; color: #A9A6AE; font-family: inherit; font-size: 15px; font-weight: 700">{{t.label}}</button>
+      </sc-if>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { playing: true, vinyl: true, forever: false, liked: false };
+  }
+  renderVals() {
+    var self = this;
+    var defs = [
+      { key: 'vinyl', label: 'Vinyl' },
+      { key: 'forever', label: 'Forever' },
+      { key: 'liked', label: 'Like' }
+    ];
+    return {
+      playing: this.state.playing,
+      paused: !this.state.playing,
+      playLabel: this.state.playing ? 'Pause' : 'Play',
+      togglePlay: function () { self.setState({ playing: !self.state.playing }); },
+      toggles: defs.map(function (d) {
+        var on = !!self.state[d.key];
+        return {
+          label: d.label, on: on, off: !on,
+          flip: function () { var s = {}; s[d.key] = !self.state[d.key]; self.setState(s); }
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ride mode · mixing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#000000}
+a{color:#FFB547}a:hover{color:#FFCB7A}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #000000; color: #F3EFE7; font-family: 'Archivo', system-ui, sans-serif; display: flex; flex-direction: column; gap: 14px; padding: 18px 16px 24px 16px; overflow: hidden">
+
+  <header style="display: flex; align-items: center; justify-content: space-between">
+    <div style="display: flex; flex-direction: column">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.16em; color: #6FD3FF">MIXING</span>
+      <span style="font-size: 15px; font-weight: 700; color: #A9A6AE">Infinite Ride</span>
+    </div>
+    <a href="Main.dc.html" style="text-decoration: none; height: 56px; padding: 0 22px; border-radius: 28px; border: 1.5px solid #2A2A31; color: #F3EFE7; display: flex; align-items: center; font-size: 16px; font-weight: 800">Exit</a>
+  </header>
+
+  <div style="display: flex; flex-direction: column; gap: 2px; padding-top: 6px">
+    <span style="font-size: 18px; font-weight: 700; color: #85828A; text-decoration: none">Monsoon Static</span>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6FD3FF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin: 2px 0"><path d="M12 4v16M6 14l6 6 6-6"></path></svg>
+    <h1 style="margin: 0; font-size: 42px; line-height: 0.98; font-weight: 900; font-stretch: 125%; letter-spacing: -0.01em">NEON HIGHWAY</h1>
+    <span style="font-size: 20px; font-weight: 500; color: #A9A6AE">Sample Artist</span>
+  </div>
+
+  <section style="display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 18px; background: #0B1A21">
+    <div style="display: flex; justify-content: space-between; align-items: baseline">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #6FD3FF">BLEND · BAR 9 OF 16</span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #A9A6AE">96 → 98 BPM</span>
+    </div>
+    <div style="display: flex; height: 14px; border-radius: 7px; overflow: hidden" role="img" aria-label="Crossfade balance: about 45 percent outgoing song, 55 percent incoming song">
+      <div style="flex-grow: 45; background: #FFB547"></div>
+      <div style="width: 3px; background: #000000"></div>
+      <div style="flex-grow: 55; background: #6FD3FF"></div>
+    </div>
+    <div style="display: flex; gap: 8px">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 10px; background: #102A35; color: #6FD3FF">BASS SWAPPED</span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 10px; background: #102A35; color: #6FD3FF">VINYL ON</span>
+    </div>
+  </section>
+
+  <button aria-label="Pause" style="flex-grow: 1; min-height: 150px; border-radius: 32px; background: #121214; border: none; color: #FFB547; display: flex; align-items: center; justify-content: center; font-family: inherit">
+    <svg width="88" height="88" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z"></path></svg>
+  </button>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+    <button aria-label="Stay on the previous song" style="height: 120px; border-radius: 28px; background: #121214; border: none; color: #F3EFE7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-family: inherit">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"></path><path d="M4 9h11a5 5 0 0 1 0 10h-3"></path></svg>
+      <span style="font-size: 16px; font-weight: 800; font-stretch: 125%">UNDO MIX</span>
+    </button>
+    <button aria-label="Cut to the new song on the next downbeat" style="height: 120px; border-radius: 28px; background: #F3EFE7; border: none; color: #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-family: inherit">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.5 5H19v14h-2.5zM4 5v14l11-7z"></path></svg>
+      <span style="font-size: 16px; font-weight: 800; font-stretch: 125%">CUT NOW</span>
+    </button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

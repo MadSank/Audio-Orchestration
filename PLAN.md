@@ -578,7 +578,7 @@ Each edge stores its score breakdown and its **chosen transition style**:
 - Fix D14 (or replace the page) and remove the Tone.js version chains in favour of the reference chains.
 - Out of scope until P6 is done.
 
-### P9 — Virtual radio jockey (RJ) (after P4a; research in `docs/research/2026-11-03-mix-web-and-radio-jockey.md`)
+### P9 — Virtual radio jockey (RJ): **PARKED** (owner, 2026-11-04; do not work on this; research in `docs/research/2026-11-03-mix-web-and-radio-jockey.md`)
 A spoken host that knows the time, the weather and the route, and talks like a DJ who is looping songs by hand, to keep the rider awake.
 
 - **When it talks:** about one segment every 3–5 songs, at the top of the hour, at ETA milestones, and over Forever loops and breaks. Each line is timed to **hit the post**: it ends on the first vocal downbeat (from `vocal_activity`), or fits inside an instrumental stretch.

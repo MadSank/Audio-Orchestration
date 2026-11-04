@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Now Playing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0C}
+a{color:#FFB547}a:hover{color:#FFCB7A}
+@keyframes ir-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.ir-sheen{transform-origin:150px 150px;animation:ir-spin 6s linear infinite}
+@media (prefers-reduced-motion: reduce){.ir-sheen{animation:none}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #0A0A0C; color: #F3EFE7; font-family: 'Archivo', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden">
+
+  <header style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 4px 16px">
+    <a href="Main.dc.html" aria-label="Back to stations" style="width: 44px; height: 44px; border-radius: 22px; background: #141417; color: #F3EFE7; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+    </a>
+    <div style="display: flex; flex-direction: column; align-items: center">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #A9A6AE">PLAYING FROM</span>
+      <span style="font-size: 14px; font-weight: 800; font-stretch: 125%">INFINITE RIDE</span>
+    </div>
+    <a href="Drive.dc.html" aria-label="Switch to Ride mode" style="width: 44px; height: 44px; border-radius: 22px; background: #141417; color: #FFB547; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 17a8.5 8.5 0 0 1 17 0v2h-17z"></path><path d="M11 13h9"></path></svg>
+    </a>
+  </header>
+
+  <div style="display: flex; justify-content: center; padding: 6px 0 2px 0; position: relative">
+    <svg width="300" height="300" viewBox="0 0 300 300" role="img" aria-label="Record visualiser: the song as a ring of 96 bars, jump arcs connecting matching bars, stylus at bar 34">
+      <circle cx="150" cy="150" r="148" fill="#0E0E11"></circle>
+      <path d="{{groovesD}}" fill="none" stroke="#18181D" stroke-width="1.6"></path>
+      <path d="{{otherSectionsD}}" fill="none" stroke="#3A3A43" stroke-width="5"></path>
+      <path d="{{chorusSectionsD}}" fill="none" stroke="#7A5A2A" stroke-width="5"></path>
+      <path d="{{playedD}}" fill="none" stroke="#FFB547" stroke-width="5" stroke-linecap="round"></path>
+      <path d="{{ticksD}}" fill="none" stroke="#2E2E36" stroke-width="1.2"></path>
+      <path d="{{jumpsD}}" fill="none" stroke="#6FD3FF" stroke-width="1.1" stroke-opacity="0.45"></path>
+      <path d="{{nextJumpD}}" fill="none" stroke="#6FD3FF" stroke-width="2.6" stroke-linecap="round"></path>
+      <circle cx="{{nextJumpTo.x}}" cy="{{nextJumpTo.y}}" r="4" fill="#6FD3FF"></circle>
+      <g class="ir-sheen"><path d="M150 18 A132 132 0 0 1 263 84" fill="none" stroke="#FFFFFF" stroke-opacity="0.05" stroke-width="22"></path></g>
+      <circle cx="150" cy="150" r="46" fill="#FFB547"></circle>
+      <circle cx="150" cy="150" r="40" fill="none" stroke="#1A1206" stroke-opacity="0.18"></circle>
+      <text x="150" y="141" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" font-weight="600" fill="#1A1206">96 BPM</text>
+      <text x="150" y="160" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" font-weight="600" fill="#1A1206">8A</text>
+      <circle cx="150" cy="150" r="3" fill="#0A0A0C"></circle>
+      <circle cx="{{stylus.x}}" cy="{{stylus.y}}" r="7" fill="#F3EFE7" stroke="#0A0A0C" stroke-width="3"></circle>
+    </svg>
+  </div>
+
+  <div style="padding: 6px 20px 0 20px; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 12px">
+      <div style="display: flex; flex-direction: column; min-width: 0">
+        <h1 style="margin: 0; font-size: 26px; line-height: 1.05; font-weight: 900; font-stretch: 112%">Monsoon Static</h1>
+        <span style="font-size: 16px; color: #A9A6AE">Sample Artist</span>
+        <a href="Versions.dc.html" style="text-decoration: none; margin-top: 6px; align-self: flex-start; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px; background: #1C1C21; border: 1px solid #2A2A31; color: #F3EFE7; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600"><span style="color: #FFB547">VERSION 7 OF 19</span><span style="color: #A9A6AE">· Slowed</span></a>
+      </div>
+      <button aria-label="Like" style="width: 44px; height: 44px; border-radius: 22px; background: #141417; border: 1px solid #2A2A31; color: #FF8FA3; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"></path></svg>
+      </button>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <div style="position: relative; height: 10px; display: flex; gap: 2px">
+        <div style="flex-grow: 8; background: #3A3A43; border-radius: 3px"></div>
+        <div style="flex-grow: 16; background: #3A3A43; border-radius: 3px"></div>
+        <div style="flex-grow: 16; background: #7A5A2A; border-radius: 3px"></div>
+        <div style="flex-grow: 16; background: #3A3A43; border-radius: 3px"></div>
+        <div style="flex-grow: 16; background: #7A5A2A; border-radius: 3px"></div>
+        <div style="flex-grow: 8; background: #3A3A43; border-radius: 3px"></div>
+        <div style="flex-grow: 12; background: #7A5A2A; border-radius: 3px"></div>
+        <div style="flex-grow: 4; background: #3A3A43; border-radius: 3px"></div>
+        <div style="position: absolute; left: 35.4%; top: -4px; width: 4px; height: 18px; border-radius: 2px; background: #F3EFE7"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #A9A6AE">
+        <span>CHORUS · BAR 34/96</span>
+        <span style="color: #6FD3FF">FOREVER · 17 JUMPS</span>
+      </div>
+    </div>
+
+    <section style="display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border-radius: 18px; background: #141417; border: 1px solid #2A2A31">
+      <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0; gap: 2px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.1em; color: #6FD3FF">PORTAL IN 6 BARS · CHORUS → CHORUS</span>
+        <span style="font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Neon Highway</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #A9A6AE">98 BPM · 9A · lands at bar 41</span>
+      </div>
+      <button style="height: 44px; padding: 0 14px; border-radius: 22px; background: #1C1C21; border: 1px solid #2A2A31; color: #F3EFE7; font-family: inherit; font-size: 14px; font-weight: 700; flex-shrink: 0">Stay</button>
+    </section>
+
+    <div style="display: flex; gap: 8px; overflow: hidden">
+      <sc-for list="{{versions}}" as="v" hint-placeholder-count="6">
+        <sc-if value="{{v.selected}}" hint-placeholder-val="{{false}}">
+          <button onClick="{{v.pick}}" aria-pressed="true" style="height: 40px; padding: 0 14px; border-radius: 20px; background: #FFB547; border: 1px solid #FFB547; color: #1A1206; font-family: inherit; font-size: 14px; font-weight: 800; white-space: nowrap; flex-shrink: 0">{{v.label}}</button>
+        </sc-if>
+        <sc-if value="{{v.unselected}}" hint-placeholder-val="{{true}}">
+          <button onClick="{{v.pick}}" aria-pressed="false" style="height: 40px; padding: 0 14px; border-radius: 20px; background: transparent; border: 1px solid #2A2A31; color: #F3EFE7; font-family: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; flex-shrink: 0">{{v.label}}</button>
+        </sc-if>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 24px 24px 24px; margin-top: auto">
+    <button aria-label="Loop this song forever" style="width: 48px; height: 48px; border-radius: 24px; background: transparent; border: 1px solid #2A2A31; color: #A9A6AE; display: flex; align-items: center; justify-content: center; padding: 0">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 8c-2.2 0-4 1.8-4 4s1.8 4 4 4c4 0 6-8 10-8 2.2 0 4 1.8 4 4s-1.8 4-4 4c-4 0-6-8-10-8z"></path></svg>
+    </button>
+    <button aria-label="Previous" style="width: 56px; height: 56px; border-radius: 28px; background: transparent; border: none; color: #F3EFE7; display: flex; align-items: center; justify-content: center; padding: 0">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"></path></svg>
+    </button>
+    <button onClick="{{togglePlay}}" aria-label="{{playLabel}}" style="width: 80px; height: 80px; border-radius: 40px; background: #FFB547; border: none; color: #1A1206; display: flex; align-items: center; justify-content: center; padding: 0">
+      <sc-if value="{{playing}}" hint-placeholder-val="{{true}}">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"></path></svg>
+      </sc-if>
+      <sc-if value="{{paused}}" hint-placeholder-val="{{false}}">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg>
+      </sc-if>
+    </button>
+    <button aria-label="Mix into next song" style="width: 56px; height: 56px; border-radius: 28px; background: transparent; border: none; color: #F3EFE7; display: flex; align-items: center; justify-content: center; padding: 0">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"></path></svg>
+    </button>
+    <a href="Versions.dc.html" aria-label="All versions" style="width: 48px; height: 48px; border-radius: 24px; border: 1px solid #2A2A31; color: #A9A6AE; display: flex; align-items: center; justify-content: center; box-sizing: border-box">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { version: 'vinyl', playing: true };
+  }
+  renderVals() {
+    var C = 150, BARS = 96, CUR = 34;
+    function pt(bar, r) {
+      var a = (-90 + (bar / BARS) * 360) * Math.PI / 180;
+      return { x: +(C + r * Math.cos(a)).toFixed(2), y: +(C + r * Math.sin(a)).toFixed(2) };
+    }
+    function arc(b0, b1, r) {
+      var p0 = pt(b0, r), p1 = pt(b1, r);
+      var large = (b1 - b0) / BARS > 0.5 ? 1 : 0;
+      return 'M' + p0.x + ' ' + p0.y + ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + p1.x + ' ' + p1.y + ' ';
+    }
+    function chord(a, b, r) {
+      var p0 = pt(a, r), p1 = pt(b, r);
+      var cx = C + ((p0.x + p1.x) / 2 - C) * 0.18, cy = C + ((p0.y + p1.y) / 2 - C) * 0.18;
+      return 'M' + p0.x + ' ' + p0.y + ' Q' + cx.toFixed(2) + ' ' + cy.toFixed(2) + ' ' + p1.x + ' ' + p1.y + ' ';
+    }
+    var grooves = '';
+    for (var r = 58; r <= 124; r += 6) {
+      grooves += 'M' + (C + r) + ' ' + C + ' A' + r + ' ' + r + ' 0 1 1 ' + (C - r) + ' ' + C + ' A' + r + ' ' + r + ' 0 1 1 ' + (C + r) + ' ' + C + ' ';
+    }
+    var sections = [[0, 8, 0], [8, 24, 0], [24, 40, 1], [40, 56, 0], [56, 72, 1], [72, 80, 0], [80, 92, 1], [92, 96, 0]];
+    var other = '', chorus = '';
+    sections.forEach(function (s) {
+      var d = arc(s[0] + 0.25, s[1] - 0.25, 140);
+      if (s[2]) chorus += d; else other += d;
+    });
+    var ticks = '';
+    for (var b = 0; b < BARS; b++) {
+      var long = b % 4 === 0;
+      var a1 = pt(b, long ? 126 : 129), a2 = pt(b, 133);
+      ticks += 'M' + a1.x + ' ' + a1.y + ' L' + a2.x + ' ' + a2.y + ' ';
+    }
+    var jumps = [[28, 60], [32, 64], [26, 82], [12, 44], [70, 38], [50, 18], [88, 30], [62, 86]];
+    var jumpsD = '';
+    jumps.forEach(function (j) { jumpsD += chord(j[0], j[1], 124); });
+    var self = this;
+    var list = [
+      { id: 'original', label: 'Original' },
+      { id: 'vinyl', label: 'Vinyl' },
+      { id: 'slowed', label: 'Slowed' },
+      { id: 'nightcore', label: 'Nightcore' },
+      { id: 'lofi', label: 'Lo-fi' },
+      { id: '8d', label: '8D' }
+    ];
+    var playing = this.state.playing;
+    return {
+      groovesD: grooves,
+      otherSectionsD: other,
+      chorusSectionsD: chorus,
+      playedD: arc(24.3, CUR, 140),
+      ticksD: ticks,
+      jumpsD: jumpsD,
+      nextJumpD: chord(36, 84, 124),
+      nextJumpTo: pt(84, 124),
+      stylus: pt(CUR, 140),
+      versions: list.map(function (v) {
+        var sel = self.state.version === v.id;
+        return { label: v.label, selected: sel, unselected: !sel, pick: function () { self.setState({ version: v.id }); } };
+      }),
+      playing: playing,
+      paused: !playing,
+      playLabel: playing ? 'Pause' : 'Play',
+      togglePlay: function () { self.setState({ playing: !self.state.playing }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

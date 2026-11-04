@@ -1,0 +1,32 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-29T18:40:00Z" },
+  "title": "Infinite Radio — App Design",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 390, "h": 844, "title": "Home · Stations", "radius": 36 },
+    "NowPlaying.dc.html": { "x": 470, "y": 0, "w": 390, "h": 844, "title": "Now Playing (hands-on)", "radius": 36, "is_interactive": true },
+    "Versions.dc.html": { "x": 940, "y": 0, "w": 390, "h": 844, "title": "Versions sheet", "radius": 36, "is_interactive": true },
+    "Library.dc.html": { "x": 1410, "y": 0, "w": 390, "h": 844, "title": "Library", "radius": 36 },
+    "SetAside.dc.html": { "x": 1880, "y": 0, "w": 390, "h": 844, "title": "Set-aside review", "radius": 36 },
+    "Drive.dc.html": { "x": 0, "y": 1264, "w": 390, "h": 844, "title": "Ride mode", "radius": 36, "is_interactive": true },
+    "DriveMixing.dc.html": { "x": 470, "y": 1264, "w": 390, "h": 844, "title": "Ride mode · mid-transition", "radius": 36 },
+    "CarControls.dc.html": { "x": 940, "y": 1264, "w": 1330, "h": 844, "title": "On the ride · helmet buttons + voice" }
+  },
+  "order": [
+    "Main.dc.html",
+    "NowPlaying.dc.html",
+    "Versions.dc.html",
+    "Library.dc.html",
+    "SetAside.dc.html",
+    "Drive.dc.html",
+    "DriveMixing.dc.html",
+    "CarControls.dc.html"
+  ],
+  "notes": {
+    "rowHandsOn": { "x": 0, "y": -300, "text": "Hands-on", "kind": "title1", "maxW": 2270 },
+    "rowHandsOff": { "x": 0, "y": 964, "text": "Hands-off · Ride", "kind": "title1", "maxW": 2270 }
+  },
+  "designSystems": []
+}
