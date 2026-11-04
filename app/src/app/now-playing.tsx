@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import SaicsPlayer from "../../modules/saics-player";
 import { ChevronDown, Heart, HeartLine, Helmet, Infinity_, ListIcon, Next, Pause, Play, Prev } from "../icons";
-import { displayName } from "../names";
+import { displayName, versionLabel } from "../names";
 import { Record } from "../Record";
 import { Body, IconBtn, Label, Mono, Pill } from "../ui";
 import { usePlayerState } from "../usePlayer";
@@ -18,7 +18,7 @@ export default function NowPlaying() {
   const uri = state?.versions?.[(state?.versionIndex ?? 1) - 1]?.uri;
   const sections = state?.sections ?? [];
   const total = sections.reduce((n, x) => n + x.bars, 0);
-  const versionLabel = state?.version ? state.version.replace(/\+/g, " + ") : "";
+  const version = state?.version ? versionLabel(state.version) : "";
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: color.bg }} edges={["top", "bottom"]}>
@@ -43,7 +43,7 @@ export default function NowPlaying() {
               {state?.title && (state.versionCount ?? 0) > 0 ? (
                 <Pressable onPress={() => router.push("/versions")} style={s.versionChip} accessibilityLabel="Open versions">
                   <Mono c={color.amber} bold>VERSION {state.versionIndex} OF {state.versionCount}</Mono>
-                  <Mono bold style={{ flexShrink: 1 }}>· {versionLabel}</Mono>
+                  <Mono bold style={{ flexShrink: 1 }}>· {version}</Mono>
                 </Pressable>
               ) : null}
             </View>
@@ -84,7 +84,7 @@ export default function NowPlaying() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
               <Pill h={40} kind={state?.vinyl ? "primary" : "outline"} label="Vinyl" onPress={() => SaicsPlayer.toggleVinyl()} />
               {state?.versions?.map((v) => (
-                <Pill key={v.uri} h={40} kind={v.uri === uri ? "primary" : "outline"} label={v.version.replace(/\+/g, " + ")} onPress={() => SaicsPlayer.pickVersion(v.uri)} />
+                <Pill key={v.uri} h={40} kind={v.uri === uri ? "primary" : "outline"} label={versionLabel(v.version)} onPress={() => SaicsPlayer.pickVersion(v.uri)} />
               ))}
             </ScrollView>
           ) : null}

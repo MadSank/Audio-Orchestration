@@ -14,4 +14,14 @@ export function displayName(raw: string): { title: string; artist: string } {
   return m ? { artist: m[1], title: m[2] } : { title: s, artist: "" };
 }
 
-export const upper = (s: string) => s.toUpperCase();
+/** "slowed+reverb" -> "Slowed + reverb" (design: version labels start with a capital). */
+export function versionLabel(v: string): string {
+  const s = v.replace(/\+/g, " + ");
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** The artist line, unless the song's name already starts with it. */
+export function artistLine(name: string, artist: string): string {
+  const norm = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return artist && !norm(name).startsWith(norm(artist).slice(0, 10)) ? artist : "";
+}

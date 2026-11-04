@@ -77,7 +77,19 @@ export function VinylIcon({ size = 28, c = color.amber }: P) {
   );
 }
 
-/** The small record used as logo, list art and mini-player art. */
+/** The app logo (design 01). */
+export function Logo({ size = 28 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 28 28">
+      <Circle cx={14} cy={14} r={13} fill={color.surface} stroke={color.border} />
+      <Circle cx={14} cy={14} r={9} fill="none" stroke={color.border} />
+      <Circle cx={14} cy={14} r={5} fill={color.amber} />
+      <Circle cx={14} cy={14} r={1.4} fill={color.bg} />
+    </Svg>
+  );
+}
+
+/** The small record used as list art and mini-player art. */
 export function Disc({ size = 44, label = color.amber, plate = color.surface }: { size?: number; label?: string; plate?: string | null }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 44 44">

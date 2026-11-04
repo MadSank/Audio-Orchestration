@@ -182,11 +182,12 @@ class Engine(private val context: Context, private val listener: Listener) {
   fun portalsFrom(trackId: String): List<Map<String, Any?>> {
     val g = graph ?: return emptyList()
     val songs = byTrack
-    return g.tracks[trackId]?.portals.orEmpty().filter { !it.sameGroup }.groupBy { it.to }.mapNotNull { (to, es) ->
-      val t = g.tracks[to] ?: return@mapNotNull null
+    return g.tracks[trackId]?.portals.orEmpty().filter { !it.sameGroup && it.to in g.tracks }.groupBy { g.tracks.getValue(it.to).key }.map { (_, es) ->
+      val best = es.maxByOrNull { it.score }!! // one row per song, whichever versions it lands in
+      val t = g.tracks.getValue(best.to)
       mapOf(
-        "trackId" to to, "title" to (songs[to]?.title ?: to), "count" to es.size,
-        "pair" to es.maxByOrNull { it.score }!!.pair, "bpm" to t.bpm, "camelot" to t.camelot,
+        "trackId" to best.to, "title" to (songs[best.to]?.title ?: best.to), "count" to es.size,
+        "pair" to best.pair, "bpm" to t.bpm, "camelot" to t.camelot,
       )
     }.sortedByDescending { it["count"] as Int }.take(6)
   }
@@ -607,7 +608,7 @@ class Engine(private val context: Context, private val listener: Listener) {
       if (mv != null && mv.to == l.song.trackId) {
         landBar = mv.toBar
         if (mv.kind == "portal" && prev != null) l.came = Triple(prev.trackId, mv.at, mv.toBar)
-        event("portal", "${mv.pair.ifEmpty { mv.kind }}")
+        event("portal", l.song.title)
       }
       index = queue.indexOfFirst { it.id == l.song.id }.let { if (it >= 0) it else index }
       log("playing ${l.song.title} [${l.song.version}] bundle=${l.bundle != null} decoded=${l.pcm.complete}")

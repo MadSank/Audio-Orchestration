@@ -5,7 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
 
 import SaicsPlayer from "../../modules/saics-player";
-import { Disc, Folder, HeartLine, Infinity_, Moon, Play, Search, Sliders, VinylIcon } from "../icons";
+import { Folder, HeartLine, Infinity_, Logo, Moon, Play, Search, Sliders, VinylIcon } from "../icons";
 import { Body, BottomNav, Display, IconBtn, Label, MiniPlayer, Mono, Pill, Title } from "../ui";
 import { useLibrary, usePlayerState } from "../usePlayer";
 import { color, font, radius, space } from "../theme/tokens";
@@ -25,7 +25,7 @@ export default function Home() {
     <SafeAreaView style={{ flex: 1, backgroundColor: color.bg }} edges={["top", "bottom"]}>
       <View style={s.header}>
         <View style={s.brand}>
-          <Disc size={28} plate={null} />
+          <Logo />
           <Text style={s.brandText}>INFINITE RADIO</Text>
         </View>
         <View style={{ flexDirection: "row", gap: space.sm }}>
@@ -95,7 +95,7 @@ function Tile({ icon, title, sub, on, onPress }: { icon: ReactNode; title: strin
     <Pressable onPress={onPress} style={({ pressed }) => [s.tile, on && { borderColor: color.amber }, pressed && { opacity: 0.7 }]}>
       {icon}
       <View style={{ gap: 2 }}>
-        <Text numberOfLines={1} style={{ fontFamily: font.extrabold, fontSize: 16, color: color.text }}>{title}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={{ fontFamily: font.extrabold, fontSize: 16, color: color.text }}>{title}</Text>
         <Body numberOfLines={1} style={{ fontSize: 13 }}>{sub}</Body>
       </View>
     </Pressable>
