@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import SaicsPlayer from "../../modules/saics-player";
 import { Close } from "../icons";
-import { displayName } from "../names";
+import { displayName, versionLabel } from "../names";
 import { Body, Display, IconBtn, Mono } from "../ui";
 import { usePlayerState } from "../usePlayer";
 import { color, font, radius, space } from "../theme/tokens";
@@ -35,7 +35,7 @@ export default function Versions() {
               <Pressable key={v.uri} onPress={() => SaicsPlayer.pickVersion(v.uri)} style={[s.row, on && s.rowOn]} accessibilityState={{ selected: on }}>
                 <View style={[s.dot, on && s.dotOn]} />
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ fontFamily: on ? font.extrabold : font.bold, fontSize: 16, color: color.text }}>{v.version.replace(/\+/g, " + ")}</Text>
+                  <Text numberOfLines={1} style={{ fontFamily: on ? font.extrabold : font.bold, fontSize: 16, color: color.text }}>{versionLabel(v.version)}</Text>
                   <Body numberOfLines={1} style={{ fontSize: 12, color: on ? "#D9C9AE" : color.textMuted }}>{displayName(v.title).title}</Body>
                 </View>
                 {on ? <Mono size={11} c={color.amber} bold>ON</Mono> : null}

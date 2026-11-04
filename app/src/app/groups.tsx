@@ -5,7 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import SaicsPlayer, { type Track } from "../../modules/saics-player";
 import { Back, ChevronDown, ChevronRight, Search } from "../icons";
-import { displayName } from "../names";
+import { displayName, versionLabel } from "../names";
 import { Badge, Body, Display, IconBtn, Label, Mono, Pill } from "../ui";
 import { type SongGroup, useLibrary } from "../usePlayer";
 import { color, font, radius, space } from "../theme/tokens";
@@ -31,7 +31,7 @@ export default function Groups() {
   }, [groups, q, merging]);
 
   function saved(ok: boolean) {
-    if (!ok) Alert.alert("Couldn't save", "SAICS needs write access to the music folder. Choose the folder again in Helmet & settings.");
+    if (!ok) Alert.alert("Couldn't save", "SAICS needs write access to the music folder. Tap Change folder on the Helmet tab and pick it again.");
     reload();
   }
   function merge(into: SongGroup) {
@@ -52,7 +52,7 @@ export default function Groups() {
       <Body style={s.intro}>
         {merging ? `Pick the song that “${displayName(merging.name).title}” belongs to.` : `Versions of the same song live together. ${groups.length} songs, ${tracks.length} versions; changes stay in .saics/ and no audio is touched.`}
       </Body>
-      {!canWrite ? <Mono c={color.danger} style={s.warn} numberOfLines={2}>Read-only folder: choose it again in Helmet & settings to save changes.</Mono> : null}
+      {!canWrite ? <Mono c={color.danger} style={s.warn} numberOfLines={2}>Read-only folder: tap Change folder on the Helmet tab and pick it again to save changes.</Mono> : null}
 
       <View style={s.search}>
         <Search />
@@ -97,7 +97,7 @@ function GroupCard({ group, open, merging, onPress, onMerge, onSplit, onLoopable
             <View key={t.uri} style={s.version}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ fontFamily: font.bold, fontSize: 14, color: color.text }}>{t.version.replace(/\+/g, " + ")}</Text>
+                  <Text numberOfLines={1} style={{ fontFamily: font.bold, fontSize: 14, color: color.text }}>{versionLabel(t.version)}</Text>
                   <Mono numberOfLines={1}>{t.file || t.title}</Mono>
                 </View>
                 {n > 1 ? <Pill h={44} label="Split" onPress={() => onSplit(t)} /> : null}

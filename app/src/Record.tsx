@@ -3,6 +3,7 @@ import { Animated, Easing, StyleSheet, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 
 import { addListener, type SectionInfo } from "../modules/saics-player";
+import { displayName, versionLabel } from "./names";
 import { Mono } from "./ui";
 import { color, font } from "./theme/tokens";
 
@@ -10,8 +11,8 @@ const STAGE = 300;
 const C = STAGE / 2;
 const DISC = 268;
 const RING = 144; // section arcs on the outer ring
-const ARM_OUTER = 12; // tonearm angle (deg) at the start of the song (outer groove)
-const ARM_INNER = 33; // ... at the end (next to the label)
+const ARM_OUTER = 5; // tonearm angle (deg) at the start of the song (outer groove)
+const ARM_INNER = 26; // ... at the end (next to the label)
 
 function fmt(ms: number) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -67,8 +68,8 @@ export function Record({ position, duration, playing, bpm, camelot, sections }: 
   useEffect(() => {
     const sub = addListener("onAction", (a) => {
       if (a.action === "jump") jumpBack(`↺ ${(a.detail ?? "").replace(/ \(.*\)$/, "")}`);
-      if (a.action === "portal") jumpBack(`→ ${a.detail ?? ""}`);
-      if (a.action === "version") jumpBack(`⇄ ${a.detail ?? ""}`);
+      if (a.action === "portal") jumpBack(`→ ${displayName(a.detail ?? "").title}`);
+      if (a.action === "version") jumpBack(`⇄ ${versionLabel(a.detail ?? "")}`);
     });
     return () => sub.remove();
   }, []);
@@ -139,16 +140,16 @@ export function Record({ position, duration, playing, bpm, camelot, sections }: 
   );
 }
 
-const ARM_LEN = 168;
+const ARM_LEN = 178;
 const s = StyleSheet.create({
   wrap: { alignSelf: "stretch", gap: 2 },
   stage: { width: STAGE, height: STAGE, alignSelf: "center", alignItems: "center", justifyContent: "center" },
   flash: { position: "absolute", width: STAGE, height: STAGE, borderRadius: C, borderWidth: 3, borderColor: color.cyan },
   disc: { width: DISC, height: DISC },
   label: { position: "absolute", width: 92, height: 92, borderRadius: 46, backgroundColor: color.amber, alignItems: "center", justifyContent: "center", gap: 2 },
-  arm: { position: "absolute", left: STAGE - 22, top: 4, width: 6, height: ARM_LEN, transformOrigin: "50% 0%", alignItems: "center" },
+  arm: { position: "absolute", left: STAGE - 22, top: 9, width: 6, height: ARM_LEN, transformOrigin: "50% 0%", alignItems: "center" },
   armBar: { width: 3, flex: 1, borderRadius: 2, backgroundColor: color.text },
   head: { width: 10, height: 18, borderRadius: 3, backgroundColor: color.text, marginTop: -2 },
-  pivot: { position: "absolute", left: STAGE - 29, top: -5, width: 20, height: 20, borderRadius: 10, backgroundColor: color.surfaceRaised, borderWidth: 2, borderColor: color.text },
+  pivot: { position: "absolute", left: STAGE - 29, top: 0, width: 20, height: 20, borderRadius: 10, backgroundColor: color.surfaceRaised, borderWidth: 2, borderColor: color.text },
   times: { flexDirection: "row", justifyContent: "space-between", gap: 8, paddingHorizontal: 20 },
 });

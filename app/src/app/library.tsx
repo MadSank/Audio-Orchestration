@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import SaicsPlayer, { type PortalGroup, type Track } from "../../modules/saics-player";
 import { ChevronDown, ChevronRight, Disc, Search } from "../icons";
-import { displayName } from "../names";
+import { artistLine, displayName, versionLabel } from "../names";
 import { Badge, BottomNav, Display, Label, MiniPlayer, Mono } from "../ui";
 import { type SongGroup, useLibrary, usePlayerState } from "../usePlayer";
 import { color, font, radius, space } from "../theme/tokens";
@@ -111,8 +111,8 @@ function GroupRow({ group, open, onToggle }: { group: SongGroup; open: boolean; 
   const m = main(group);
   const analysed = group.versions.some((v) => v.trackId);
   const n = group.versions.length;
-  const name = displayName(group.name || m.title);
-  const artist = displayName(m.title).artist;
+  const name = { title: group.name || displayName(m.title).title };
+  const artist = artistLine(group.name || m.title, displayName(m.title).artist);
   return (
     <View>
       <Pressable onPress={onToggle} style={s.row} accessibilityState={{ expanded: open }}>
@@ -140,7 +140,7 @@ function VersionRow({ track }: { track: Track }) {
   return (
     <Pressable onPress={() => SaicsPlayer.playTrack(track.uri)} style={({ pressed }) => [s.version, pressed && { opacity: 0.6 }]}>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ fontFamily: font.bold, fontSize: 14, color: color.text }}>{track.version.replace(/\+/g, " + ")}</Text>
+        <Text numberOfLines={1} style={{ fontFamily: font.bold, fontSize: 14, color: color.text }}>{versionLabel(track.version)}</Text>
         <Text numberOfLines={1} style={{ fontFamily: font.regular, fontSize: 12, color: color.textMuted }}>{displayName(track.title).title}</Text>
       </View>
       <Mono>{track.trackId ? `${Math.round(track.bpm)} · ${track.camelot}` : ""}</Mono>
