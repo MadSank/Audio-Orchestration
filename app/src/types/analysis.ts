@@ -8,6 +8,32 @@
 
 export const ANALYSIS_SCHEMA = "saics.analysis/9" as const;
 export const LIBRARY_SCHEMA = "saics.library/7" as const;
+export const PORTALS_SCHEMA = "saics.portals/1" as const;
+
+/** `.saics/portals.json` (engine/saics/schema.py PortalGraph): the Mix Web. */
+export interface PortalEdge {
+  from_bar: number;
+  to: string; // track id
+  to_bar: number;
+  score: number;
+  pair: string; // "chorus → chorus"
+  context: number;
+  harmony: number;
+  same_group: boolean; // only used when Forever is on
+  two_way: boolean;
+}
+
+export interface PortalTrack {
+  file: string;
+  group: string;
+  bpm: number;
+  camelot: string;
+  sections: string[]; // kind per bundle section
+  bars: number;
+  entries: number[]; // fallback landing bars, best first
+  break_exits: number[];
+  portals: PortalEdge[];
+}
 
 export type TriageClass =
   | "music" | "sfx" | "speech" | "short" | "unreadable" | "duplicate" | "not_audio";

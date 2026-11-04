@@ -10,6 +10,43 @@ export interface Track {
   version: string;
   /** Gain to -14 LUFS from the track's analysis bundle (0 when missing). */
   gainDb: number;
+  /** Bundle id ("" = not analysed). */
+  trackId: string;
+  /** Relative to the folder holding .saics (the key in override files). */
+  file: string;
+  groupName: string;
+  bpm: number;
+  camelot: string;
+  notLoopable: boolean;
+}
+
+export interface SectionInfo {
+  bars: number;
+  /** "intro" | "verse" | "chorus" | "break" | "inst" | "outro" | "section" (no portal data). */
+  kind: string;
+}
+
+/** The next cross-song move, as shown on Now Playing. */
+export interface NextPortal {
+  /** "portal": a matched jump; "back": back through the portal we came in on; "cut": fallback. */
+  kind: "portal" | "back" | "cut";
+  title: string;
+  inBars: number;
+  /** e.g. "chorus → chorus". */
+  pair: string;
+  bpm: number;
+  camelot: string;
+  landBar: number;
+}
+
+/** "Portals from" row: one target song. */
+export interface PortalGroup {
+  trackId: string;
+  title: string;
+  count: number;
+  pair: string;
+  bpm: number;
+  camelot: string;
 }
 
 export interface PlayerState {
@@ -25,6 +62,19 @@ export interface PlayerState {
   position: number;
   duration: number;
   libraryCount: number;
+  liked: boolean;
+  versionIndex: number;
+  versionCount: number;
+  versions: { uri: string; title: string; version: string }[];
+  trackId?: string;
+  bpm?: number;
+  camelot?: string;
+  bar?: number;
+  sections?: SectionInfo[];
+  sectionKind?: string;
+  /** Forever jumps taken in this song. */
+  jumps?: number;
+  nextPortal?: NextPortal | null;
 }
 
 export interface ButtonEvent {
@@ -58,6 +108,17 @@ declare class SaicsPlayerModule extends NativeModule<Events> {
   scanLibrary(): Promise<Track[]>;
   /** The last scan's result, without walking the folder again. */
   getLibrary(): Promise<Track[]>;
+  canWriteOverrides(): boolean;
+  /** Group review; each resolves false when the override file can't be written. */
+  setNotLoopable(uri: string, notLoopable: boolean): Promise<boolean>;
+  mergeGroups(from: string, into: string): Promise<boolean>;
+  splitTrack(uri: string): Promise<boolean>;
+  toggleLike(uri: string): Promise<void>;
+  /** Switch to this version of the playing song on the next bar. */
+  pickVersion(uri: string): Promise<void>;
+  /** Skip the portal shown on Now Playing and keep the current song. */
+  stayPortal(): Promise<void>;
+  getPortalsFrom(trackId: string): Promise<PortalGroup[]>;
   startStation(index: number): Promise<void>;
   playTrack(uri: string): Promise<void>;
   togglePlay(): Promise<void>;

@@ -92,7 +92,8 @@ class SaicsPlayerModule : Module() {
       val activity = appContext.currentActivity ?: return@AsyncFunction promise.reject("ERR_NO_ACTIVITY", "no activity", null)
       pickPromise = promise
       val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
-        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+          Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
       )
       activity.startActivityForResult(intent, PICK_FOLDER)
     }
@@ -106,7 +107,10 @@ class SaicsPlayerModule : Module() {
         p.resolve(null)
         return@OnActivityResult
       }
-      context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      // Write access is only used for the override files in .saics/ (hard rule 3).
+      context.contentResolver.takePersistableUriPermission(
+        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+      )
       prefs.edit().putString("folder", uri.toString()).apply()
       p.resolve(uri.toString())
     }
@@ -121,6 +125,8 @@ class SaicsPlayerModule : Module() {
       val files = mutableListOf<Pair<String, Uri>>() // relative path, document uri
       var libraryJson: Uri? = null
       var bundles: Map<String, String> = emptyMap() // "<id>.json" -> document id in .saics/tracks
+      var saicsDoc: String? = null
+      var portalsUri: Uri? = null
       var saicsRoot = "" // library.json paths are relative to the folder that holds .saics/
       fun walk(docId: String, rel: String) {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
@@ -138,6 +144,8 @@ class SaicsPlayerModule : Module() {
             if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
               if (name == "_set_aside") continue
               if (name == ".saics") {
+                saicsDoc = id
+                portalsUri = children(tree, id)["portals.json"]?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it) }
                 walkSaics(tree, id, { libraryJson = it; saicsRoot = rel }) { bundles = it }
                 continue
               }
@@ -150,17 +158,22 @@ class SaicsPlayerModule : Module() {
       }
       walk(DocumentsContract.getTreeDocumentId(tree), "")
       val meta = libraryJson?.let { readLibrary(it) } ?: emptyMap()
+      prefs.edit().putString("saicsDoc", saicsDoc).apply()
+      val overrides = saicsDoc?.let { Overrides.read(context.contentResolver, tree, it) } ?: Overrides()
       val tracks = files.sortedBy { it.first.lowercase() }.map { (path, uri) ->
-        val m = meta[if (saicsRoot.isEmpty()) path else path.removePrefix("$saicsRoot/")]
+        val file = if (saicsRoot.isEmpty()) path else path.removePrefix("$saicsRoot/")
+        val m = meta[file]
         val bundleDoc = m?.id?.let { bundles["$it.json"] }
-        val gain = bundleDoc?.let { readGain(tree, it) } ?: 0.0
+        val facts = bundleDoc?.let { readFacts(tree, it) }
         val bundleUri = bundleDoc?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it).toString() } ?: ""
         Track(uri.toString(), path.substringAfterLast('/').substringBeforeLast('.'), path,
-              m?.group ?: "", m?.version ?: "original", gain, bundleUri)
-      }
+              m?.group ?: "", m?.version ?: "original", facts?.gainDb ?: 0.0, bundleUri, m?.id ?: "", file,
+              m?.groupName ?: "", facts?.bpm ?: 0.0, facts?.camelot ?: "", file in overrides.notLoopable)
+      }.let { overrides.applyGroups(it) }
       // The walk runs off the main thread, but the player may only be touched on its own.
       onService(promise) { svc ->
         svc.setLibrary(tracks)
+        svc.setPortals(portalsUri)
         tracks.map { it.toMap() }
       }
     }
@@ -170,6 +183,43 @@ class SaicsPlayerModule : Module() {
       onService(promise) { svc -> svc.library.map { it.toMap() } }
     }
 
+    // ── song groups review: override files in .saics/, applied here at once ───
+    Function("canWriteOverrides") { canWrite() }
+    AsyncFunction("setNotLoopable") { uri: String, value: Boolean, promise: Promise ->
+      onService(promise) { svc ->
+        val t = svc.library.firstOrNull { it.uri == uri } ?: return@onService false
+        if (!Overrides.setNotLoopable(context.contentResolver, Uri.parse(prefs.getString("folder", null)), prefs.getString("saicsDoc", null), t.file, value)) return@onService false
+        svc.updateTracks { l -> l.map { if (it.uri == uri) it.copy(notLoopable = value) else it } }
+        svc.player.engine.setNotLoopable(uri, value)
+        true
+      }
+    }
+    /** Every version of group [from] joins group [into]. */
+    AsyncFunction("mergeGroups") { from: String, into: String, promise: Promise ->
+      onService(promise) { svc ->
+        val target = svc.library.firstOrNull { it.group == into } ?: return@onService false
+        val rows = svc.library.filter { it.group == from }.map { listOf("merge", it.file, target.file) }
+        if (!Overrides.appendGroups(context.contentResolver, Uri.parse(prefs.getString("folder", null)), prefs.getString("saicsDoc", null), rows)) return@onService false
+        svc.updateTracks { l -> l.map { if (it.group == from) it.copy(group = into, groupName = target.groupName) else it } }
+        true
+      }
+    }
+    /** One version leaves its group and becomes a song of its own. */
+    AsyncFunction("splitTrack") { uri: String, promise: Promise ->
+      onService(promise) { svc ->
+        val t = svc.library.firstOrNull { it.uri == uri } ?: return@onService false
+        if (!Overrides.appendGroups(context.contentResolver, Uri.parse(prefs.getString("folder", null)), prefs.getString("saicsDoc", null), listOf(listOf("split", t.file, "")))) return@onService false
+        svc.updateTracks { l -> l.map { if (it.uri == uri) it.copy(group = "split:${it.file}", groupName = it.title) else it } }
+        true
+      }
+    }
+    AsyncFunction("stayPortal") { promise: Promise -> onService(promise) { it.player.engine.stay(); null } }
+    AsyncFunction("getPortalsFrom") { trackId: String, promise: Promise ->
+      onService(promise) { it.player.engine.portalsFrom(trackId) }
+    }
+    AsyncFunction("toggleLike") { uri: String, promise: Promise -> onService(promise) { it.toggleLike(uri); null } }
+    AsyncFunction("pickVersion") { uri: String, promise: Promise -> onUiAction(promise) { it.pickVersion(uri); null } }
+
     // ── playback ──────────────────────────────────────────────────────────────
     AsyncFunction("startStation") { index: Int, promise: Promise ->
       onUiAction(promise) { it.startStation(index, announce = true); null }
@@ -178,6 +228,7 @@ class SaicsPlayerModule : Module() {
       onUiAction(promise) { svc ->
         val all = svc.library
         val start = all.indexOfFirst { it.uri == uri }.coerceAtLeast(0)
+        svc.player.engine.setMix(false, null) // a picked song: the queue plays in order
         svc.player.setMediaItems(all.map { it.toMediaItem() }, start, 0)
         svc.player.prepare()
         svc.player.play()
@@ -241,17 +292,26 @@ class SaicsPlayerModule : Module() {
     kids["tracks"]?.let { tracks(children(tree, it)) }
   }
 
-  private data class Meta(val id: String, val group: String, val version: String)
+  private data class Meta(val id: String, val group: String, val version: String, val groupName: String)
+  private data class Facts(val gainDb: Double, val bpm: Double, val camelot: String)
+
+  private fun canWrite(): Boolean {
+    val folder = prefs.getString("folder", null) ?: return false
+    return context.contentResolver.persistedUriPermissions.any { it.uri.toString() == folder && it.isWritePermission }
+  }
 
   /** file (relative to the folder holding .saics) -> bundle id, group, version from library.json. */
   private fun readLibrary(uri: Uri): Map<String, Meta> = try {
     val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: "{}"
-    val tracks = JSONObject(text).optJSONArray("tracks")
+    val lib = JSONObject(text)
+    val tracks = lib.optJSONArray("tracks")
+    val groups = lib.optJSONObject("groups")
     val out = HashMap<String, Meta>()
     if (tracks != null) {
       for (i in 0 until tracks.length()) {
         val t = tracks.getJSONObject(i)
-        out[t.optString("file")] = Meta(t.optString("id"), t.optString("group"), t.optString("version", "original"))
+        val g = t.optString("group")
+        out[t.optString("file")] = Meta(t.optString("id"), g, t.optString("version", "original"), groups?.optJSONObject(g)?.optString("name") ?: "")
       }
     }
     out
@@ -259,12 +319,14 @@ class SaicsPlayerModule : Module() {
     emptyMap()
   }
 
-  /** loudness.gain_db from a track's analysis bundle; 0 when missing or unreadable. */
-  private fun readGain(tree: Uri, docId: String): Double = try {
+  /** Loudness, tempo and key from a track's analysis bundle; null when unreadable. */
+  private fun readFacts(tree: Uri, docId: String): Facts? = try {
     val uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
     val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: "{}"
-    JSONObject(text).optJSONObject("loudness")?.optDouble("gain_db", 0.0) ?: 0.0
+    val o = JSONObject(text)
+    Facts(o.optJSONObject("loudness")?.optDouble("gain_db", 0.0) ?: 0.0, o.optJSONObject("tempo")?.optDouble("bpm", 0.0) ?: 0.0,
+      o.optJSONObject("key")?.optString("camelot", "") ?: "")
   } catch (e: Exception) {
-    0.0
+    null
   }
 }

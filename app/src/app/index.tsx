@@ -1,123 +1,116 @@
-import { Link } from "expo-router";
-import { useEffect, useState } from "react";
-import { AppState, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
+import type { ReactNode } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Circle, Path } from "react-native-svg";
 
-import SaicsPlayer, { STATIONS } from "../../modules/saics-player";
-import { Record } from "../Record";
-import { Button, Card, Label } from "../ui";
-import { usePlayerState } from "../usePlayer";
-import { color, space, type } from "../theme/tokens";
+import SaicsPlayer from "../../modules/saics-player";
+import { Disc, Folder, HeartLine, Infinity_, Moon, Play, Search, Sliders, VinylIcon } from "../icons";
+import { Body, BottomNav, Display, IconBtn, Label, MiniPlayer, Mono, Pill, Title } from "../ui";
+import { useLibrary, usePlayerState } from "../usePlayer";
+import { color, font, radius, space } from "../theme/tokens";
 
 export default function Home() {
+  const router = useRouter();
   const state = usePlayerState();
-  const [folder, setFolder] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
-  const [count, setCount] = useState<number | null>(null);
-  const [batteryOk, setBatteryOk] = useState(true);
-  const [scanError, setScanError] = useState<string | null>(null);
+  const { tracks, groups } = useLibrary();
+  const hasFolder = !!SaicsPlayer.getFolder();
 
-  useEffect(() => {
-    setFolder(SaicsPlayer.getFolder());
-    setBatteryOk(SaicsPlayer.isIgnoringBatteryOptimizations());
-    // Re-check when returning from the system battery dialog or settings.
-    const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") setBatteryOk(SaicsPlayer.isIgnoringBatteryOptimizations());
-    });
-    return () => sub.remove();
-  }, []);
-
-  async function scan() {
-    setScanning(true);
-    setScanError(null);
-    try {
-      const tracks = await SaicsPlayer.scanLibrary();
-      setCount(tracks.length);
-    } catch (e) {
-      setScanError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setScanning(false);
-    }
+  function play(station: number) {
+    SaicsPlayer.startStation(station).catch(() => {});
+    router.push("/now-playing");
   }
 
-  async function pick() {
-    const uri = await SaicsPlayer.pickFolder();
-    if (uri) {
-      setFolder(uri);
-      await scan();
-    }
-  }
-
-  const libraryCount = count ?? state?.libraryCount ?? 0;
   return (
-    <ScrollView contentContainerStyle={s.page}>
-      <Card>
-        <Label>Now playing</Label>
-        <Text style={[type.title, { color: state?.isPlaying ? color.amber : color.text }]} numberOfLines={2}>
-          {state?.title ?? "Nothing playing"}
-        </Text>
-        <Text style={[type.mono, { color: color.textMuted, fontFamily: "monospace" }]}>
-          {state ? `${state.station} · ${state.version ?? ""}` : ""}
-          {state?.forever ? " · FOREVER" : ""}
-          {state?.vinyl ? " · VINYL" : ""}
-        </Text>
-        <Record position={state?.position ?? 0} duration={state?.duration ?? 0} playing={!!state?.isPlaying} />
-        <View style={s.row}>
-          <Button label="⏮" onPress={() => SaicsPlayer.previous()} style={s.flex} />
-          <Button label={state?.isPlaying ? "Pause" : "Play"} kind="primary" onPress={() => SaicsPlayer.togglePlay()} style={s.flex2} />
-          <Button label="⏭" onPress={() => SaicsPlayer.next()} style={s.flex} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: color.bg }} edges={["top", "bottom"]}>
+      <View style={s.header}>
+        <View style={s.brand}>
+          <Disc size={28} plate={null} />
+          <Text style={s.brandText}>INFINITE RADIO</Text>
         </View>
-        <View style={s.row}>
-          <Button label={state?.forever ? "Forever: on" : "Forever: off"} kind="accent" onPress={() => SaicsPlayer.toggleForever()} style={s.flex} />
-          <Button label={state?.vinyl ? "Vinyl: on" : "Vinyl: off"} onPress={() => SaicsPlayer.toggleVinyl()} style={s.flex} />
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          <IconBtn border={color.border} onPress={() => router.replace("/library")} accessibilityLabel="Search"><Search size={20} c={color.text} /></IconBtn>
+          <IconBtn border={color.border} onPress={() => router.replace("/buttons")} accessibilityLabel="Settings"><Sliders /></IconBtn>
         </View>
-      </Card>
+      </View>
 
-      <Label>Stations</Label>
-      {STATIONS.map((name, i) => (
-        <Button key={name} label={name} big kind={state?.stationIndex === i && state?.isPlaying ? "primary" : "plain"}
-          onPress={() => SaicsPlayer.startStation(i)} />
-      ))}
-
-      <Card>
-        <Label>Music folder</Label>
-        <Text style={[type.body, { color: color.text }]} numberOfLines={2}>
-          {folder ? decodeURIComponent(folder.split("/tree/")[1] ?? folder) : "Not chosen yet"}
-        </Text>
-        <Text style={[type.mono, { color: color.textMuted, fontFamily: "monospace" }]}>
-          {scanning ? "scanning…" : `${libraryCount} songs`}
-        </Text>
-        {scanError ? <Text style={[type.mono, { color: color.danger, fontFamily: "monospace" }]}>Scan failed: {scanError}</Text> : null}
-        <View style={s.row}>
-          <Button label={folder ? "Change folder" : "Choose folder"} kind={folder ? "plain" : "primary"} onPress={pick} style={s.flex} />
-          {folder ? <Button label="Rescan" onPress={scan} style={s.flex} /> : null}
+      <ScrollView contentContainerStyle={s.page}>
+        <View style={s.hero}>
+          <View style={{ flex: 1, gap: space.sm }}>
+            <Label>STATION · LIBRARY-WIDE</Label>
+            <Display size={30} style={{ lineHeight: 30 }}>INFINITE RIDE</Display>
+            <Body style={{ lineHeight: 20 }}>Your whole library as one continuous walk, through portals between songs.</Body>
+            <View style={{ flexDirection: "row", gap: space.sm, marginTop: space.xs }}>
+              <Pill kind="light" label="Play" icon={<Play size={16} c={color.bg} />} onPress={() => (state?.title && state.stationIndex === 0 ? router.push("/now-playing") : play(0))} />
+              <Pill label="Shuffle" onPress={() => play(0)} />
+            </View>
+          </View>
+          <HeroDisc />
         </View>
-        <Link href="/library" asChild>
-          <Button label="Browse library" onPress={() => {}} />
-        </Link>
-      </Card>
 
-      <Card>
-        <Label>Helmet</Label>
-        <Text style={[type.body, { color: color.textMuted }]}>
-          Start playback here once per ride; the Cardo buttons then control SAICS with the screen off.
-        </Text>
-        <Link href="/buttons" asChild>
-          <Button label="Button test & settings" kind="accent" onPress={() => {}} />
-        </Link>
-        {!batteryOk ? (
-          <Button label="Allow background playback (battery)" kind="primary"
-            onPress={() => SaicsPlayer.requestIgnoreBatteryOptimizations()} />
-        ) : (
-          <Text style={[type.mono, { color: color.textMuted, fontFamily: "monospace" }]}>Battery optimisation: off for SAICS ✓</Text>
-        )}
-      </Card>
-    </ScrollView>
+        <View style={s.rowBetween}>
+          <Text style={s.h2}>STATIONS</Text>
+          <Mono c={color.textFaint} style={{ flexShrink: 1 }}>Triple-press play to cycle</Mono>
+        </View>
+
+        <View style={s.grid}>
+          <Tile icon={<Infinity_ size={28} c={color.cyan} />} title="This Song Forever" sub={state?.forever ? "On · seamless loop" : "Seamless infinite loop"} on={state?.forever}
+            onPress={() => SaicsPlayer.toggleForever()} />
+          <Tile icon={<VinylIcon />} title="Vinyl Ride" sub="The mix, on a turntable" on={state?.stationIndex === 1 && state.isPlaying} onPress={() => play(1)} />
+          <Tile icon={<Moon size={28} c={color.lilac} />} title="Late Night" sub="Slowed + reverb" on={state?.stationIndex === 2 && state.isPlaying} onPress={() => play(2)} />
+          <Tile icon={<HeartLine size={28} c={color.pink} />} title="Liked" sub="Only songs you hearted" on={state?.stationIndex === 3 && state.isPlaying} onPress={() => play(3)} />
+        </View>
+
+        <Pressable style={s.libraryCard} onPress={() => (hasFolder ? router.push("/groups") : router.replace("/buttons"))}>
+          <Folder c={color.textMuted} />
+          <View style={{ flex: 1 }}>
+            <Title size={14}>{hasFolder ? `Library · ${groups.length} songs` : "Choose your music folder"}</Title>
+            <Mono>{hasFolder ? `${tracks.length} versions in song groups` : "Needed before anything can play"}</Mono>
+          </View>
+          <Text style={{ fontFamily: font.bold, fontSize: 14, color: color.amber }}>{hasFolder ? "Review" : "Choose"}</Text>
+        </Pressable>
+      </ScrollView>
+
+      <MiniPlayer state={state} />
+      <BottomNav />
+    </SafeAreaView>
+  );
+}
+
+function HeroDisc() {
+  return (
+    <Svg width={104} height={104} viewBox="0 0 104 104">
+      <Circle cx={52} cy={52} r={50} fill={color.bg} />
+      {[46, 41, 36, 31].map((r) => <Circle key={r} cx={52} cy={52} r={r} fill="none" stroke={color.divider} strokeWidth={2} />)}
+      <Path d="M52 6 A46 46 0 0 1 95 38" fill="none" stroke={color.amber} strokeWidth={3} strokeLinecap="round" />
+      <Path d="M26 30 Q52 60 84 44 M30 74 Q52 48 70 82" fill="none" stroke={color.cyan} strokeWidth={1.5} strokeOpacity={0.8} />
+      <Circle cx={52} cy={52} r={17} fill={color.amber} />
+      <Circle cx={52} cy={52} r={2.5} fill={color.bg} />
+    </Svg>
+  );
+}
+
+function Tile({ icon, title, sub, on, onPress }: { icon: ReactNode; title: string; sub: string; on?: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [s.tile, on && { borderColor: color.amber }, pressed && { opacity: 0.7 }]}>
+      {icon}
+      <View style={{ gap: 2 }}>
+        <Text numberOfLines={1} style={{ fontFamily: font.extrabold, fontSize: 16, color: color.text }}>{title}</Text>
+        <Body numberOfLines={1} style={{ fontSize: 13 }}>{sub}</Body>
+      </View>
+    </Pressable>
   );
 }
 
 const s = StyleSheet.create({
-  page: { padding: space.lg, gap: space.md, paddingBottom: space.xxl * 2 },
-  row: { flexDirection: "row", gap: space.sm },
-  flex: { flex: 1 },
-  flex2: { flex: 2 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space.xl, paddingTop: space.md, paddingBottom: space.sm },
+  brand: { flexDirection: "row", alignItems: "center", gap: 10 },
+  brandText: { fontFamily: font.displayXb, fontSize: 15, letterSpacing: 0.6, color: color.text },
+  page: { paddingHorizontal: space.xl, paddingTop: space.sm, paddingBottom: space.md, gap: 14 },
+  hero: { flexDirection: "row", alignItems: "center", gap: space.lg, padding: space.xl, borderRadius: radius.card, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  rowBetween: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: space.md },
+  h2: { fontFamily: font.displayXb, fontSize: 13, letterSpacing: 1, color: color.textMuted },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: space.md },
+  tile: { width: "48%", flexGrow: 1, height: 98, padding: space.lg, justifyContent: "space-between", borderRadius: radius.tile, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  libraryCard: { flexDirection: "row", alignItems: "center", gap: space.md, paddingVertical: 14, paddingHorizontal: space.lg, borderRadius: radius.row, borderWidth: 1, borderColor: color.border, borderStyle: "dashed" },
 });

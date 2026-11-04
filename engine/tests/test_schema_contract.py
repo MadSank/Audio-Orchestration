@@ -35,3 +35,10 @@ def test_break_fields_match():
 def test_jump_fields_match():
     ts_fields = set(re.findall(r"^\s+(\w+)\??:", _ts_block("Jump"), re.M))
     assert ts_fields == set(schema.Jump.model_fields)
+
+
+def test_portal_schema_matches():
+    assert f'PORTALS_SCHEMA = "{schema.PORTALS_SCHEMA}"' in TS
+    for name, model in (("PortalEdge", schema.PortalEdge), ("PortalTrack", schema.PortalTrack)):
+        ts_fields = set(re.findall(r"^\s+(\w+)\??:", _ts_block(name), re.M))
+        assert ts_fields == set(model.model_fields), name

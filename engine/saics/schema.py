@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SCHEMA = "saics.analysis/9"  # /7: + breaks; /8: structural jumps; /9: Forever endings
 LIBRARY_SCHEMA = "saics.library/7"
+PORTALS_SCHEMA = "saics.portals/1"  # P4a: `.saics/portals.json` (saics.portals)
 
 
 class _M(BaseModel):
@@ -156,3 +157,35 @@ class Library(_M):
     tracks: list[LibraryTrack]
     groups: dict[str, LibraryGroup]
     neighbours: dict[str, list[dict]] = {}  # P4: group id -> top-K compatible groups
+
+
+class PortalEdge(_M):
+    """Instead of playing bar `from_bar`, continue at bar `to_bar` of track `to` (downbeats)."""
+
+    from_bar: int
+    to: str  # track id
+    to_bar: int
+    score: float
+    pair: str  # section kinds, e.g. "chorus → chorus"
+    context: float  # mean bar similarity over the 4 bars before and after the seam
+    harmony: float  # mean absolute-chroma similarity over the same bars
+    same_group: bool  # another version of the same song: only used when Forever is on
+    two_way: bool  # the reverse portal exists too
+
+
+class PortalTrack(_M):
+    file: str
+    group: str
+    bpm: float
+    camelot: str
+    sections: list[str]  # kind per bundle section: intro/verse/chorus/break/inst/outro
+    bars: int
+    entries: list[int]  # landing bars for fallback cuts, best first (always ends with 0)
+    break_exits: list[int]  # bars where a break starts: a fallback cut is natural there
+    portals: list[PortalEdge]
+
+
+class PortalGraph(_M):
+    schema_: Literal["saics.portals/1"] = Field(PORTALS_SCHEMA, alias="schema")
+    generated: str
+    tracks: dict[str, PortalTrack]

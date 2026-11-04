@@ -1,36 +1,45 @@
-/**
- * Design tokens (CLAUDE.md "Design"). The design canvas export is not in the repo yet, so
- * these follow the written spec; screens must use tokens only, never raw values.
- */
+/** Design tokens: design/design/README.md. Screens use these only, never raw values. */
 export const color = {
   bg: "#0A0A0C",
   bgRide: "#000000",
-  surface: "#15151A",
-  surfaceHi: "#1E1E25",
-  line: "#2A2A31",
+  bgSheet: "#050506",
+  surface: "#141417",
+  surfaceRaised: "#1C1C21",
+  border: "#2A2A31",
+  divider: "#1C1C21",
+  section: "#3A3A43", // non-chorus sections
+  groove: "#18181D",
+  disc: "#0E0E11",
   text: "#F3EFE7",
-  textMuted: "#8E8A82",
-  amber: "#FFB547", // playback + primary actions
-  cyan: "#6FD3FF", // jumps + transitions
+  textMuted: "#A9A6AE",
+  textFaint: "#85828A",
+  amber: "#FFB547", // playback, primary action, selected
+  amberInk: "#1A1206",
+  amberTint: "#2A1C0A",
+  amberDim: "#7A5A2A", // chorus sections
+  amberEdge: "#5A4520",
+  cyan: "#6FD3FF", // jumps, transitions, "next" info
+  cyanTint: "#102A35",
+  pink: "#FF8FA3",
+  lilac: "#C9B8FF",
   danger: "#FF6B6B",
 } as const;
 
+/** Embedded fonts (static instances; on Android the family is the file name). */
 export const font = {
-  display: "sans-serif-condensed", // Archivo (expanded) once the font files are bundled
-  body: "sans-serif",
-  mono: "monospace", // IBM Plex Mono once bundled
+  regular: "Archivo-Regular",
+  medium: "Archivo-Medium",
+  semibold: "Archivo-SemiBold",
+  bold: "Archivo-Bold",
+  extrabold: "Archivo-ExtraBold",
+  black: "Archivo-Black",
+  displayXb: "ArchivoExpanded-ExtraBold", // font-stretch 125%, weight 800
+  display: "ArchivoExpanded-Black", // font-stretch 125%, weight 900
+  mono: "IBMPlexMono-Regular",
+  monoMedium: "IBMPlexMono-Medium",
+  monoBold: "IBMPlexMono-SemiBold",
 } as const;
 
-export const type = {
-  display: { fontSize: 32, lineHeight: 36, fontWeight: "700" as const, letterSpacing: 0.5 },
-  title: { fontSize: 22, lineHeight: 28, fontWeight: "700" as const },
-  body: { fontSize: 16, lineHeight: 22 },
-  label: { fontSize: 13, lineHeight: 18, letterSpacing: 0.6 },
-  mono: { fontSize: 13, lineHeight: 18 },
-} as const;
-
-export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
-export const radius = { sm: 8, md: 12, lg: 16, pill: 999 } as const;
-
-/** Ride mode: giant targets only (PLAN "Riding and safety rules"). */
-export const ride = { minTarget: 96 } as const;
+export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24 } as const;
+export const radius = { list: 12, chip: 14, row: 16, tile: 20, card: 24, sheet: 28 } as const;
+export const target = { min: 44 } as const;

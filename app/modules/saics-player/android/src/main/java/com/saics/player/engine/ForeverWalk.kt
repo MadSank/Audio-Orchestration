@@ -97,6 +97,11 @@ class ForeverWalk(
     return Step.Play(j.toBar, j, why)
   }
 
+  /** A bar played without a walk decision (keeps the clock and the recent list right). */
+  fun plain(bar: Int) {
+    if (bar in 0 until n) played(bar)
+  }
+
   private fun played(bar: Int) {
     recent.addLast(t to bar)
     t += barT[bar + 1] - barT[bar]

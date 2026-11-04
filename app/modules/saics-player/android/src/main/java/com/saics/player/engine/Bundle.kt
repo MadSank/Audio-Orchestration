@@ -11,6 +11,8 @@ class Bundle(
   val outroBar: Int?,
   val loopable: Boolean,
   val gainDb: Double,
+  val bpm: Double = 0.0,
+  val camelot: String = "",
 ) {
   class Section(val startBar: Int, val endBar: Int, val group: Int)
   class Jump(val fromBar: Int, val toBar: Int, val score: Double, val kind: String, val label: String)
@@ -48,6 +50,8 @@ class Bundle(
         Bundle(
           beats, down, secs, jumps, outro, o.optBoolean("loopable", true),
           o.optJSONObject("loudness")?.optDouble("gain_db", 0.0) ?: 0.0,
+          o.optJSONObject("tempo")?.optDouble("bpm", 0.0) ?: 0.0,
+          o.optJSONObject("key")?.optString("camelot", "") ?: "",
         )
       }
     } catch (e: Exception) {
