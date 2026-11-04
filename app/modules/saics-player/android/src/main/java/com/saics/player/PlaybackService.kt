@@ -266,6 +266,7 @@ class PlaybackService : MediaLibraryService() {
       3 -> library.filter { it.uri in liked }.ifEmpty { library } // Liked
       else -> library
     }.let { songs -> songs.filter { it.trackId.isNotEmpty() }.ifEmpty { songs } } // analysed songs only
+      .let { songs -> songs.filterNot { "lofi vhs" in it.file.lowercase() }.ifEmpty { songs } } // pickable, never walked
     val byGroup = pool.groupBy { it.group.ifEmpty { it.uri } }
     val queue = byGroup.values.shuffled().map { versions ->
       versions.firstOrNull { it.version == "original" && index != 2 }.takeIf { Math.random() < 0.5 } ?: versions.random()

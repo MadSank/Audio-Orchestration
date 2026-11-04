@@ -14,9 +14,13 @@ Owner's rules (PLAN P4a):
 * portals into another version of the same song group are kept but flagged: the walk only uses
   them when Forever is on.
 
-Written to `<folder>/.saics/portals.json` (schema saics.portals/1, `schema.PortalGraph`), with
-what the walk needs per song: section kinds, entries for fallback cuts, break exits. The phone
-reads this file and never does pairwise analysis.
+Round 3 added: seams whose levels are too far apart for a landing trim to hide are rejected
+(saics.seams measures them), each edge carries a landing nudge that lines the beats up, and Lofi
+VHS files (too degraded for a transition) are out of the walk but stay pickable as versions.
+
+Written to `<folder>/.saics/portals.json` (schema saics.portals/2, `schema.PortalGraph`), with
+what the walk needs per song: section kinds, entries for fallback cuts, break exits, bar levels.
+The phone reads this file and never does pairwise analysis.
 """
 
 import csv
@@ -27,6 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
+from saics import seams
 from saics.schema import PORTALS_SCHEMA, PortalEdge, PortalGraph, PortalTrack
 from saics.structure import bar_slot_features, standardize
 
@@ -36,6 +41,7 @@ HARM_MIN = 0.72  # mean absolute-chroma similarity along the seam (same chords)
 SIM_MIN = 0.12  # mean bar-slot similarity along the seam
 VOCAL_EDGE_MAX = 0.3  # a sung line may not run across either side of the seam
 SCORE_MIN = 0.60
+LEVEL_MAX_DB = seams.TRIM_MAX_DB  # a level step the landing trim can't fully absorb is rejected
 MIN_EXIT_S = 30.0  # exits this early can never be used (dwell rule)
 MIN_LAND_LEFT_S = 60.0  # the landing must leave room to dwell before the song ends
 PER_SONG = 16  # out-edges kept per song ...
@@ -54,6 +60,10 @@ PAIR_PREF = {
     ("verse", "chorus"): 0.5,
     ("chorus", "verse"): 0.3,
 }
+
+
+def walkable(file: str) -> bool:
+    return "lofi vhs" not in file.lower()
 
 
 def camelot_compatible(a: str, b: str) -> bool:
@@ -138,6 +148,12 @@ class Song:
     lands: np.ndarray  # phrase bars usable as landings
     entries: list  # landing bars for fallback cuts, best first
     break_exits: list  # bars where a cut into a break is natural
+    down: np.ndarray | None = None  # beat index of each downbeat
+    beats: np.ndarray | None = None
+    beats_fine: np.ndarray | None = None  # saics.seams; None when not measured yet
+    level_out: np.ndarray | None = None
+    level_in: np.ndarray | None = None
+    env: np.ndarray | None = None
 
 
 def load_song(t: dict, saics_dir: Path) -> Song | None:
@@ -189,6 +205,8 @@ def load_song(t: dict, saics_dir: Path) -> Song | None:
     entries = sorted(set(entries), key=entries.index) + [0]
     break_exits = sorted({int(np.searchsorted(bar_t, br["start_s"], side="right") - 1)
                           for br in d.get("breaks", [])} & set(range(n)))  # fmt: skip
+    sp = saics_dir / "seams" / f"{t['id']}.npz"
+    seam = np.load(sp) if sp.exists() else None
     return Song(
         id=t["id"], file=t["file"], group=t.get("group", ""), bpm=float(d["tempo"]["bpm"]),
         camelot=d["key"]["camelot"], meter=int(d["meter"]["beats_per_bar"]),
@@ -196,12 +214,33 @@ def load_song(t: dict, saics_dir: Path) -> Song | None:
         vocal_edge=np.array([vocal[a - 1] if a > 0 else 0.0 for a in down[:n]]), energy=energy,
         kinds=kinds, bar_kind=bar_kind, phrase=phrase_a, exits=exits, lands=lands,
         entries=[int(x) for x in entries[:6]], break_exits=break_exits,
+        down=np.asarray(down), beats=beats,
+        beats_fine=None if seam is None else np.asarray(seam["beats_fine"]),
+        level_out=None if seam is None else np.asarray(seam["level_out"], float),
+        level_in=None if seam is None else np.asarray(seam["level_in"], float),
+        env=None if seam is None else np.asarray(seam["env"]),
     )  # fmt: skip
 
 
 def compatible(a: Song, b: Song) -> bool:
     return (a.id != b.id and a.stable and b.stable and a.meter == b.meter
             and tempo_close(a.bpm, b.bpm) and camelot_compatible(a.camelot, b.camelot))  # fmt: skip
+
+
+def landing_offset_ms(a: Song, from_bar: int, b: Song, to_bar: int) -> float:
+    """seams.landing_offset_ms for this seam; 0 until both songs are measured."""
+    if a.beats_fine is None or b.beats_fine is None:
+        return 0.0
+    ba, bb = int(a.down[from_bar]), int(b.down[to_bar])
+    ibi = float(np.median(np.diff(a.beats)))
+    lag, peak = seams.onset_lag_ms(a.env, float(a.beats[ba]), b.env, float(b.beats[bb]),
+                                   seams.XCORR_BEATS * ibi)  # fmt: skip
+    return seams.landing_offset_ms(
+        seams.grid_error_out(a.beats, a.beats_fine, ba),
+        seams.grid_error_in(b.beats, b.beats_fine, bb),
+        lag,
+        peak,
+    )
 
 
 def match_pair(a: Song, b: Song, feedback: dict | None = None) -> list:
@@ -217,7 +256,12 @@ def match_pair(a: Song, b: Song, feedback: dict | None = None) -> list:
     sim = np.sum(a.x[ia] * b.x[ib], axis=2)
     harm = np.sum(a.chroma[ia] * b.chroma[ib], axis=2)
     m_sim, m_harm, lo_harm = sim.mean(1), harm.mean(1), harm.min(1)
-    step = np.abs(a.energy[aa] - b.energy[bb])
+    if a.level_out is not None and b.level_in is not None:
+        gap = np.abs(a.level_out[aa] - b.level_in[bb])
+        step = gap / (3 * LEVEL_MAX_DB)  # 0 .. 1/3, the range the energy step below is scaled to
+    else:
+        gap = np.zeros(len(aa))
+        step = np.abs(a.energy[aa] - b.energy[bb])
     out = []
     bans = (feedback or {}).get("ban", set())
     pins = (feedback or {}).get("keep", set())
@@ -226,7 +270,7 @@ def match_pair(a: Song, b: Song, feedback: dict | None = None) -> list:
         ka, kb = a.bar_kind[fa], b.bar_kind[tb]
         pref = PAIR_PREF.get((ka, kb), 0.0)
         pinned = (fa, tb) in pins
-        if (fa, tb) in bans:
+        if (fa, tb) in bans or (not pinned and gap[i] > LEVEL_MAX_DB):
             continue
         # The silence of a break carries the change: harmony and timbre matter less there.
         relaxed = ka == "break" and kb in ("intro", "break", "chorus")
@@ -267,16 +311,19 @@ def read_feedback(saics_dir: Path, songs: dict) -> dict:
     return out
 
 
-def prune(cands: list) -> list:
-    """Per song: best target spread, PER_TARGET per target, EXIT_SPACING between exits."""
+def prune(cands: list, pins: set = frozenset()) -> list:
+    """Per song: best target spread, PER_TARGET per target, EXIT_SPACING between exits. Portals
+    the owner rated 5 (`pins`: (from_bar, to, to_bar)) always stay."""
     kept: list = []
     per_target: dict = {}
     used: dict = {}
-    for c in sorted(cands, key=lambda c: -c["score"]):
+    key = lambda c: ((c["from_bar"], c["to"], c["to_bar"]) not in pins, -c["score"])  # noqa: E731
+    for c in sorted(cands, key=key):
         t = c["to"]
-        if per_target.get(t, 0) >= PER_TARGET:
+        pinned = (c["from_bar"], t, c["to_bar"]) in pins
+        if not pinned and per_target.get(t, 0) >= PER_TARGET:
             continue
-        if any(abs(c["from_bar"] - x) < EXIT_SPACING for x in used.get(t, [])):
+        if not pinned and any(abs(c["from_bar"] - x) < EXIT_SPACING for x in used.get(t, [])):
             continue
         per_target[t] = per_target.get(t, 0) + 1
         used.setdefault(t, []).append(c["from_bar"])
@@ -302,7 +349,7 @@ def build_graph(folder: Path, log=print) -> PortalGraph:
     pairs = 0
     for a in songs.values():
         for b in songs.values():
-            if not compatible(a, b):
+            if not compatible(a, b) or not walkable(b.file):
                 continue
             pairs += 1
             for score, fa, tb, ctx, harm in match_pair(a, b, feedback.get((a.id, b.id))):
@@ -312,7 +359,14 @@ def build_graph(folder: Path, log=print) -> PortalGraph:
                     "harmony": round(harm, 3), "same_group": bool(a.group) and a.group == b.group,
                     "two_way": False,
                 })  # fmt: skip
-    kept = {sid: prune(cs) for sid, cs in edges.items()}
+    pins = {sid: {(fa, to, tb) for (a, to), fb in feedback.items() if a == sid
+                  for fa, tb in fb["keep"]} for sid in songs}  # fmt: skip
+    kept = {sid: prune(cs, pins[sid]) for sid, cs in edges.items()}
+    for sid, es in kept.items():
+        for e in es:
+            e["offset_ms"] = round(
+                landing_offset_ms(songs[sid], e["from_bar"], songs[e["to"]], e["to_bar"]), 1
+            )
     index = {(sid, e["from_bar"], e["to"], e["to_bar"]) for sid, es in kept.items() for e in es}
     for sid, es in kept.items():
         for e in es:
@@ -325,6 +379,9 @@ def build_graph(folder: Path, log=print) -> PortalGraph:
             file=s.file, group=s.group, bpm=round(s.bpm, 2), camelot=s.camelot,
             sections=s.kinds, bars=len(s.x), entries=s.entries, break_exits=s.break_exits,
             portals=[PortalEdge(**e) for e in kept[s.id]],
+            level_out=[] if s.level_out is None else [round(float(x), 1) for x in s.level_out],
+            level_in=[] if s.level_in is None else [round(float(x), 1) for x in s.level_in],
+            walkable=walkable(s.file),
         ) for s in songs.values()},
     )  # fmt: skip
 

@@ -95,7 +95,14 @@ def test_section_kinds():
 
 def _edge(fr, to, tb, score=0.9, same=False, pair="chorus → chorus"):
     return SimpleNamespace(
-        from_bar=fr, to=to, to_bar=tb, score=score, pair=pair, same_group=same, two_way=False
+        from_bar=fr,
+        to=to,
+        to_bar=tb,
+        score=score,
+        pair=pair,
+        same_group=same,
+        two_way=False,
+        offset_ms=0.0,
     )
 
 
@@ -169,7 +176,7 @@ def test_dead_end_leaves_back_through_the_portal_it_came_in_on():
          "c": _track("c")}  # fmt: skip
     w = MixWalk(g, "a", seed=3)
     w.arrive(Move("portal", "b", 8, 40))
-    assert w.came_from == ("a", 40, 8)
+    assert w.came_from == ("a", 40, 8, 0.0)
     w.visit_t = w.dwell + 1
     assert w.step(8).kind == "back"
 

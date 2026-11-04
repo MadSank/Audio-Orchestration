@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SCHEMA = "saics.analysis/9"  # /7: + breaks; /8: structural jumps; /9: Forever endings
 LIBRARY_SCHEMA = "saics.library/7"
-PORTALS_SCHEMA = "saics.portals/1"  # P4a: `.saics/portals.json` (saics.portals)
+PORTALS_SCHEMA = "saics.portals/2"  # P4a: `.saics/portals.json` (saics.portals)
 
 
 class _M(BaseModel):
@@ -171,6 +171,7 @@ class PortalEdge(_M):
     harmony: float  # mean absolute-chroma similarity over the same bars
     same_group: bool  # another version of the same song: only used when Forever is on
     two_way: bool  # the reverse portal exists too
+    offset_ms: float = 0.0  # shift of the landing that puts its first beat on the outgoing grid
 
 
 class PortalTrack(_M):
@@ -183,9 +184,12 @@ class PortalTrack(_M):
     entries: list[int]  # landing bars for fallback cuts, best first (always ends with 0)
     break_exits: list[int]  # bars where a break starts: a fallback cut is natural there
     portals: list[PortalEdge]
+    level_out: list[float] = []  # dB of the second before each downbeat, after gain_db (seams)
+    level_in: list[float] = []  # dB of the second after each downbeat
+    walkable: bool = True  # False: Infinite Ride never goes here; still pickable as a version
 
 
 class PortalGraph(_M):
-    schema_: Literal["saics.portals/1"] = Field(PORTALS_SCHEMA, alias="schema")
+    schema_: Literal["saics.portals/2"] = Field(PORTALS_SCHEMA, alias="schema")
     generated: str
     tracks: dict[str, PortalTrack]

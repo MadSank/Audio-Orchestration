@@ -37,7 +37,9 @@ def _portals(args) -> int:
     from pathlib import Path
 
     from saics.portals import write_graph
+    from saics.seams import measure_folder
 
+    measure_folder(args.folder)
     write_graph(Path(args.folder))
     return 0
 
@@ -113,7 +115,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(func=_render)
 
     e = sub.add_parser("eval", help="listening-test harness")
-    e.add_argument("action", choices=["build", "build2", "build2b", "build3", "report", "feedback"])
+    e.add_argument(
+        "action",
+        choices=["build", "build2", "build2b", "build3", "build3b", "report", "feedback"],
+    )
     e.add_argument("folder", nargs="?", default="", help="music folder (build)")
     e.add_argument("--set", default="eval/set.txt", help="songs to evaluate, one per line")
     e.add_argument("--eval-dir", default="eval", help="clips/, results/, report.md live here")
