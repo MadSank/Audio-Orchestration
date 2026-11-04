@@ -33,6 +33,15 @@ def _jumps(args) -> int:
     return 0
 
 
+def _portals(args) -> int:
+    from pathlib import Path
+
+    from saics.portals import write_graph
+
+    write_graph(Path(args.folder))
+    return 0
+
+
 def _analyze(args) -> int:
     from saics.analysis import run_analyze
 
@@ -79,6 +88,10 @@ def build_parser() -> argparse.ArgumentParser:
     jp.add_argument("--only", default="", help="file listing songs to update")
     jp.set_defaults(func=_jumps)
 
+    pg = sub.add_parser("portals", help="find cross-song portals: writes .saics/portals.json")
+    pg.add_argument("folder")
+    pg.set_defaults(func=_portals)
+
     a = sub.add_parser("analyze", help="write <folder>/.saics/ analysis bundles")
     a.add_argument("folder")
     a.add_argument(
@@ -100,7 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(func=_render)
 
     e = sub.add_parser("eval", help="listening-test harness")
-    e.add_argument("action", choices=["build", "build2", "build2b", "report", "feedback"])
+    e.add_argument("action", choices=["build", "build2", "build2b", "build3", "report", "feedback"])
     e.add_argument("folder", nargs="?", default="", help="music folder (build)")
     e.add_argument("--set", default="eval/set.txt", help="songs to evaluate, one per line")
     e.add_argument("--eval-dir", default="eval", help="clips/, results/, report.md live here")

@@ -432,6 +432,14 @@ Also:
   - [ ] `saics render --mix` 20-minute renders + portal seam clips on the eval page; regression tests for every portal rated 5.
   - [ ] Phone: library schema `/8`, `MixWalk` in the engine scheduler (cross-slot `Instruction`s already work), Infinite Ride walks it, and the record visualiser shows portals.
   - **Done when:** portal clips mean ≥ 4.0 with 0% jittery; 20-minute renders mean ≥ 4.0 with at most one mark near a transition per render; no walk gets stuck (property test).
+- **P4a status (2026-11-04):** finder, walk (Python and Kotlin), eval round 3 and the Now Playing card are built; waiting for the owner's ratings.
+  - `saics portals` writes `.saics/portals.json` (`saics.portals/1`, a separate file so `analyze` never rewrites it; pydantic + app type + contract test). Run on 370 songs: 2118 compatible pairs, **1578 portals**. Tempo tolerance **5%** (at 3% the largest connected part of the graph is 21 songs, at 5% it is 115); every clip records its tempo difference.
+  - Section kinds (intro/verse/chorus/break/inst/outro) come from a heuristic on repeats, energy and vocals, not a labelled model. Same-type pairs and breaks score higher.
+  - Next = a portal within 8 bars at its own bar, else a cut on the next phrase into the best target. With Forever on, Next uses a same-group portal, else the version switch. Stay skips the portal and holds fallbacks for 45 s.
+  - Back through a portal works from any of the 4 bars after the landing, at the same offset (the seam was matched over those bars).
+  - Round 3: 36 portal clips + 8 unmatched baseline clips (blind, 15 s each side), two 15-minute walks (eval/walks). `saics eval feedback` writes `.saics/portal_feedback.csv` (5 = keep, ≤ 2 = ban).
+  - UI: Revision 2 screens built (Home, Now Playing, Versions sheet, Library as groups with Portals from, Song groups review; record restyled). Ride mode and Set-aside review aren't built yet, so the third tab is Helmet (settings + Button test) for now.
+  - Overrides written on the phone (`.saics/groups_overrides.csv`, `forever_overrides.csv`) need `adb pull` back to the PC before the next analyse; re-run `saics portals` after group changes.
 - **P4b: Blends and stretch.** Signalsmith Stretch (MIT) in the NDK as a real-time per-slot stage, a 3-band EQ per slot (bass swap), ±6% tempo portals and the blend/build styles below. Allocation-free render path (hard rule 9). Done when the original P4 criteria below pass.
 
 The Mix Web is a library-wide graph of **exit → entry** transitions, computed on the PC and stored in `library.json`, so the phone never computes pairwise analysis. The Infinite Ride station walks it live, and `saics mix` renders it offline.

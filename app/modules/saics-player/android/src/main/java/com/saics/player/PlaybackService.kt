@@ -36,12 +36,22 @@ data class Track(
   val version: String,
   val gainDb: Double = 0.0, // to -14 LUFS, from the track's analysis bundle (0 when missing)
   val bundle: String = "", // document uri of its .saics/tracks/<id>.json ("" = none)
+  val trackId: String = "", // bundle id ("" = not analysed)
+  val file: String = "", // relative to the folder holding .saics (the key in override files)
+  val groupName: String = "",
+  val bpm: Double = 0.0,
+  val camelot: String = "",
+  val notLoopable: Boolean = false,
 ) {
-  fun toSong() = Engine.Song(uri, Uri.parse(uri), bundle.takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }, title, group, version, gainDb)
+  fun toSong() = Engine.Song(
+    uri, Uri.parse(uri), bundle.takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }, title, group, version, gainDb,
+    trackId, notLoopable,
+  )
 
   fun toJson(): JSONObject = JSONObject()
     .put("uri", uri).put("title", title).put("path", path).put("group", group).put("version", version)
-    .put("gainDb", gainDb).put("bundle", bundle)
+    .put("gainDb", gainDb).put("bundle", bundle).put("trackId", trackId).put("file", file)
+    .put("groupName", groupName).put("bpm", bpm).put("camelot", camelot).put("notLoopable", notLoopable)
 
   fun toMediaItem(): MediaItem = MediaItem.Builder()
     .setMediaId(uri)
@@ -53,13 +63,17 @@ data class Track(
     .build()
 
   fun toMap(): Map<String, Any?> =
-    mapOf("uri" to uri, "title" to title, "path" to path, "group" to group, "version" to version, "gainDb" to gainDb, "bundle" to bundle)
+    mapOf("uri" to uri, "title" to title, "path" to path, "group" to group, "version" to version, "gainDb" to gainDb, "bundle" to bundle,
+          "trackId" to trackId, "file" to file, "groupName" to groupName, "bpm" to bpm, "camelot" to camelot,
+          "notLoopable" to notLoopable)
 
   companion object {
     fun fromJson(o: JSONObject) = Track(
       o.getString("uri"), o.optString("title"), o.optString("path"),
       o.optString("group"), o.optString("version", "original"), o.optDouble("gainDb", 0.0),
-      o.optString("bundle", ""),
+      o.optString("bundle", ""), o.optString("trackId", ""), o.optString("file", ""),
+      o.optString("groupName", ""), o.optDouble("bpm", 0.0), o.optString("camelot", ""),
+      o.optBoolean("notLoopable", false),
     )
   }
 }
@@ -117,6 +131,7 @@ class PlaybackService : MediaLibraryService() {
     player.engine.setForever(forever)
     player.engine.setVinyl(vinyl)
     player.engine.setVinylComp(VINYL_COMP_DB)
+    prefs.getString("portals", null)?.let { player.engine.setPortals(Uri.parse(it)) }
     player.addListener(object : Player.Listener {
       override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         saveState()
@@ -247,6 +262,7 @@ class PlaybackService : MediaLibraryService() {
     }
     val pool = when (index) {
       2 -> library.filter { "slowed" in it.version }.ifEmpty { library } // Late Night
+      3 -> library.filter { it.uri in liked }.ifEmpty { library } // Liked
       else -> library
     }
     val byGroup = pool.groupBy { it.group.ifEmpty { it.uri } }
@@ -257,6 +273,7 @@ class PlaybackService : MediaLibraryService() {
       feedback.confirm("error", "No songs. Pick your music folder in the app.")
       return
     }
+    player.engine.setMix(true, pool.map { it.trackId }.filter { it.isNotEmpty() }.toSet())
     player.setMediaItems(queue.map { it.toMediaItem() })
     player.prepare()
     player.play()
@@ -278,8 +295,40 @@ class PlaybackService : MediaLibraryService() {
       "forever" to forever, "vinyl" to vinyl, "station" to STATIONS[station], "stationIndex" to station,
       "queueLength" to player.mediaItemCount, "position" to player.engine.positionMs(), "duration" to player.engine.durationMs(),
       "libraryCount" to library.size,
-    )
+      "liked" to (t != null && t.uri in liked),
+      "versionIndex" to versions.indexOfFirst { it.uri == t?.uri } + 1, "versionCount" to versions.size,
+      "versions" to versions.map { mapOf("uri" to it.uri, "title" to it.title, "version" to it.version) },
+    ) + player.engine.status()
   }
+
+  /** Other versions of the playing song, in library order (itself included). */
+  private val versions: List<Track>
+    get() {
+      val t = currentTrack() ?: return emptyList()
+      return if (t.group.isEmpty()) listOf(t) else library.filter { it.group == t.group }.ifEmpty { listOf(t) }
+    }
+
+  // ── likes (helmet-free, app screen only for now) ────────────────────────────
+
+  var liked: Set<String> = emptySet()
+    private set
+
+  fun toggleLike(uri: String) {
+    liked = if (uri in liked) liked - uri else liked + uri
+    prefs.edit().putStringSet("liked", liked).apply()
+    emitState()
+  }
+
+  /** `.saics/portals.json`, found by the scan. */
+  fun setPortals(uri: Uri?) {
+    prefs.edit().putString("portals", uri?.toString()).apply()
+    player.engine.setPortals(uri)
+  }
+
+  fun pickVersion(uri: String) = library.firstOrNull { it.uri == uri }?.let { player.engine.switchVersionTo(it.toSong()) }
+
+  /** Group merge/split or a not-loopable change, in memory (the module writes the override file). */
+  fun updateTracks(change: (List<Track>) -> List<Track>) = setLibrary(change(library))
 
   // ── never the phone speaker (Bluetooth drop, call end, resumption) ──────────
 
@@ -350,6 +399,7 @@ class PlaybackService : MediaLibraryService() {
     announceTitles = prefs.getBoolean("announceTitles", false)
     buttons.multiWindowMs = prefs.getLong("multiWindowMs", 700)
     buttons.tripleWindowMs = prefs.getLong("tripleWindowMs", 1000)
+    liked = prefs.getStringSet("liked", emptySet())?.toSet() ?: emptySet()
     library = try {
       val arr = JSONArray(prefs.getString("library", "[]"))
       (0 until arr.length()).map { Track.fromJson(arr.getJSONObject(it)) }

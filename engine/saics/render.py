@@ -161,3 +161,72 @@ def write_audio(path, y: np.ndarray, sr: int, lufs: float = -14.0) -> None:
             subprocess.run(cmd, check=True)
     else:
         sf.write(path, x.astype(np.float32), sr, subtype="PCM_16")
+
+
+# ── P4a: rendering a walk across songs ──────────────────────────────────────────
+
+
+def join_seam(pieces: list, prev: tuple, next_: tuple, half: int) -> None:
+    """Append the crossfaded seam between two (audio, end/start sample) sides to `pieces`.
+
+    Centred on the seam as in render_segments: the outgoing audio runs on `half` samples past
+    its end, the incoming starts `half` samples early (correlation-aware equal power)."""
+    ya, pb = prev
+    yb, a = next_
+    h = min(half, ya.shape[1] - pb, pb, a, yb.shape[1] - a)
+    if h <= 0:
+        return
+    tail, head = ya[:, pb - h : pb + h], yb[:, a - h : a + h]
+    den = float(np.sqrt(np.sum(tail**2) * np.sum(head**2))) + 1e-12
+    fo, fi = equal_power(2 * h, rho=float(np.sum(tail * head)) / den)
+    pieces.append(tail * fo + head * fi)
+
+
+def render_walk(
+    segments: list, tracks: dict, sr: int = 44100, xfade_ms: float = 30.0
+) -> np.ndarray:
+    """Render saics.mixwalk.walk_path segments to stereo audio at each song's gain_db.
+
+    tracks: id -> (path, gain_db, bar_times(n_samples) -> seconds per bar). Decoded songs are
+    cached while they may still be needed (a walk can come back through a portal)."""
+    from saics.io import decode
+
+    cache: dict = {}
+
+    def load(tid):
+        if tid not in cache:
+            path, gain, _ = tracks[tid]
+            y = decode(path, sr=sr, mono=False)
+            y = np.stack([y, y]) if y.ndim == 1 else y
+            if len(cache) >= 4:
+                cache.pop(next(iter(cache)))
+            cache[tid] = y.astype(np.float32) * float(10 ** (gain / 20))
+        return cache[tid]
+
+    half = int(round(xfade_ms / 1000 * sr / 2))
+    pieces: list = []
+    prev = None  # (audio, end sample) of the previous segment
+    for seg in segments:
+        if seg[0] == "gap":
+            if prev is not None:
+                pieces.append(prev[0][:, prev[2] : prev[1]])
+            pieces.append(np.zeros((2, int(seg[1] * sr)), np.float32))
+            prev = None
+            continue
+        tid, s, e = seg
+        y = load(tid)
+        bt = tracks[tid][2](y.shape[1])
+        a = 0 if s == 0 else int(bt[s] * sr)  # bar 0 = the top of the song, pickup included
+        b = int(bt[min(e, len(bt) - 1)] * sr)
+        h = half if prev is not None else 0
+        if prev is not None:
+            pieces.append(prev[0][:, prev[2] : prev[1] - h])
+            before = len(pieces)
+            join_seam(pieces, (prev[0], prev[1]), (y, a), half)
+            if len(pieces) == before:  # no room for a crossfade
+                pieces.append(prev[0][:, prev[1] - h : prev[1]])
+                h = 0
+        prev = (y, b, a + h)
+    if prev is not None:
+        pieces.append(prev[0][:, prev[2] : prev[1]])
+    return np.concatenate(pieces, axis=1) if pieces else np.zeros((2, 0), np.float32)

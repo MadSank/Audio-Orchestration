@@ -36,3 +36,5 @@ groups_overrides.example.csv
 eval/round2/
 eval/full/
 eval/round2b/
+eval/round3/
+eval/walks/

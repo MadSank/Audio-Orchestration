@@ -19,7 +19,25 @@
     "plugins": [
       "expo-router",
       "expo-status-bar",
-      "./plugins/withShortCxxPath"
+      "./plugins/withShortCxxPath",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Archivo-Regular.ttf",
+            "./assets/fonts/Archivo-Medium.ttf",
+            "./assets/fonts/Archivo-SemiBold.ttf",
+            "./assets/fonts/Archivo-Bold.ttf",
+            "./assets/fonts/Archivo-ExtraBold.ttf",
+            "./assets/fonts/Archivo-Black.ttf",
+            "./assets/fonts/ArchivoExpanded-ExtraBold.ttf",
+            "./assets/fonts/ArchivoExpanded-Black.ttf",
+            "./assets/fonts/IBMPlexMono-Regular.ttf",
+            "./assets/fonts/IBMPlexMono-Medium.ttf",
+            "./assets/fonts/IBMPlexMono-SemiBold.ttf"
+          ]
+        }
+      ]
     ],
     "scheme": "saics",
     "backgroundColor": "#0A0A0C"

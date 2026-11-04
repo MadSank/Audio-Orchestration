@@ -268,8 +268,13 @@ def run_eval(args) -> int:
         build_round2b(Path(args.folder), root)
         build_full(Path(args.folder), root / "full")
         return 0
+    if args.action == "build3":
+        build_round3(Path(args.folder), root / "round3")
+        build_walks(Path(args.folder), root / "walks")
+        return 0
     if args.action == "feedback":
         write_jump_feedback(Path(args.folder), root)
+        write_portal_feedback(Path(args.folder), root)
         return 0
     if args.action == "report":
         md = report(root / "clips", root / "results")
@@ -279,6 +284,14 @@ def run_eval(args) -> int:
         if (root / "full" / "manifest.json").exists():
             full = report_full(root / "full", root / "results")
             md += "\n\n## Full-song Forever test (P3 acceptance)\n\n" + full
+        if (root / "round3" / "manifest.json").exists():
+            md += "\n\n## Round 3: portal clips (15 s each side)\n\n" + report(
+                root / "round3", root / "results"
+            )
+        if (root / "walks" / "manifest.json").exists():
+            md += "\n\n## Infinite Ride walks (P4a acceptance)\n\n" + report_full(
+                root / "walks", root / "results"
+            )
         (root / "report.md").write_text(md + "\n", encoding="utf-8")
         print(md)
         return 0
@@ -553,4 +566,241 @@ def write_jump_feedback(folder: Path, eval_dir: Path, rater: str = "owner", log=
         )
         _csv.writer(f).writerows(rows)
     log(f"{len(rows)} jump feedback rows -> {out}")
+    return len(rows)
+
+
+# ── round 3 (P4a): portal clips with 15 s each side, 15-minute Infinite Ride walks ──
+
+ROUND3_CURRENT = 36
+ROUND3_BASELINE = 8
+
+
+def _song_title(graph, tid: str) -> str:
+    return Path(graph.tracks[tid].file).stem
+
+
+def _load_gained(folder: Path, graph, tid: str) -> tuple:
+    b = _bundle_for(folder, graph.tracks[tid].file)
+    y = decode(folder / graph.tracks[tid].file, sr=OUT_SR, mono=False)
+    y = np.stack([y, y]) if y.ndim == 1 else y
+    return y.astype(np.float32) * float(10 ** (b.loudness.gain_db / 20)), np.asarray(b.beats)[
+        b.downbeats
+    ]
+
+
+def _portal_clip(ya, t_from: float, yb, t_to: float, xfade_ms: float = 30.0) -> tuple:
+    """15 s of A up to the seam + 15 s of B from the landing (owner's clip format)."""
+    from saics.render import join_seam
+
+    half = int(round(xfade_ms / 1000 * OUT_SR / 2))
+    pb, a = int(t_from * OUT_SR), int(t_to * OUT_SR)
+    a0 = max(0, pb - int(ROUND2_CTX_S * OUT_SR))
+    b1 = min(yb.shape[1], a + int(ROUND2_CTX_S * OUT_SR))
+    pieces = [ya[:, a0 : pb - half]]
+    join_seam(pieces, (ya, pb), (yb, a), half)
+    pieces.append(yb[:, a + half : b1])
+    return np.concatenate(pieces, axis=1), (pb - a0) / OUT_SR
+
+
+def pick_round3(graph, seed: int = 3) -> tuple:
+    """Current: the best portals, spread over songs and pair kinds. Baseline: same songs'
+    tempo/key compatibility and phrase bars, but no matching (does matching earn its keep?)."""
+    rng = np.random.default_rng(seed)
+    edges = [(tid, e) for tid, t in graph.tracks.items() for e in t.portals if not e.same_group]
+    edges.sort(key=lambda x: -x[1].score)
+    per_from: dict = {}
+    per_to: dict = {}
+    per_pair: dict = {}
+    current = []
+    pair_cap = {
+        "chorus → chorus": 14,
+        "break → intro": 6,
+        "break → chorus": 5,
+        "break → break": 4,
+        "verse → verse": 8,
+        "inst → inst": 6,
+    }
+    for tid, e in edges:
+        if per_from.get(tid, 0) >= 2 or per_to.get(e.to, 0) >= 2:
+            continue
+        if per_pair.get(e.pair, 0) >= pair_cap.get(e.pair, 3):
+            continue
+        current.append((tid, e))
+        per_from[tid] = per_from.get(tid, 0) + 1
+        per_to[e.to] = per_to.get(e.to, 0) + 1
+        per_pair[e.pair] = per_pair.get(e.pair, 0) + 1
+        if len(current) >= ROUND3_CURRENT:
+            break
+    baseline = []
+    pool = [x for x in edges if x not in current]
+    for k in rng.permutation(len(pool)):
+        tid, e = pool[int(k)]
+        a, b = graph.tracks[tid], graph.tracks[e.to]
+        if a.group == b.group or not a.bars or not b.bars:
+            continue
+        baseline.append(
+            (
+                tid,
+                e.to,
+                int(rng.integers(8, max(9, a.bars - 8)) // 4 * 4),
+                int(rng.integers(8, max(9, b.bars - 8)) // 4 * 4),
+            )
+        )
+        if len(baseline) >= ROUND3_BASELINE:
+            break
+    return current, baseline
+
+
+def build_round3(folder: Path, out_dir: Path, log=print) -> dict:
+    from saics.portals import read_graph
+
+    folder, out_dir = Path(folder), Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    graph = read_graph(folder)
+    current, baseline = pick_round3(graph)
+    manifest = {"round": "3", "context_s": ROUND2_CTX_S, "clips": []}
+    cache: dict = {}
+
+    def load(tid):
+        if tid not in cache:
+            if len(cache) >= 6:
+                cache.pop(next(iter(cache)))
+            cache[tid] = _load_gained(folder, graph, tid)
+        return cache[tid]
+
+    jobs = [("current", tid, e.to, e.from_bar, e.to_bar, e.score, e.pair) for tid, e in current]
+    jobs += [("baseline", a, b, fa, tb, 0.0, "unmatched") for a, b, fa, tb in baseline]
+    for variant, ta, tb, fa, to_bar, score, pair in jobs:
+        ya, bta = load(ta)
+        yb, btb = load(tb)
+        fa2, to2 = min(fa, len(bta) - 1), min(to_bar, len(btb) - 1)
+        t_from, t_to = float(bta[fa2]), float(btb[to2])
+        clip, seam_s = _portal_clip(ya, t_from, yb, t_to)
+        mono = clip.mean(0)
+        cid = secrets.token_hex(6)
+        sf.write(out_dir / f"{cid}.wav", _normalise(clip.T, OUT_SR), OUT_SR, subtype="PCM_16")
+        na, nb = _song_title(graph, ta), _song_title(graph, tb)
+        manifest["clips"].append(
+            {
+                "id": cid,
+                "kind": "portal",
+                "round": "3",
+                "song": f"{na} → {nb}",
+                "variant": variant,
+                "seam_s": round(seam_s, 3),
+                "duration_s": round(clip.shape[1] / OUT_SR, 3),
+                "score": score,
+                "tempo_diff_pct": round(
+                    100 * abs(graph.tracks[ta].bpm - graph.tracks[tb].bpm) / graph.tracks[tb].bpm, 2
+                ),
+                "reveal": {
+                    "label": pair,
+                    "from_s": round(t_from, 2),
+                    "to_s": round(t_to, 2),
+                    "from_file": graph.tracks[ta].file,
+                    "to_file": graph.tracks[tb].file,
+                    "text": f"{pair}: {na[:40]} @ {_mmss(t_from)} → {nb[:40]} @ {_mmss(t_to)}",
+                },
+                "metrics": seam_metrics(mono, OUT_SR, seam_s, _beats(mono, OUT_SR)),
+            }
+        )
+        log(f"  {variant:8} {score:.2f} {pair:18} {na[:30]} → {nb[:30]}")
+    rnd = np.random.default_rng(1)
+    rnd.shuffle(manifest["clips"])
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8"
+    )
+    return manifest
+
+
+def build_walks(
+    folder: Path, out_dir: Path, minutes: float = 15.0, seeds=(11, 22), log=print
+) -> dict:
+    """Two blind "Infinite Ride" renders: rated overall, with timestamp marks (eval/full.html)."""
+    from saics.mixwalk import load_walk_graph, walk_path
+    from saics.render import _bar_times, render_walk, write_audio
+
+    folder, out_dir = Path(folder), Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    graph = load_walk_graph(folder)
+    bundles: dict = {}
+    files = {}
+    from saics.portals import read_graph
+
+    pg = read_graph(folder)
+    for tid, t in pg.tracks.items():
+        files[tid] = folder / t.file
+
+    def info(tid):
+        b = bundles.setdefault(tid, _bundle_for(folder, pg.tracks[tid].file))
+        return (files[tid], b.loudness.gain_db, lambda n, b=b: _bar_times(b, n, OUT_SR))
+
+    manifest = {"minutes": minutes, "renders": []}
+    for k, seed in enumerate(seeds):
+        rng = np.random.default_rng(seed)
+        starts = sorted(tid for tid, t in pg.tracks.items() if len(t.portals) >= 3)
+        start = starts[int(rng.integers(len(starts)))]
+        segs, wlog = walk_path(graph, start, minutes, seed=seed)
+        tracks = {s[0]: info(s[0]) for s in segs if s[0] != "gap"}
+        y = render_walk(segs, tracks, OUT_SR)
+        rid = secrets.token_hex(6)
+        write_audio(out_dir / f"{rid}.mp3", y, OUT_SR)
+        name = lambda t: Path(pg.tracks[t].file).stem[:40]  # noqa: E731
+        moves = [
+            {
+                "at_s": e["at_s"],
+                "kind": e["kind"],
+                "from": name(e["from"]) + f" bar {e['from_bar'] + 1}",
+                "to": name(e["to"]) + f" bar {e['to_bar'] + 1}",
+                "pair": e["pair"],
+            }
+            for e in wlog
+        ]
+        manifest["renders"].append(
+            {
+                "id": rid,
+                "song": f"walk {k + 1} from {name(start)}",
+                "title": f"Infinite Ride walk {k + 1}",
+                "duration_s": round(y.shape[1] / OUT_SR, 2),
+                "seed": seed,
+                "jumps": moves,
+            }
+        )
+        kinds: dict = {}
+        for e in wlog:
+            kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
+        log(
+            f"  walk {k + 1}: {y.shape[1] / OUT_SR / 60:.1f} min, "
+            f"{len({s[0] for s in segs})} songs, {kinds}"
+        )
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8"
+    )
+    return manifest
+
+
+def write_portal_feedback(folder: Path, eval_dir: Path, rater: str = "owner", log=print) -> int:
+    """Round 3 ratings -> `.saics/portal_feedback.csv` (5 -> keep, <= 2 -> ban)."""
+    import csv as _csv
+
+    p = Path(eval_dir) / "round3" / "manifest.json"
+    if not p.exists():
+        return 0
+    man = {c["id"]: c for c in json.loads(p.read_text("utf-8"))["clips"]}
+    rows = []
+    for r in load_ratings(Path(eval_dir) / "results"):
+        c = man.get(r["clip_id"])
+        if not c or c["variant"] != "current" or r.get("rater", "owner") != rater:
+            continue
+        action = "keep" if r["rating"] == 5 else "ban" if r["rating"] <= 2 else None
+        if action:
+            rv = c["reveal"]
+            rows.append(
+                [action, rv["from_file"], rv["from_s"], rv["to_file"], rv["to_s"], r["rating"]]
+            )
+    out = Path(folder) / ".saics" / "portal_feedback.csv"
+    with out.open("w", encoding="utf-8", newline="") as f:
+        f.write("# action,from file,from_s,to file,to_s,rating (saics eval feedback)\n")
+        _csv.writer(f).writerows(rows)
+    log(f"{len(rows)} portal feedback rows -> {out}")
     return len(rows)

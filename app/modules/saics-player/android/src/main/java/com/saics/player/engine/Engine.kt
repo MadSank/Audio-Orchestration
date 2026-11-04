@@ -40,6 +40,8 @@ class Engine(private val context: Context, private val listener: Listener) {
     val group: String,
     val version: String,
     val gainDb: Double,
+    val trackId: String = "",
+    @Volatile var notLoopable: Boolean = false,
   )
 
   private class Loaded(val song: Song, val pcm: Pcm, val bundle: Bundle?) {
@@ -47,6 +49,8 @@ class Engine(private val context: Context, private val listener: Listener) {
     private var provisional = true
     var walk: ForeverWalk? = null
     var landBar = -1
+    var came: Triple<String, Int, Int>? = null // the portal it arrived through
+    var entered = false // the mix walk has this song
     /** Bar starts from the bundle. While the song is still decoding they are provisional (the
      *  last bar's end is unknown): good for finding bars, not for the walk or the song end. */
     fun bars(): IntArray? {
@@ -74,8 +78,8 @@ class Engine(private val context: Context, private val listener: Listener) {
     }
   }
 
-  private enum class Kind { TRACK, NEXT, HARD_NEXT, PREVIOUS, RESTART, VERSION }
-  private class Intent(val kind: Kind, val target: Song?, var issuedAt: Int = -1)
+  private enum class Kind { TRACK, NEXT, HARD_NEXT, PREVIOUS, RESTART, VERSION, MOVE }
+  private class Intent(val kind: Kind, val target: Song?, var issuedAt: Int = -1, val move: Move? = null)
 
   private val slots = Array(SLOTS) { Slot() }
   private val loaded = arrayOfNulls<Loaded>(SLOTS)
@@ -102,6 +106,20 @@ class Engine(private val context: Context, private val listener: Listener) {
   private var endRetry = -1 // slot whose song end couldn't be handed over yet (next song loading)
   private var jumpPending: String? = null // the scheduled Forever jump, announced once executed
   private var executedSeen = 0
+
+  // Mix Web (P4a).
+  private var graph: PortalGraph? = null
+  private var mix: MixWalk? = null
+  private var mixOn = false // a station is walking the graph (plain queue otherwise)
+  private var pool: Set<String>? = null
+  private var byTrack: Map<String, Song> = emptyMap()
+  private var moveInFlight: Move? = null // issued, the song hasn't changed yet
+  private var moveRetry: Move? = null // due at the song end, target still loading
+  private var plan: Move? = null // the next move on offer (Now Playing)
+  private var jumps = 0
+
+  /** For the UI: rebuilt once per bar on the scheduler thread. */
+  @Volatile private var snapshot: Map<String, Any?> = emptyMap()
   private val rng = Random(System.nanoTime())
 
   @Volatile var current: Song? = null
@@ -117,7 +135,69 @@ class Engine(private val context: Context, private val listener: Listener) {
 
   // ── public API (any thread) ────────────────────────────────────────────────
 
-  fun setLibrary(songs: List<Song>) = post { library = songs }
+  fun setLibrary(songs: List<Song>) = post {
+    library = songs
+    byTrack = songs.filter { it.trackId.isNotEmpty() }.associateBy { it.trackId }
+  }
+
+  /** `.saics/portals.json`; null or unreadable: no portals, plain playback and Forever only. */
+  fun setPortals(uri: Uri?) = post {
+    graph = uri?.let { readText(it) }?.let { PortalGraph.parse(it) }
+    mix = graph?.let { g -> MixWalk(g).also { it.forever = forever; it.pool = pool } }
+    loaded.forEach { it?.entered = false }
+    log("portal graph: ${graph?.tracks?.size ?: 0} songs")
+  }
+
+  /** A station walks the graph; [songs] is its pool. Off: the queue plays in order. */
+  fun setMix(on: Boolean, songs: Set<String>?) = post {
+    mixOn = on
+    pool = songs
+    mix?.pool = songs
+  }
+
+  fun stay() = post {
+    val p = plan
+    mix?.stay(p)
+    if (p != null && moveInFlight?.at == p.at && moveInFlight?.to == p.to) {
+      renderer.pending.get()?.let { if (it.tag == TAG_MOVE) renderer.pending.compareAndSet(it, null) }
+      moveInFlight = null
+    }
+    log("stay ${p?.to}")
+    plan = null
+    lastKey = Long.MIN_VALUE // refresh the card
+  }
+
+  fun switchVersionTo(song: Song) = post { intent = Intent(Kind.VERSION, song) }
+
+  fun setNotLoopable(id: String, value: Boolean) = post {
+    (loaded.firstOrNull { it?.song?.id == id })?.let {
+      it.song.notLoopable = value
+      it.walk = null
+      it.entered = false
+    }
+    library.firstOrNull { it.id == id }?.notLoopable = value
+  }
+
+  /** "Portals from" a song: one row per target, most portals first. */
+  fun portalsFrom(trackId: String): List<Map<String, Any?>> {
+    val g = graph ?: return emptyList()
+    val songs = byTrack
+    return g.tracks[trackId]?.portals.orEmpty().filter { !it.sameGroup }.groupBy { it.to }.mapNotNull { (to, es) ->
+      val t = g.tracks[to] ?: return@mapNotNull null
+      mapOf(
+        "trackId" to to, "title" to (songs[to]?.title ?: to), "count" to es.size,
+        "pair" to es.maxByOrNull { it.score }!!.pair, "bpm" to t.bpm, "camelot" to t.camelot,
+      )
+    }.sortedByDescending { it["count"] as Int }.take(6)
+  }
+
+  /** Song facts and the next move, for the app. */
+  fun status(): Map<String, Any?> {
+    val l = loaded.getOrNull(renderer.slot) ?: return emptyMap()
+    return snapshot + ("bar" to l.barAt(renderer.frame))
+  }
+
+  private val mixActive get() = mix != null && (mixOn || forever)
 
   fun setQueue(songs: List<Song>, start: Int) = post {
     queue = songs
@@ -138,6 +218,17 @@ class Engine(private val context: Context, private val listener: Listener) {
 
   fun next(hard: Boolean) = post {
     log("next(hard=$hard) forever=$forever current=${current?.title} versions=${current?.let { versionsOf(it).size }} alt=${alt?.version}")
+    val w = mix
+    val here = loaded.getOrNull(renderer.slot)
+    if (w != null && mixActive && here != null && here.entered) {
+      val move = w.nextNow(here.barAt(renderer.frame))
+      val song = move?.let { byTrack[it.to] }
+      if (move != null && song != null) {
+        renderer.pending.get()?.let { if (it.tag == TAG_JUMP) renderer.pending.compareAndSet(it, null) }
+        intent = Intent(Kind.MOVE, song, move = if (hard) move.copy(kind = "cut", at = -1) else move)
+        return@post
+      }
+    }
     if (forever && current != null && versionsOf(current!!).isNotEmpty()) {
       intent = Intent(Kind.VERSION, alt ?: versionsOf(current!!).random(rng))
     } else {
@@ -154,6 +245,7 @@ class Engine(private val context: Context, private val listener: Listener) {
 
   fun setForever(on: Boolean) = post {
     forever = on
+    mix?.forever = on
     if (!on) renderer.pending.get()?.let { if (it.tag == TAG_JUMP) renderer.pending.compareAndSet(it, null) }
   }
 
@@ -279,8 +371,11 @@ class Engine(private val context: Context, private val listener: Listener) {
       lastKey = key
       if (renderer.vinylOn != vinylWanted) renderer.vinylOn = vinylWanted // on the bar
       if (intent == null) decide(cs, cur, bar)
+      refreshStatus(cur, bar)
     } else if (intent == null && renderer.pending.get() == null) {
-      if (cur.bars() == null) decide(cs, cur, bar) // no bundle: only the song end needs handling
+      val retry = moveRetry
+      if (retry != null) issueMove(cs, cur, retry)
+      else if (cur.bars() == null) decide(cs, cur, bar) // no bundle: only the song end needs handling
       else if (endRetry == cs) songEnd(cs, cur)
     }
     preload()
@@ -298,24 +393,105 @@ class Engine(private val context: Context, private val listener: Listener) {
     val n = bars.size - 1
     val boundary = bar + 1
     if (boundary > n) return
+    val w = mix
+    if (w != null && mixActive && cur.entered) {
+      when (val d = w.step(boundary)) {
+        MixWalk.Decision.Carry -> {}
+        is MixWalk.Decision.Jump -> issueJump(cs, cur, bars, boundary, d.jump, d.why)
+        is MixWalk.Decision.Leave -> issueMove(cs, cur, d.move)
+      }
+      return
+    }
     val walk = cur.walk
     if (forever && walk != null) {
       when (val step = walk.step(boundary)) {
         is ForeverWalk.Step.Play -> {
           val j = step.jump ?: return
-          val at = bars[minOf(boundary, n)]
-          val to = bars[j.toBar]
-          if (to + XF_HALF > cur.pcm.frames) return // target not decoded yet: carry on
-          val rho = correlation(cur.pcm, at, cur.pcm, to, XF_HALF)
-          renderer.pending.set(Instruction(cs, at, cs, to, XF_HALF, rho, tag = TAG_JUMP))
-          log("jump ${j.label} (${step.why}) at ${at / ENGINE_RATE.toDouble()}s rho=%.2f".format(rho))
-          jumpPending = "${j.label} (${step.why})" // reported when it executes (see tick)
+          issueJump(cs, cur, bars, boundary, j, step.why)
         }
         ForeverWalk.Step.End -> songEnd(cs, cur)
       }
     } else if (boundary == n) {
       songEnd(cs, cur)
     }
+  }
+
+  private fun issueJump(cs: Int, cur: Loaded, bars: IntArray, boundary: Int, j: Bundle.Jump, why: String) {
+    val at = bars[minOf(boundary, bars.size - 1)]
+    val to = bars[j.toBar]
+    if (to + XF_HALF > cur.pcm.frames) return // target not decoded yet: carry on
+    val rho = correlation(cur.pcm, at, cur.pcm, to, XF_HALF)
+    renderer.pending.set(Instruction(cs, at, cs, to, XF_HALF, rho, tag = TAG_JUMP))
+    log("jump ${j.label} ($why) at ${at / ENGINE_RATE.toDouble()}s rho=%.2f".format(rho))
+    jumpPending = "${j.label} ($why)" // reported when it executes (see tick)
+    jumps++
+  }
+
+  /** Hands a cross-song move to the renderer once the target is decoded far enough. */
+  private fun issueMove(cs: Int, cur: Loaded, m: Move): Boolean {
+    val bars = cur.bars() ?: return false
+    if (m.kind == "end") { // a one-song pool, or Forever with no other version: repeat-one
+      cur.pcm.frames.let { end ->
+        renderer.pending.set(Instruction(cs, end, cs, 0, 0, gap = (ForeverWalk.REPEAT_ONE_GAP_S * ENGINE_RATE).toInt(), tag = TAG_REPEAT))
+      }
+      event("repeat", "repeat one")
+      moveRetry = null
+      return true
+    }
+    val atEnd = m.at >= bars.size - 1
+    val song = byTrack[m.to]
+    if (song == null) {
+      moveRetry = null
+      return false
+    }
+    val s = slotOf(song) ?: load(song)
+    val other = s?.let { loaded[it] }
+    val ab = other?.bars()
+    val to = if (m.toBar <= 0 || ab == null) 0 else ab[minOf(m.toBar, ab.size - 2)]
+    if (s == null || other == null || !ready(s) || to + XF_HALF > other.pcm.frames) {
+      moveRetry = if (atEnd) m else null // mid-song: the moment passes, carry on
+      if (!atEnd) log("move to ${song.title} skipped: not decoded yet")
+      return false
+    }
+    val at = if (atEnd) cur.pcm.frames else bars[m.at]
+    val half = if (atEnd) 0 else XF_HALF
+    val rho = if (m.kind == "portal" || m.kind == "back") correlation(cur.pcm, at, other.pcm, to, XF_HALF) else 0.0
+    renderer.pending.set(Instruction(cs, at, s, to, half, rho, tag = TAG_MOVE))
+    moveInFlight = m
+    moveRetry = null
+    log("${m.kind} ${m.pair} -> ${song.title} bar ${m.toBar} at bar ${m.at} score=%.2f rho=%.2f".format(m.score, rho))
+    return true
+  }
+
+  private fun refreshStatus(cur: Loaded, bar: Int) {
+    val w = mix
+    val g = graph
+    val info = g?.tracks?.get(cur.song.trackId)
+    val b = cur.bundle
+    plan = if (w != null && mixActive && cur.entered) moveInFlight ?: w.peek(bar) else null
+    val p = plan
+    p?.let { m -> byTrack[m.to]?.let { song -> if (slotOf(song) == null && intent == null) load(song) } }
+    val kinds = info?.sections
+    val sections = b?.sections.orEmpty()
+    val sectionIndex = sections.indexOfFirst { bar >= it.startBar && bar < it.endBar }
+    snapshot = mapOf(
+      "trackId" to cur.song.trackId, "bpm" to (b?.bpm ?: 0.0), "camelot" to (b?.camelot ?: ""),
+      "sections" to sections.mapIndexed { i, x -> mapOf("bars" to (x.endBar - x.startBar), "kind" to (kinds?.getOrNull(i) ?: "section")) },
+      "sectionKind" to (kinds?.getOrNull(sectionIndex) ?: ""), "jumps" to jumps,
+      "nextPortal" to p?.let { m ->
+        val t = g?.tracks?.get(m.to)
+        val song = byTrack[m.to]
+        if (t == null || song == null) {
+          null
+        } else {
+          mapOf(
+            "kind" to if (m.kind == "portal") "portal" else if (m.kind == "back") "back" else "cut",
+            "title" to song.title, "inBars" to maxOf(1, m.at - bar), "pair" to m.pair,
+            "bpm" to t.bpm, "camelot" to t.camelot, "landBar" to m.toBar,
+          )
+        }
+      },
+    )
   }
 
   /** The song reached its end: (c) another version / (d) repeat-one in Forever, else the next song. */
@@ -368,6 +544,19 @@ class Engine(private val context: Context, private val listener: Listener) {
       Kind.HARD_NEXT, Kind.PREVIOUS, Kind.RESTART ->
         Instruction(cs, now + 2048, s, 0, SWITCH_HALF, tag = TAG_TRACK)
       Kind.NEXT -> Instruction(cs, nextBarFrame(cur, now), s, 0, SWITCH_HALF, tag = TAG_TRACK)
+      Kind.MOVE -> {
+        val m = it.move!!
+        val other = loaded[s]!!
+        val ab = other.bars()
+        val to = if (m.toBar <= 0 || ab == null) 0 else ab[minOf(m.toBar, ab.size - 2)]
+        if (to + XF_HALF > other.pcm.frames) return // not decoded that far yet (retried each tick)
+        val bars = cur?.bars()
+        var at = if (m.at < 0 || bars == null) now + 2048 else bars[minOf(m.at, bars.size - 1)]
+        if (at - XF_HALF <= now + BLOCK * 2) at = nextBarFrame(cur, now) // decoding took too long
+        moveInFlight = m.copy(at = if (cur != null) maxOf(0, cur.barAt(at)) else 0)
+        val rho = if (m.kind == "portal" && cur != null) correlation(cur.pcm, at, other.pcm, to, XF_HALF) else 0.0
+        Instruction(cs, at, s, to, XF_HALF, rho, tag = TAG_MOVE)
+      }
       Kind.VERSION -> {
         val other = loaded[s]!!
         val cb = cur?.bars()
@@ -390,7 +579,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     it.issuedAt = renderer.executed
     when (it.kind) {
       Kind.VERSION -> event("version", target.version)
-      Kind.TRACK -> {}
+      Kind.TRACK, Kind.MOVE -> {}
       else -> event("track", target.title)
     }
   }
@@ -405,8 +594,21 @@ class Engine(private val context: Context, private val listener: Listener) {
   private fun songStarted(cs: Int) {
     lastSlot = cs
     val l = loaded.getOrNull(cs)
+    val prev = current
     current = l?.song
+    jumps = 0
+    moveRetry = null
     if (l != null) {
+      val mv = moveInFlight
+      moveInFlight = null
+      mix?.let { if (prev != null) it.left() }
+      l.entered = false
+      l.came = null
+      if (mv != null && mv.to == l.song.trackId) {
+        landBar = mv.toBar
+        if (mv.kind == "portal" && prev != null) l.came = Triple(prev.trackId, mv.at, mv.toBar)
+        event("portal", "${mv.pair.ifEmpty { mv.kind }}")
+      }
       index = queue.indexOfFirst { it.id == l.song.id }.let { if (it >= 0) it else index }
       log("playing ${l.song.title} [${l.song.version}] bundle=${l.bundle != null} decoded=${l.pcm.complete}")
       l.landBar = landBar // a version switch landed mid-song: the walk starts there
@@ -419,10 +621,19 @@ class Engine(private val context: Context, private val listener: Listener) {
 
   /** The Forever walk needs the final bar grid, i.e. the whole song decoded. */
   private fun initWalk(l: Loaded) {
-    if (l.bundle == null || l.walk != null || !l.pcm.complete || l.bars() == null) return
-    l.walk = ForeverWalk(l.bundle.barTimes(l.pcm.frames.toDouble() / ENGINE_RATE), l.bundle.sections, l.bundle.jumps,
-      l.bundle.outroBar, l.bundle.loopable, rng.nextLong())
-    if (l.landBar >= 0) l.walk?.reset(l.landBar)
+    if (l.bundle == null || !l.pcm.complete || l.bars() == null) return
+    val times = l.bundle.barTimes(l.pcm.frames.toDouble() / ENGINE_RATE)
+    val loopable = l.bundle.loopable && !l.song.notLoopable
+    if (l.walk == null) {
+      l.walk = ForeverWalk(times, l.bundle.sections, l.bundle.jumps, l.bundle.outroBar, loopable, rng.nextLong())
+      if (l.landBar >= 0) l.walk?.reset(l.landBar)
+    }
+    val info = graph?.tracks?.get(l.song.trackId)
+    val w = mix
+    if (w != null && info != null && !l.entered) {
+      w.enter(info, times, l.bundle.sections, l.bundle.jumps, l.bundle.outroBar, loopable, maxOf(0, l.landBar), l.came)
+      l.entered = true
+    }
   }
 
   // ── slots and preloading ───────────────────────────────────────────────────
@@ -436,8 +647,13 @@ class Engine(private val context: Context, private val listener: Listener) {
       if (alt == null) alt = versionsOf(c).randomOrNull(rng)
       alt?.let { slotOf(it) ?: load(it) }
     }
+    // Near the end of a song on the walk: the fallback target must be ready.
+    val here = loaded.getOrNull(renderer.slot)
+    if (mixActive && here != null && here.pcm.complete && here.pcm.frames - renderer.frame < 40 * ENGINE_RATE) {
+      mix?.fallback?.let { byTrack[it] }?.let { slotOf(it) ?: load(it) }
+    }
     // The next song is only needed when this one can end into it.
-    if (!forever || c == null || versionsOf(c).isEmpty()) queue.getOrNull(index + 1)?.let { slotOf(it) ?: load(it) }
+    if (!mixOn && (!forever || c == null || versionsOf(c).isEmpty())) queue.getOrNull(index + 1)?.let { slotOf(it) ?: load(it) }
     // Bars become available once decoding completes; the walk needs them.
     val l = loaded.getOrNull(renderer.slot)
     if (l != null) initWalk(l)
@@ -453,7 +669,10 @@ class Engine(private val context: Context, private val listener: Listener) {
   /** Decode [song] into a free slot (never one in use or about to be). */
   private fun load(song: Song): Int? {
     val busy = setOf(renderer.slot, renderer.armedSlot, renderer.pending.get()?.toSlot ?: -1)
-    val keep = setOfNotNull(alt?.id, queue.getOrNull(index + 1)?.id, intent?.target?.id)
+    val keep = setOfNotNull(
+      alt?.id, queue.getOrNull(index + 1)?.id.takeIf { !mixOn }, intent?.target?.id,
+      plan?.let { byTrack[it.to]?.id }, moveInFlight?.let { byTrack[it.to]?.id }, moveRetry?.let { byTrack[it.to]?.id },
+    )
     val free = (0 until SLOTS).firstOrNull { loaded[it] == null }
       ?: (0 until SLOTS).firstOrNull { it !in busy && loaded[it]?.song?.id !in keep }
       ?: return null
@@ -494,6 +713,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     const val TAG_VERSION = 2
     const val TAG_TRACK = 3
     const val TAG_REPEAT = 4
+    const val TAG_MOVE = 5
 
     /** Normalised correlation of two windows around the seam (render.py's rho). */
     fun correlation(a: Pcm, at: Int, b: Pcm, to: Int, half: Int): Double {
