@@ -440,6 +440,12 @@ Also:
   - Round 3: 36 portal clips + 8 unmatched baseline clips (blind, 15 s each side), two 15-minute walks (eval/walks). `saics eval feedback` writes `.saics/portal_feedback.csv` (5 = keep, ≤ 2 = ban).
   - UI: Revision 2 screens built (Home, Now Playing, Versions sheet, Library as groups with Portals from, Song groups review; record restyled). Ride mode and Set-aside review aren't built yet, so the third tab is Helmet (settings + Button test) for now.
   - Overrides written on the phone (`.saics/groups_overrides.csv`, `forever_overrides.csv`) need `adb pull` back to the PC before the next analyse; re-run `saics portals` after group changes.
+- **Round 3 result (2026-11-05): P4a does not pass yet.** Portal clips 3.47 (50% ≥ 4, 0% jittery; target ≥ 4.0), unmatched controls 3.25 (8 clips; owner rated strictly, so compare within this round, not with round 2). Walks 4 and 4 overall, but 10 marks, 9 of them near a transition (target: at most one per render).
+  - The portal score doesn't predict ratings (r = 0.00). Harmony is high either way (median 0.96 good, 0.94 bad): whole-mix features can't see the background mismatch the owner hears.
+  - Volume (owner's note, hard rule 10): different-song clips with a step ≥ 2 dB average 2.43 (n = 7), the rest 3.68 (n = 22). Song-level gain doesn't level sections; steps reach 9 dB.
+  - Timing: median beat-phase error 50 ms (Forever: 11 ms). Different-song clips within 40 ms average 4.20 (n = 5), the rest 3.21 (n = 24). Small sample; matches the owner's "missed by a few frames".
+  - The two "bad quality" marks are Lofi VHS version files in the library, not an engine fault.
+  - Proposed next (not started, needs the owner's go-ahead): local loudness check + landing trim; sample-level seam alignment; a blind test of background handovers against the plain cut; then, if needed, matching on the instrumental stem (re-analysis).
 - **P4b: Blends and stretch.** Signalsmith Stretch (MIT) in the NDK as a real-time per-slot stage, a 3-band EQ per slot (bass swap), ±6% tempo portals and the blend/build styles below. Allocation-free render path (hard rule 9). Done when the original P4 criteria below pass.
 
 The Mix Web is a library-wide graph of **exit → entry** transitions, computed on the PC and stored in `library.json`, so the phone never computes pairwise analysis. The Infinite Ride station walks it live, and `saics mix` renders it offline.
