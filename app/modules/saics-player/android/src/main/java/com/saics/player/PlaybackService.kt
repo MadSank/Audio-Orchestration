@@ -206,11 +206,12 @@ class PlaybackService : MediaLibraryService() {
     }
   }
 
-  /** Next: in Forever another version of the song (on the next bar), else the next song
-   *  (on the next downbeat; x2 = cut now). */
+  /** Next x1: in Forever another version of the song (on the next bar), else the next portal.
+   *  Next x2: a completely different song, in Forever too (Forever stays on and loops it). */
   fun next(hardCut: Boolean) {
     player.engine.next(hardCut)
     feedback.earcon("step")
+    if (hardCut) main.postDelayed({ feedback.earcon("step") }, 120) // the spec's double tick
     if (announceTitles && !forever) main.postDelayed({ feedback.say("Next: ${currentTrack()?.title ?: ""}") }, 2500)
     emit("onAction", mapOf("action" to if (hardCut) "cut" else "next"))
   }
@@ -264,7 +265,7 @@ class PlaybackService : MediaLibraryService() {
       2 -> library.filter { "slowed" in it.version }.ifEmpty { library } // Late Night
       3 -> library.filter { it.uri in liked }.ifEmpty { library } // Liked
       else -> library
-    }
+    }.let { songs -> songs.filter { it.trackId.isNotEmpty() }.ifEmpty { songs } } // analysed songs only
     val byGroup = pool.groupBy { it.group.ifEmpty { it.uri } }
     val queue = byGroup.values.shuffled().map { versions ->
       versions.firstOrNull { it.version == "original" && index != 2 }.takeIf { Math.random() < 0.5 } ?: versions.random()

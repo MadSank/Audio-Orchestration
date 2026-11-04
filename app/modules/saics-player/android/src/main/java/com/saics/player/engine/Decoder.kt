@@ -115,6 +115,7 @@ object Decoder {
           if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
         }
       }
+      pcm.failed = pcm.frames == 0 && !pcm.cancelled // opened, but no audio came out
       pcm.complete = true
     } catch (e: Exception) {
       pcm.failed = pcm.frames == 0

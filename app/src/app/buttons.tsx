@@ -13,7 +13,7 @@ const MAPPING: [string, string][] = [
   ["Play/Pause ×2", "Toggle Vinyl"],
   ["Play/Pause ×3", "Next station"],
   ["Next ×1", "Take the next portal (next phrase)"],
-  ["Next ×2", "Cut to the next song now"],
+  ["Next ×2", "A new song now (Forever stays on)"],
   ["Previous ×1", "Restart / previous song (<5 s)"],
   ["Previous ×2", "Toggle Forever"],
 ];

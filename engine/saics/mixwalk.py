@@ -390,6 +390,26 @@ class MixWalk:
             return Move("cut", e.to, e.to_bar, at, e.pair, e.score)
         return self._cut("cut", at)
 
+    def new_song(self, bar: int) -> Move | None:
+        """Next x2 in Forever: a completely different song, now (Forever stays on and loops it).
+
+        A portal if one is on the next two bars, else a cut on the next downbeat, into a portal's
+        landing if this song has one, else the fallback song's best entry."""
+        others = [
+            e
+            for e in self.cur.portals
+            if not e.same_group and e.score >= PORTAL_SCORE_MIN and self._allowed(e.to)
+        ]
+        at = max(0, bar + 1)
+        close = [e for e in others if e.from_bar in (at, at + 1)]
+        if close:
+            e = max(close, key=self._rank)
+            return Move("portal", e.to, e.to_bar, e.from_bar, e.pair, e.score)
+        if others:
+            e = max(others, key=self._rank)
+            return Move("cut", e.to, e.to_bar, at, e.pair, e.score)
+        return self._cut("cut", at)
+
     # ── moving ───────────────────────────────────────────────────────────────
 
     def arrive(self, m: Move) -> None:
