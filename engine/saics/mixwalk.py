@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from saics.jumps import AVOID_MAX_USES, REPEAT_ONE_GAP_S, REUSE_PENALTY, TAKE_MIN
+from saics.seams import seam_trim_db
 
 DWELL = (60.0, 90.0)
 MIN_DWELL_S = 30.0  # even a full chorus doesn't end the visit before this
@@ -47,6 +48,9 @@ class TrackInfo:
     outro_bar: int | None = None
     loopable: bool = True
     bpm: float = 0.0
+    level_out: list = field(default_factory=list)  # saics.seams
+    level_in: list = field(default_factory=list)
+    walkable: bool = True
 
     @property
     def exits(self) -> int:
@@ -174,6 +178,15 @@ class Move:
     at: int
     pair: str = ""
     score: float = 0.0
+    offset_ms: float = 0.0  # landing shift (portal and back moves)
+
+
+def move_trim_db(graph: dict, cur: TrackInfo, m: Move) -> float:
+    """The landing trim of this move (saics.seams). 0 for a song that ran out or a version."""
+    to = graph.get(m.to)
+    if to is None or m.kind not in ("portal", "back", "cut", "break") or m.at >= cur.n:
+        return 0.0
+    return seam_trim_db(cur.level_out, m.at, to.level_in, m.to_bar)
 
 
 class MixWalk:
@@ -192,7 +205,7 @@ class MixWalk:
     # ── visits ───────────────────────────────────────────────────────────────
 
     def enter(self, track: str, bar: int, came_from: tuple | None) -> None:
-        """Arrived at `bar` of `track`; came_from = (track, its bar, this landing bar)."""
+        """Arrived at `bar` of `track`; came_from = (track, its bar, this landing bar, nudge)."""
         self.cur = self.graph[track]
         self.came_from = came_from
         self.visit_t = 0.0
@@ -213,7 +226,7 @@ class MixWalk:
 
     def _allowed(self, tid: str) -> bool:
         t = self.graph.get(tid)
-        if t is None or (self.pool is not None and tid not in self.pool):
+        if t is None or not t.walkable or (self.pool is not None and tid not in self.pool):
             return False
         recent = [g for g, at in self.history[-NO_REPEAT_COUNT:] if self.t - at < NO_REPEAT_S]
         return self._key(t) not in recent and self._key(t) != self._key(self.cur)
@@ -246,7 +259,7 @@ class MixWalk:
             opts = self._portals_from(b)
             if opts:
                 e = max(opts, key=self._rank)
-                return Move("portal", e.to, e.to_bar, b, e.pair, e.score)
+                return Move("portal", e.to, e.to_bar, b, e.pair, e.score, e.offset_ms)
         return None
 
     def stay(self, m: Move | None) -> None:
@@ -265,7 +278,7 @@ class MixWalk:
             opts = self._portals_from(bar)
             if opts:
                 e = max(opts, key=lambda e: self._rank(e) + float(self.rng.uniform(0, 0.02)))
-                return Move("portal", e.to, e.to_bar, bar, e.pair, e.score)
+                return Move("portal", e.to, e.to_bar, bar, e.pair, e.score, e.offset_ms)
         if self.forever:  # Forever keeps the song: loops, then the version/repeat ending
             return self._forever_bar(bar)
         ahead = any(self._edge_ok(e) and e.from_bar > bar for e in c.portals)
@@ -321,6 +334,7 @@ class MixWalk:
                 i
                 for i in sorted(self.graph)
                 if i != self.cur.id
+                and self.graph[i].walkable
                 and self._key(self.graph[i]) != self._key(self.cur)
                 and (self.pool is None or i in self.pool)
             ]
@@ -343,7 +357,11 @@ class MixWalk:
     def _versions(self) -> list:
         g = self.cur.group
         return (
-            [] if not g else [i for i, t in self.graph.items() if t.group == g and i != self.cur.id]
+            []
+            if not g
+            else [
+                i for i, t in self.graph.items() if t.group == g and i != self.cur.id and t.walkable
+            ]
         )
 
     def _fallback(self, bar: int, looped: float) -> Move | None:
@@ -351,7 +369,7 @@ class MixWalk:
         cf = self.came_from
         # The seam matched over the 4 bars after it, so any of them can go back, at that offset.
         if cf is not None and 0 <= bar - cf[2] < BACK_REACH_BARS and cf[0] in self.graph:
-            return Move("back", cf[0], cf[1] + bar - cf[2], bar, "back", 0.0)
+            return Move("back", cf[0], cf[1] + bar - cf[2], bar, "back", 0.0, -cf[3])
         if looped >= BREAK_AFTER_S and bar in c.break_exits:
             return self._cut("break", bar)
         if looped >= VERSION_AFTER_S and c.is_phrase(bar):
@@ -382,7 +400,7 @@ class MixWalk:
             opts = self._portals_from(b)
             if opts:
                 e = max(opts, key=self._rank)
-                return Move("portal", e.to, e.to_bar, b, e.pair, e.score)
+                return Move("portal", e.to, e.to_bar, b, e.pair, e.score, e.offset_ms)
         at = c.next_phrase(bar)
         later = [e for e in c.portals if self._edge_ok(e) and e.from_bar > bar]
         if later:
@@ -404,7 +422,7 @@ class MixWalk:
         close = [e for e in others if e.from_bar in (at, at + 1)]
         if close:
             e = max(close, key=self._rank)
-            return Move("portal", e.to, e.to_bar, e.from_bar, e.pair, e.score)
+            return Move("portal", e.to, e.to_bar, e.from_bar, e.pair, e.score, e.offset_ms)
         if others:
             e = max(others, key=self._rank)
             return Move("cut", e.to, e.to_bar, at, e.pair, e.score)
@@ -414,7 +432,7 @@ class MixWalk:
 
     def arrive(self, m: Move) -> None:
         self.history.append((self._key(self.cur), self.t))
-        came = (self.cur.id, m.at, m.to_bar) if m.kind == "portal" else None
+        came = (self.cur.id, m.at, m.to_bar, m.offset_ms) if m.kind == "portal" else None
         self.enter(m.to, m.to_bar, came)
 
 
@@ -422,11 +440,13 @@ def walk_path(
     graph: dict, start: str, minutes: float, seed: int = 0, pool: set | None = None
 ) -> tuple:
     """A whole walk: (segments, log). A segment is (track, start_bar, end_bar); log entries are
-    the moves and loops with the time they happen at."""
+    the moves and loops with the time they happen at. The first segment after a move has two more
+    fields: (track, start_bar, end_bar, landing shift in ms, landing trim in dB)."""
     w = MixWalk(graph, start, seed=seed, pool=pool)
     segs: list = []
     log: list = []
     seg_start, bar = 0, 0
+    seam: tuple = ()
     target = minutes * 60.0
     guard = 0
     while w.t < target and guard < 200000:
@@ -434,7 +454,8 @@ def walk_path(
         r = w.step(bar)
         if isinstance(r, Move):
             if bar > seg_start:
-                segs.append((w.cur.id, seg_start, bar))
+                segs.append((w.cur.id, seg_start, bar, *seam))
+                seam = ()
             if r.kind == "end":
                 segs.append(("gap", REPEAT_ONE_GAP_S, 0))
                 w.t += REPEAT_ONE_GAP_S
@@ -450,12 +471,14 @@ def walk_path(
                     "score": round(r.score, 3),
                 }
             )
+            seam = (r.offset_ms, move_trim_db(graph, w.cur, r))
             w.arrive(r)
             seg_start = bar = r.to_bar
             continue
         if isinstance(r, tuple):  # a Forever jump inside the song
             if bar > seg_start:
-                segs.append((w.cur.id, seg_start, bar))
+                segs.append((w.cur.id, seg_start, bar, *seam))
+                seam = ()
             log.append(
                 {
                     "at_s": round(w.t, 2),
@@ -473,7 +496,7 @@ def walk_path(
             continue
         bar += 1
     if bar > seg_start:
-        segs.append((w.cur.id, seg_start, bar))
+        segs.append((w.cur.id, seg_start, bar, *seam))
     return segs, log
 
 
@@ -511,5 +534,8 @@ def load_walk_graph(folder) -> dict:
             bpm=t.bpm,
             outro_bar=d.get("outro_bar") or None,
             loopable=d.get("loopable", True),
+            level_out=t.level_out,
+            level_in=t.level_in,
+            walkable=t.walkable,
         )
     return out

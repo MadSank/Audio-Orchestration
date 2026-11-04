@@ -28,6 +28,33 @@ class RendererTest {
     }
   }
 
+  @Test fun aLandingTrimRampsAcrossTheCrossfadeThenGlidesHome() {
+    val r = renderer(const(40000, 0.25f, 0.25f), const(40000, 0.25f, 0.25f))
+    run(r, 6000) // past the fade-in
+    r.pending.set(Instruction(0, 8000, 1, 0, 100, 1.0, trim = 2f, glide = 10000))
+    val out = run(r, 20000)
+    assertEquals(0.25f, out[1000], 1e-3f) // before the seam: untouched
+    val seamEnd = 8000 + 100 - 6000
+    assertEquals(0.5f, out[seamEnd + 1], 2e-2f) // at the trim right after the crossfade
+    // Half way through the glide: half the dB (6 dB -> 3 dB).
+    assertEquals(0.25f * Math.pow(2.0, 0.5).toFloat(), out[seamEnd + 5000], 2e-3f)
+    assertEquals(0.25f, out[seamEnd + 10500], 1e-3f) // home
+    for (i in 1 until out.size) assertTrue("no jump at $i", kotlin.math.abs(out[i] - out[i - 1]) < 0.01f)
+  }
+
+  @Test fun aJumpLeavesARunningGlideAloneAndAMoveReplacesIt() {
+    val r = renderer(const(60000, 0.25f, 0.25f), const(60000, 0.25f, 0.25f))
+    run(r, 1000)
+    r.pending.set(Instruction(0, 2000, 1, 0, 100, 1.0, trim = 2f, glide = 20000))
+    run(r, 3000) // just landed, near the trim
+    r.pending.set(Instruction(1, 4000, 1, 0, 100, 1.0, trim = 0f))
+    val during = run(r, 6000)
+    assertTrue("still gliding after the jump", during.last() > 0.3f)
+    r.pending.set(Instruction(1, 1000, 0, 0, 100, 1.0))
+    val after = run(r, 8000)
+    assertEquals(0.25f, after.last(), 1e-3f) // a plain switch ends it
+  }
+
   /** Renders [frames] frames in blocks; returns the left channel. */
   private fun run(r: Renderer, frames: Int, block: Int = 512, onBlock: (Int) -> Unit = {}): FloatArray {
     val out = FloatArray(frames)

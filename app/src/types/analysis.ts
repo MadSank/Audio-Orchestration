@@ -8,7 +8,7 @@
 
 export const ANALYSIS_SCHEMA = "saics.analysis/9" as const;
 export const LIBRARY_SCHEMA = "saics.library/7" as const;
-export const PORTALS_SCHEMA = "saics.portals/1" as const;
+export const PORTALS_SCHEMA = "saics.portals/2" as const;
 
 /** `.saics/portals.json` (engine/saics/schema.py PortalGraph): the Mix Web. */
 export interface PortalEdge {
@@ -21,6 +21,7 @@ export interface PortalEdge {
   harmony: number;
   same_group: boolean; // only used when Forever is on
   two_way: boolean;
+  offset_ms: number; // landing shift that puts its first beat on the outgoing grid
 }
 
 export interface PortalTrack {
@@ -33,6 +34,9 @@ export interface PortalTrack {
   entries: number[]; // fallback landing bars, best first
   break_exits: number[];
   portals: PortalEdge[];
+  level_out: number[]; // dB of the second before each downbeat, after gain_db
+  level_in: number[]; // dB of the second after each downbeat
+  walkable: boolean; // false: Infinite Ride never goes here; still pickable as a version
 }
 
 export type TriageClass =

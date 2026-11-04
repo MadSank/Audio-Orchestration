@@ -59,7 +59,7 @@ def seam_metrics(y: np.ndarray, sr: int, seam_s: float, beats: np.ndarray | None
 
     loud_step = abs(db(seam_s - 1.0, seam_s) - db(seam_s, seam_s + 1.0))
 
-    phase_ms = float("nan")
+    phase_ms = first_ms = float("nan")
     if beats is not None and len(beats) >= 6:
         beats = refine_beats(y, sr, np.asarray(beats, dtype=float))
         pre = beats[beats < seam_s - 0.1]
@@ -68,11 +68,15 @@ def seam_metrics(y: np.ndarray, sr: int, seam_s: float, beats: np.ndarray | None
             ibi = float(np.median(np.diff(pre)))
             k = np.round((post - pre[-1]) / ibi)
             phase_ms = float(np.median(np.abs(post - (pre[-1] + k * ibi))) * 1000)
+            # The beats right after the seam: a tempo difference can't drift this far yet, and
+            # later beats of another song are not expected to stay on A's grid anyway.
+            first_ms = float(np.median(np.abs((post - (pre[-1] + k * ibi))[:2])) * 1000)
     return {
         "flux_spike": round(flux, 3),
         "chroma_jump": round(chroma_jump, 4),
         "loudness_step_db": round(float(loud_step), 2),
         "beat_phase_ms": round(phase_ms, 1),
+        "first_beat_ms": round(first_ms, 1),
     }
 
 
@@ -272,6 +276,9 @@ def run_eval(args) -> int:
         build_round3(Path(args.folder), root / "round3")
         build_walks(Path(args.folder), root / "walks")
         return 0
+    if args.action == "build3b":
+        build_round3b(Path(args.folder), root)
+        return 0
     if args.action == "feedback":
         write_jump_feedback(Path(args.folder), root)
         write_portal_feedback(Path(args.folder), root)
@@ -292,6 +299,8 @@ def run_eval(args) -> int:
             md += "\n\n## Infinite Ride walks (P4a acceptance)\n\n" + report_full(
                 root / "walks", root / "results"
             )
+        if (root / "round3b" / "manifest.json").exists():
+            md += "\n\n## Round 3b: seam handover styles\n\n" + report_round3b(root)
         (root / "report.md").write_text(md + "\n", encoding="utf-8")
         print(md)
         return 0
@@ -777,6 +786,142 @@ def build_walks(
         json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8"
     )
     return manifest
+
+
+ROUND3B_STYLES = ("cut", "dip", "swap")
+
+
+def build_round3b(folder: Path, eval_dir: Path, rater: str = "owner", log=print) -> dict:
+    """The portals rated 2 or 3 in round 3, with the volume and timing fixes, each in every
+    handover style. Blind: same portal, three clips, shuffled."""
+    from saics import seams
+    from saics.portals import read_graph
+    from saics.render import portal_join
+
+    folder, eval_dir = Path(folder), Path(eval_dir)
+    out_dir = eval_dir / "round3b"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    graph = read_graph(folder)
+    by_file = {t.file: tid for tid, t in graph.tracks.items()}
+    man = {
+        c["id"]: c
+        for c in json.loads((eval_dir / "round3" / "manifest.json").read_text("utf-8"))["clips"]
+    }  # noqa: E501
+    rated = [(r["rating"], man[r["clip_id"]]) for r in load_ratings(eval_dir / "results")
+             if r["clip_id"] in man and r.get("rater", "owner") == rater]  # fmt: skip
+    picks = [(v, c) for v, c in rated if c["variant"] == "current" and v <= 3]
+    manifest = {"round": "3b", "context_s": ROUND2_CTX_S, "clips": []}
+    cache: dict = {}
+
+    def load(tid):
+        if tid not in cache:
+            if len(cache) >= 6:
+                cache.pop(next(iter(cache)))
+            y, bt = _load_gained(folder, graph, tid)
+            b = _bundle_for(folder, graph.tracks[tid].file)
+            sd = np.load(folder / ".saics" / "seams" / f"{tid}.npz")
+            cache[tid] = (
+                y,
+                bt,
+                np.asarray(b.beats, float),
+                np.asarray(b.downbeats, int),
+                np.asarray(sd["beats_fine"]),
+                np.asarray(sd["level_out"], float),
+                np.asarray(sd["level_in"], float),
+                np.asarray(sd["env"]),
+            )
+        return cache[tid]
+
+    ctx = int(ROUND2_CTX_S * OUT_SR)
+    for old, c in picks:
+        rv = c["reveal"]
+        ta, tb = by_file.get(rv["from_file"]), by_file.get(rv["to_file"])
+        if ta is None or tb is None:
+            log(f"  skipped (no longer in the graph): {rv['text']}")
+            continue
+        ya, bta, ba, da, fa, loa, _, ea = load(ta)
+        yb, btb, bb, db, fb, _, lib, eb = load(tb)
+        i = int(np.argmin(np.abs(bta - rv["from_s"])))
+        j = int(np.argmin(np.abs(btb - rv["to_s"])))
+        ibi = float(np.median(np.diff(ba)))
+        lag, peak = seams.onset_lag_ms(ea, float(ba[da[i]]), eb, float(bb[db[j]]), 2 * ibi)
+        off = seams.landing_offset_ms(
+            seams.grid_error_out(ba, fa, int(da[i])),
+            seams.grid_error_in(bb, fb, int(db[j])),
+            lag,
+            peak,
+        )
+        trim = seams.seam_trim_db(loa, i, lib, j)
+        bar = int((bta[min(i + 1, len(bta) - 1)] - bta[i]) * OUT_SR)
+        beat = max(1, bar // max(1, int(round(bar / OUT_SR / ibi))))
+        glide = int((btb[min(j + seams.GLIDE_BARS, len(btb) - 1)] - btb[j]) * OUT_SR)
+        pb, a = int(bta[i] * OUT_SR), int((btb[j] + off / 1000) * OUT_SR)
+        before = _portal_clip(ya, float(bta[i]), yb, float(btb[j]))
+        mono = before[0].mean(0)
+        m_before = seam_metrics(mono, OUT_SR, before[1], _beats(mono, OUT_SR))
+        for style in ROUND3B_STYLES:
+            clip, s = portal_join(ya, pb, yb, a, ctx, style, trim, glide, bar, beat, OUT_SR)
+            mono = clip.mean(0)
+            cid = secrets.token_hex(6)
+            sf.write(out_dir / f"{cid}.wav", _normalise(clip.T, OUT_SR), OUT_SR, subtype="PCM_16")
+            manifest["clips"].append({
+                "id": cid, "kind": "portal", "round": "3b", "song": c["song"], "variant": style,
+                "seam_s": round(s / OUT_SR, 3), "duration_s": round(clip.shape[1] / OUT_SR, 3),
+                "score": c["score"], "tempo_diff_pct": c["tempo_diff_pct"],
+                "portal": c["id"], "round3_rating": old, "offset_ms": round(off, 1),
+                "trim_db": round(trim, 2), "reveal": rv,
+                "metrics": seam_metrics(mono, OUT_SR, s / OUT_SR, _beats(mono, OUT_SR)),
+                "metrics_before": m_before,
+            })  # fmt: skip
+        log(f"  was {old}  shift {off:+5.0f} ms  trim {trim:+5.1f} dB  {rv['text'][:70]}")
+    np.random.default_rng(2).shuffle(manifest["clips"])
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8"
+    )
+    return manifest
+
+
+def _median(xs: list) -> float:
+    xs = [x for x in xs if x == x]
+    return float(np.median(xs)) if xs else float("nan")
+
+
+def report_round3b(eval_dir: Path, rater: str = "owner") -> str:
+    """Each style against the others and against the same portal's round 3 rating."""
+    eval_dir = Path(eval_dir)
+    clips = json.loads((eval_dir / "round3b" / "manifest.json").read_text("utf-8"))["clips"]
+    man = {c["id"]: c for c in clips}
+    got = {r["clip_id"]: r["rating"] for r in load_ratings(eval_dir / "results")
+           if r["clip_id"] in man and r.get("rater", "owner") == rater}  # fmt: skip
+    one = {c["portal"]: c for c in clips}.values()
+    lines = [
+        f"{len(got)} of {len(clips)} rated, {len(one)} portals.",
+        "",
+        "Measured on the plain cut, before -> after the volume and timing fixes (median): "
+        f"level step {_median([c['metrics_before']['loudness_step_db'] for c in one]):.1f}"
+        f" -> {_median([c['metrics']['loudness_step_db'] for c in clips if c['variant'] == 'cut']):.1f} dB, "  # noqa: E501
+        f"first beats {_median([c['metrics_before']['first_beat_ms'] for c in one]):.0f}"
+        f" -> {_median([c['metrics']['first_beat_ms'] for c in clips if c['variant'] == 'cut']):.0f} ms.",  # noqa: E501
+        "",
+        "| Style | Clips rated | Mean | >=4 | Change from round 3 (same portals) | Flux spike |",
+        "|---|---|---|---|---|---|",
+    ]
+    for style in ROUND3B_STYLES:
+        cs = [c for c in clips if c["variant"] == style]
+        rs = [(got[c["id"]], c) for c in cs if c["id"] in got]
+        if not rs:
+            lines.append(
+                f"| {style} | 0 | | | | {_median([c['metrics']['flux_spike'] for c in cs]):.2f} |"
+            )  # noqa: E501
+            continue
+        vals = [v for v, _ in rs]
+        lines.append(
+            f"| {style} | {len(vals)} | {np.mean(vals):.2f} | "
+            f"{100 * sum(v >= 4 for v in vals) / len(vals):.0f}% | "
+            f"{np.mean([v - c['round3_rating'] for v, c in rs]):+.2f} | "
+            f"{_median([c['metrics']['flux_spike'] for c in cs]):.2f} |"
+        )
+    return "\n".join(lines)
 
 
 def write_portal_feedback(folder: Path, eval_dir: Path, rater: str = "owner", log=print) -> int:

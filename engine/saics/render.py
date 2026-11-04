@@ -8,6 +8,8 @@ the incoming one starts half the fade early, so the beat grid is preserved exact
 
 import numpy as np
 
+from saics.seams import GLIDE_BARS
+
 
 def equal_power(n: int, rho: float = 0.0) -> tuple:
     """(fade_out, fade_in) keeping the summed power constant for signals with correlation rho.
@@ -166,6 +168,10 @@ def write_audio(path, y: np.ndarray, sr: int, lufs: float = -14.0) -> None:
 # ── P4a: rendering a walk across songs ──────────────────────────────────────────
 
 
+BASS_SPLIT_HZ = 180.0
+DIP_DB = -9.0
+
+
 def join_seam(pieces: list, prev: tuple, next_: tuple, half: int) -> None:
     """Append the crossfaded seam between two (audio, end/start sample) sides to `pieces`.
 
@@ -182,13 +188,94 @@ def join_seam(pieces: list, prev: tuple, next_: tuple, half: int) -> None:
     pieces.append(tail * fo + head * fi)
 
 
+def trim_envelope(n: int, seams: list) -> np.ndarray:
+    """Gain over `n` output samples from landing trims: (seam sample, half crossfade, trim dB,
+    glide samples). The gain ramps to the trim across the crossfade, then glides back to 0 dB; a
+    later move replaces whatever glide is still running."""
+    db = np.zeros(n, np.float32)
+    for at, h, trim, glide in seams:
+        a, b = max(0, at - h), min(n, at + h)
+        start = float(db[a]) if a < n else 0.0
+        db[a:] = 0.0
+        db[a:b] = np.linspace(start, trim, b - a, endpoint=False)
+        end = min(n, b + glide)
+        if end > b:
+            db[b:end] = np.linspace(trim, 0.0, glide, endpoint=False)[: end - b]
+    return 10 ** (db / 20)
+
+
+def split_bass(y: np.ndarray, sr: int, hz: float = BASS_SPLIT_HZ) -> tuple:
+    """(bass, the rest) with a causal Linkwitz-Riley crossover, as the phone would run it."""
+    from scipy.signal import butter, sosfilt
+
+    lo = butter(2, hz, "low", fs=sr, output="sos")
+    hi = butter(2, hz, "high", fs=sr, output="sos")
+    return (
+        sosfilt(lo, sosfilt(lo, y, axis=-1), axis=-1),
+        sosfilt(hi, sosfilt(hi, y, axis=-1), axis=-1),
+    )
+
+
+def portal_join(
+    ya: np.ndarray, pb: int, yb: np.ndarray, a: int, ctx: int, style: str, trim_db: float,
+    glide: int, bar: int, beat: int, sr: int, xfade_ms: float = 30.0,
+) -> tuple:  # fmt: skip
+    """`ctx` samples of A up to the seam + `ctx` of B from the landing, joined in a handover style.
+
+    cut: the plain seam, a short crossfade. dip: the same, with both sides dipped around it (A
+    over its last beat, B over its first two), which only needs a gain. swap: one bar of overlap
+    centred on the seam; the bass swaps at the seam, everything above it crosses over the bar and
+    dips in the middle. B carries the landing trim in every style. Returns (audio, seam sample)."""
+    s = pb - max(0, pb - ctx)
+    n = s + min(yb.shape[1] - a, ctx)
+    t = np.arange(n) - s
+
+    def side(y, at):  # the song on the clip's timeline, zero where it has run out
+        lo = at - s
+        out = np.zeros((2, n), np.float32)
+        i0, i1 = max(0, lo), min(y.shape[1], lo + n)
+        out[:, i0 - lo : i1 - lo] = y[:, i0:i1]
+        return out
+
+    ta, tb = side(ya, pb), side(yb, a)
+    tb = tb * trim_envelope(n, [(s, 0, trim_db, glide)])
+    if trim_db:
+        tb[:, :s] *= float(10 ** (trim_db / 20))  # the overlap before the seam: at the trim too
+    half = int(round(xfade_ms / 1000 * sr / 2))
+    w = np.clip((t + half) / max(1, 2 * half), 0.0, 1.0)
+    if style == "swap":
+        lo_a, hi_a = split_bass(ta, sr)
+        lo_b, hi_b = split_bass(tb, sr)
+        x = np.clip((t + bar // 2) / max(1, bar), 0.0, 1.0)
+        fo, fi = np.cos(x * np.pi / 2) ** 2, np.sin(x * np.pi / 2) ** 2  # -6 dB each mid-way
+        mix = lo_a * np.cos(w * np.pi / 2) + lo_b * np.sin(w * np.pi / 2) + hi_a * fo + hi_b * fi
+        edge = int(0.01 * sr)  # raw <-> split: the crossover isn't phase-flat, so don't jump
+        ein = np.clip((t + bar // 2) / edge, 0.0, 1.0)
+        eout = np.clip((bar - bar // 2 - t) / edge, 0.0, 1.0)
+        e = ein * eout
+        raw = np.where(t < 0, ta, tb)
+        return ((raw * (1 - e) + mix * e).astype(np.float32), s)
+    if style == "dip":
+        ta = ta * 10 ** (DIP_DB * np.clip(1 + t / max(1, beat), 0.0, 1.0) / 20)
+        tb = tb * 10 ** (DIP_DB * (1 - np.clip(t / max(1, 2 * beat), 0.0, 1.0)) / 20)
+    window = (ta[:, s - half : s + half], tb[:, s - half : s + half])
+    den = float(np.sqrt(np.sum(window[0] ** 2) * np.sum(window[1] ** 2))) + 1e-12
+    rho = float(np.sum(window[0] * window[1])) / den
+    fo, fi = np.ones(n), np.zeros(n)
+    fo[s - half : s + half], fi[s - half : s + half] = equal_power(2 * half, rho=rho)
+    fo[s + half :], fi[s + half :] = 0.0, 1.0
+    return (ta * fo + tb * fi).astype(np.float32), s
+
+
 def render_walk(
     segments: list, tracks: dict, sr: int = 44100, xfade_ms: float = 30.0
 ) -> np.ndarray:
     """Render saics.mixwalk.walk_path segments to stereo audio at each song's gain_db.
 
     tracks: id -> (path, gain_db, bar_times(n_samples) -> seconds per bar). Decoded songs are
-    cached while they may still be needed (a walk can come back through a portal)."""
+    cached while they may still be needed (a walk can come back through a portal). The landing
+    shift moves the seam in the incoming song; the trim is applied on the finished output, as the
+    phone's renderer does."""
     from saics.io import decode
 
     cache: dict = {}
@@ -206,6 +293,7 @@ def render_walk(
     half = int(round(xfade_ms / 1000 * sr / 2))
     pieces: list = []
     prev = None  # (audio, end sample) of the previous segment
+    seams: list = []
     for seg in segments:
         if seg[0] == "gap":
             if prev is not None:
@@ -213,10 +301,12 @@ def render_walk(
             pieces.append(np.zeros((2, int(seg[1] * sr)), np.float32))
             prev = None
             continue
-        tid, s, e = seg
+        tid, s, e, *seam = seg
         y = load(tid)
         bt = tracks[tid][2](y.shape[1])
         a = 0 if s == 0 else int(bt[s] * sr)  # bar 0 = the top of the song, pickup included
+        if seam and s > 0:
+            a = max(0, a + int(round(seam[0] / 1000 * sr)))
         b = int(bt[min(e, len(bt) - 1)] * sr)
         h = half if prev is not None else 0
         if prev is not None:
@@ -226,7 +316,12 @@ def render_walk(
             if len(pieces) == before:  # no room for a crossfade
                 pieces.append(prev[0][:, prev[1] - h : prev[1]])
                 h = 0
+        if seam:
+            at = sum(p.shape[1] for p in pieces) - h
+            glide = int((bt[min(s + GLIDE_BARS, len(bt) - 1)] - bt[s]) * sr)
+            seams.append((at, h, seam[1], glide))
         prev = (y, b, a + h)
     if prev is not None:
         pieces.append(prev[0][:, prev[2] : prev[1]])
-    return np.concatenate(pieces, axis=1) if pieces else np.zeros((2, 0), np.float32)
+    out = np.concatenate(pieces, axis=1) if pieces else np.zeros((2, 0), np.float32)
+    return out * trim_envelope(out.shape[1], seams) if seams else out

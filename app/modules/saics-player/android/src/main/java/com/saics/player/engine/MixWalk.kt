@@ -9,11 +9,12 @@ import kotlin.random.Random
 class PortalGraph(val tracks: Map<String, Track>) {
   class Edge(
     val fromBar: Int, val to: String, val toBar: Int, val score: Double,
-    val pair: String, val sameGroup: Boolean,
+    val pair: String, val sameGroup: Boolean, val offsetMs: Double = 0.0,
   )
   class Track(
     val id: String, val group: String, val bpm: Double, val camelot: String, val sections: List<String>,
     val bars: Int, val entries: List<Int>, val breakExits: Set<Int>, val portals: List<Edge>,
+    val levelOut: DoubleArray = DoubleArray(0), val levelIn: DoubleArray = DoubleArray(0), val walkable: Boolean = true,
   ) {
     /** Portals out of this song to other song groups. */
     val exits = portals.count { !it.sameGroup }
@@ -21,7 +22,7 @@ class PortalGraph(val tracks: Map<String, Track>) {
   }
 
   companion object {
-    const val SCHEMA = "saics.portals/1"
+    const val SCHEMA = "saics.portals/2"
 
     /** Null when missing, unreadable or another schema: the app plays without portals. */
     fun parse(text: String): PortalGraph? = try {
@@ -42,8 +43,11 @@ class PortalGraph(val tracks: Map<String, Track>) {
             t.getJSONArray("break_exits").let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() },
             List(ps.length()) {
               val e = ps.getJSONObject(it)
-              Edge(e.getInt("from_bar"), e.getString("to"), e.getInt("to_bar"), e.getDouble("score"), e.getString("pair"), e.getBoolean("same_group"))
+              Edge(e.getInt("from_bar"), e.getString("to"), e.getInt("to_bar"), e.getDouble("score"), e.getString("pair"), e.getBoolean("same_group"), e.optDouble("offset_ms", 0.0))
             },
+            t.optJSONArray("level_out")?.let { a -> DoubleArray(a.length()) { a.getDouble(it) } } ?: DoubleArray(0),
+            t.optJSONArray("level_in")?.let { a -> DoubleArray(a.length()) { a.getDouble(it) } } ?: DoubleArray(0),
+            t.optBoolean("walkable", true),
           )
         }
         PortalGraph(out)
@@ -55,7 +59,24 @@ class PortalGraph(val tracks: Map<String, Track>) {
 }
 
 /** Leave this song: at bar [at], continue at [toBar] of track [to]. */
-data class Move(val kind: String, val to: String, val toBar: Int, val at: Int, val pair: String = "", val score: Double = 0.0)
+data class Move(
+  val kind: String, val to: String, val toBar: Int, val at: Int, val pair: String = "", val score: Double = 0.0,
+  val offsetMs: Double = 0.0, // landing shift (portal and back moves)
+)
+
+/** engine/saics/seams.py: the landing trim, which glides back to the song's own level. */
+object Seams {
+  const val GLIDE_BARS = 4
+  const val TRIM_MAX_DB = 6.0
+  const val TRIM_DEADBAND_DB = 0.5
+
+  /** Gain on the incoming song at the landing; 0 at the top of a song or without measurements. */
+  fun trimDb(levelOut: DoubleArray, exitBar: Int, levelIn: DoubleArray, landBar: Int): Double {
+    if (landBar <= 0 || exitBar <= 0 || exitBar >= levelOut.size || landBar >= levelIn.size) return 0.0
+    val d = levelOut[exitBar] - levelIn[landBar]
+    return if (abs(d) < TRIM_DEADBAND_DB) 0.0 else d.coerceIn(-TRIM_MAX_DB, TRIM_MAX_DB)
+  }
+}
 
 /**
  * The Infinite Ride walk over the portal graph: engine/saics/mixwalk.py on the phone (same rules
@@ -85,6 +106,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
   private var kinds: List<String> = emptyList()
   private var walk: ForeverWalk? = null
   private var cameFrom: Triple<String, Int, Int>? = null // track, its bar, this landing bar
+  private var cameOffsetMs = 0.0
   private var visitT = 0.0
   private var dwell = 60.0
   private var chorusDone = false
@@ -99,13 +121,14 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
 
   fun enter(
     track: PortalGraph.Track, times: DoubleArray, secs: List<Bundle.Section>, jumps: List<Bundle.Jump>,
-    outro: Int?, loopable: Boolean, bar: Int, came: Triple<String, Int, Int>?,
+    outro: Int?, loopable: Boolean, bar: Int, came: Triple<String, Int, Int>?, cameOffset: Double = 0.0,
   ) {
     cur = track
     barT = times
     sections = secs
     kinds = track.sections
     cameFrom = came
+    cameOffsetMs = cameOffset
     visitT = 0.0
     dwell = DWELL_MIN + (DWELL_MAX - DWELL_MIN) * rng.nextDouble()
     chorusDone = false
@@ -132,7 +155,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
 
   private fun allowed(id: String): Boolean {
     val g = graph.tracks[id] ?: return false
-    if (id in bad) return false
+    if (id in bad || !g.walkable) return false
     if (pool?.contains(id) == false) return false
     if (g.key == cur?.key) return false
     return history.takeLast(NO_REPEAT_COUNT).none { (k, at) -> k == g.key && t - at < NO_REPEAT_S }
@@ -160,7 +183,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
     for (b in maxOf(0, bar + 1) until n) {
       if (!dwelled(barT[b] - barT[maxOf(0, bar)])) continue
       val best = portalsFrom(b).maxByOrNull(::rank) ?: continue
-      return Move("portal", best.to, best.toBar, b, best.pair, best.score)
+      return Move("portal", best.to, best.toBar, b, best.pair, best.score, best.offsetMs)
     }
     return null
   }
@@ -176,7 +199,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
   fun step(bar: Int): Decision {
     if (dwelled()) {
       portalsFrom(bar).maxByOrNull { rank(it) + rng.nextDouble() * 0.02 }?.let {
-        return Decision.Leave(Move("portal", it.to, it.toBar, bar, it.pair, it.score))
+        return Decision.Leave(Move("portal", it.to, it.toBar, bar, it.pair, it.score, it.offsetMs))
       }
     }
     if (forever) return foreverBar(bar)
@@ -256,7 +279,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
     val here = cur ?: return null
     val ids = graph.tracks.keys.filter { allowed(it) }.sorted()
     if (ids.isEmpty()) {
-      val others = graph.tracks.keys.filter { it != here.id && graph.tracks[it]?.key != here.key && pool?.contains(it) != false }.sorted()
+      val others = graph.tracks.keys.filter { it != here.id && graph.tracks[it]?.walkable == true && graph.tracks[it]?.key != here.key && pool?.contains(it) != false }.sorted()
       val last = history.toMap()
       return others.minByOrNull { last[graph.tracks[it]?.key] ?: -1.0 }
     }
@@ -272,7 +295,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
 
   private fun versions(): List<String> {
     val g = cur?.group.orEmpty()
-    return if (g.isEmpty()) emptyList() else graph.tracks.values.filter { it.group == g && it.id != cur?.id && it.id !in bad }.map { it.id }
+    return if (g.isEmpty()) emptyList() else graph.tracks.values.filter { it.group == g && it.id != cur?.id && it.id !in bad && it.walkable }.map { it.id }
   }
 
   private fun fallbackMove(bar: Int, looped: Double): Move? {
@@ -280,7 +303,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
     val came = cameFrom
     // The seam matched over the 4 bars after it, so any of them can go back, at that offset.
     if (came != null && bar - came.third in 0 until BACK_REACH_BARS && came.first in graph.tracks) {
-      return Move("back", came.first, came.second + bar - came.third, bar, "back")
+      return Move("back", came.first, came.second + bar - came.third, bar, "back", 0.0, -cameOffsetMs)
     }
     if (looped >= BREAK_AFTER_S && bar in c.breakExits) return cut("break", bar)
     if (looped >= VERSION_AFTER_S && isPhrase(bar)) {
@@ -307,7 +330,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
   /** Next: a close portal at its own bar, else a cut on the next phrase (null: nowhere to go). */
   fun nextNow(bar: Int): Move? {
     for (b in maxOf(0, bar + 1) until minOf(n, bar + 1 + NEXT_REACH_BARS)) {
-      portalsFrom(b).maxByOrNull(::rank)?.let { return Move("portal", it.to, it.toBar, b, it.pair, it.score) }
+      portalsFrom(b).maxByOrNull(::rank)?.let { return Move("portal", it.to, it.toBar, b, it.pair, it.score, it.offsetMs) }
     }
     if (forever) return null // no other version in reach: the engine switches version itself
     val at = nextPhrase(bar)
@@ -326,7 +349,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
     val others = cur?.portals.orEmpty().filter { !it.sameGroup && it.score >= PORTAL_SCORE_MIN && allowed(it.to) }
     val at = maxOf(0, bar + 1)
     others.filter { it.fromBar == at || it.fromBar == at + 1 }.maxByOrNull(::rank)?.let {
-      return Move("portal", it.to, it.toBar, it.fromBar, it.pair, it.score)
+      return Move("portal", it.to, it.toBar, it.fromBar, it.pair, it.score, it.offsetMs)
     }
     others.maxByOrNull(::rank)?.let { return Move("cut", it.to, it.toBar, at, it.pair, it.score) }
     return cut("cut", at)

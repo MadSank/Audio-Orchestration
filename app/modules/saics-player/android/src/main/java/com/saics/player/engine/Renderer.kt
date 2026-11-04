@@ -13,6 +13,8 @@ import kotlin.math.tanh
  * on [half] frames past [at], the incoming starts [half] frames before [to]. [rho] is the
  * correlation of the two windows (1 = identical audio: amplitude-linear, no +3 dB bump).
  * [gap] frames of silence go before the incoming audio (repeat-one). [at] < 0 = right now.
+ * [trim] is the output gain the crossfade ramps to, which then glides back to 1 over [glide]
+ * frames (a landing's level match, saics.seams); 0 = leave a running glide alone (a jump).
  * Immutable; created by the scheduler, handed to the render thread through [Renderer.pending].
  */
 class Instruction(
@@ -24,6 +26,8 @@ class Instruction(
   val rho: Double = 0.0,
   val gap: Int = 0,
   val tag: Int = 0, // what it is, for the scheduler's bookkeeping (jump, version, track, ...)
+  val trim: Float = 1f,
+  val glide: Int = 0,
 )
 
 /** A song loaded for playback; the scheduler fills slots, the renderer only reads them. */
@@ -74,6 +78,13 @@ class Renderer(val slots: Array<Slot>) {
   private var gapLeft = 0
   private var wet = 0f
   private var duckNow = 1f
+  // landing trim
+  private var trimNow = 1.0
+  private var trimTarget = 1.0
+  private var trimDelta = 0.0
+  private var trimK = 0
+  private var glideMul = 1.0
+  private var glideLeft = 0
   private val vinylL = Vinyl(ENGINE_RATE.toDouble(), 0x5A1C5L)
   private val vinylR = Vinyl(ENGINE_RATE.toDouble(), 0x7E57L)
 
@@ -126,6 +137,17 @@ class Renderer(val slots: Array<Slot>) {
           atEnd = p != null && p.complete
         }
       }
+      // Landing trim: to its level across the crossfade, then home to the song's own level.
+      if (trimK > 0) {
+        trimNow += trimDelta
+        if (--trimK == 0) trimNow = trimTarget
+      } else if (glideLeft > 0) {
+        trimNow *= glideMul
+        if (--glideLeft == 0) trimNow = 1.0
+      }
+      val trimGain = trimNow.toFloat()
+      l *= trimGain
+      r *= trimGain
       // Vinyl (versions.py chain) with a 200 ms dry/wet crossfade.
       if (wet != vinylTarget) {
         wet = if (wet < vinylTarget) minOf(vinylTarget, wet + wetStep) else maxOf(vinylTarget, wet - wetStep)
@@ -152,6 +174,13 @@ class Renderer(val slots: Array<Slot>) {
 
   private fun start(ins: Instruction) {
     armed = null
+    if (ins.trim > 0f) {
+      trimTarget = ins.trim.toDouble()
+      trimK = maxOf(1, 2 * ins.half)
+      trimDelta = (trimTarget - trimNow) / trimK
+      glideLeft = ins.glide
+      glideMul = if (ins.glide > 0) Math.pow(1.0 / trimTarget, 1.0 / ins.glide) else 1.0
+    }
     val late = if (ins.at < 0) 0 else maxOf(0, pos - (ins.at - ins.half))
     if (ins.gap > 0) {
       gapLeft = ins.gap

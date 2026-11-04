@@ -50,6 +50,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     var walk: ForeverWalk? = null
     var landBar = -1
     var came: Triple<String, Int, Int>? = null // the portal it arrived through
+    var cameOffsetMs = 0.0
     var entered = false // the mix walk has this song
     /** Bar starts from the bundle. While the song is still decoding they are provisional (the
      *  last bar's end is unknown): good for finding bars, not for the walk or the song end. */
@@ -441,7 +442,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     val to = bars[j.toBar]
     if (to + XF_HALF > cur.pcm.frames) return // target not decoded yet: carry on
     val rho = correlation(cur.pcm, at, cur.pcm, to, XF_HALF)
-    renderer.pending.set(Instruction(cs, at, cs, to, XF_HALF, rho, tag = TAG_JUMP))
+    renderer.pending.set(Instruction(cs, at, cs, to, XF_HALF, rho, tag = TAG_JUMP, trim = 0f))
     log("jump ${j.label} ($why) at ${at / ENGINE_RATE.toDouble()}s rho=%.2f".format(rho))
     jumpPending = "${j.label} ($why)" // reported when it executes (see tick)
     jumps++
@@ -472,7 +473,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     val s = slotOf(song) ?: load(song)
     val other = s?.let { loaded[it] }
     val ab = other?.bars()
-    val to = if (m.toBar <= 0 || ab == null) 0 else ab[minOf(m.toBar, ab.size - 2)]
+    val to = landFrame(m, ab)
     if (s == null || other == null || !ready(s) || to + XF_HALF > other.pcm.frames) {
       moveRetry = if (atEnd) m else null // mid-song: the moment passes, carry on
       if (!atEnd) log("move to ${song.title} skipped: not decoded yet")
@@ -481,11 +482,33 @@ class Engine(private val context: Context, private val listener: Listener) {
     val at = if (atEnd) cur.pcm.frames else bars[m.at]
     val half = if (atEnd) 0 else XF_HALF
     val rho = if (m.kind == "portal" || m.kind == "back") correlation(cur.pcm, at, other.pcm, to, XF_HALF) else 0.0
-    renderer.pending.set(Instruction(cs, at, s, to, half, rho, tag = TAG_MOVE))
+    val trim = if (atEnd) 0.0 else seamTrimDb(cur, m.at, m)
+    renderer.pending.set(Instruction(cs, at, s, to, half, rho, tag = TAG_MOVE, trim = dbToGain(trim), glide = glideFrames(m, ab)))
     moveInFlight = m
     moveRetry = null
-    log("${m.kind} ${m.pair} -> ${song.title} bar ${m.toBar} at bar ${m.at} score=%.2f rho=%.2f".format(m.score, rho))
+    log("${m.kind} ${m.pair} -> ${song.title} bar ${m.toBar} at bar ${m.at} score=%.2f rho=%.2f shift=%.0fms trim=%.1fdB".format(m.score, rho, m.offsetMs, trim))
     return true
+  }
+
+  /** Where a move lands: its bar, plus the shift that puts its first beat on the outgoing grid. */
+  private fun landFrame(m: Move, ab: IntArray?): Int {
+    if (m.toBar <= 0 || ab == null) return 0
+    val shift = (m.offsetMs / 1000 * ENGINE_RATE).roundToInt()
+    return maxOf(0, ab[minOf(m.toBar, ab.size - 2)] + shift)
+  }
+
+  private fun seamTrimDb(cur: Loaded, atBar: Int, m: Move): Double {
+    if (m.kind != "portal" && m.kind != "back" && m.kind != "cut" && m.kind != "break") return 0.0
+    val a = graph?.tracks?.get(cur.song.trackId)?.levelOut ?: return 0.0
+    val b = graph?.tracks?.get(m.to)?.levelIn ?: return 0.0
+    return Seams.trimDb(a, atBar, b, m.toBar)
+  }
+
+  private fun dbToGain(db: Double) = Math.pow(10.0, db / 20).toFloat()
+
+  private fun glideFrames(m: Move, ab: IntArray?): Int {
+    if (ab == null || m.toBar <= 0 || m.toBar >= ab.size - 1) return 0
+    return ab[minOf(m.toBar + Seams.GLIDE_BARS, ab.size - 1)] - ab[m.toBar]
   }
 
   private fun refreshStatus(cur: Loaded, bar: Int) {
@@ -577,14 +600,16 @@ class Engine(private val context: Context, private val listener: Listener) {
         val m = it.move!!
         val other = loaded[s]!!
         val ab = other.bars()
-        val to = if (m.toBar <= 0 || ab == null) 0 else ab[minOf(m.toBar, ab.size - 2)]
+        val to = landFrame(m, ab)
         if (to + XF_HALF > other.pcm.frames) return // not decoded that far yet (retried each tick)
         val bars = cur?.bars()
         var at = if (m.at < 0 || bars == null) now + 2048 else bars[minOf(m.at, bars.size - 1)]
         if (at - XF_HALF <= now + BLOCK * 2) at = nextBarFrame(cur, now) // decoding took too long
         moveInFlight = m.copy(at = if (cur != null) maxOf(0, cur.barAt(at)) else 0)
         val rho = if (m.kind == "portal" && cur != null) correlation(cur.pcm, at, other.pcm, to, XF_HALF) else 0.0
-        Instruction(cs, at, s, to, XF_HALF, rho, tag = TAG_MOVE)
+        val trim = if (cur != null) seamTrimDb(cur, cur.barAt(at), m) else 0.0
+        log("${m.kind} ${m.pair} -> ${target.title} bar ${m.toBar} shift=%.0fms trim=%.1fdB".format(m.offsetMs, trim))
+        Instruction(cs, at, s, to, XF_HALF, rho, tag = TAG_MOVE, trim = dbToGain(trim), glide = glideFrames(m, ab))
       }
       Kind.VERSION -> {
         val other = loaded[s]!!
@@ -666,7 +691,10 @@ class Engine(private val context: Context, private val listener: Listener) {
       l.came = null
       if (mv != null && mv.to == l.song.trackId) {
         landBar = mv.toBar
-        if (mv.kind == "portal" && prev != null) l.came = Triple(prev.trackId, mv.at, mv.toBar)
+        if (mv.kind == "portal" && prev != null) {
+          l.came = Triple(prev.trackId, mv.at, mv.toBar)
+          l.cameOffsetMs = mv.offsetMs
+        }
         event("portal", l.song.title)
       }
       index = queue.indexOfFirst { it.id == l.song.id }.let { if (it >= 0) it else index }
@@ -691,7 +719,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     val info = graph?.tracks?.get(l.song.trackId)
     val w = mix
     if (w != null && info != null && !l.entered) {
-      w.enter(info, times, l.bundle.sections, l.bundle.jumps, l.bundle.outroBar, loopable, maxOf(0, l.landBar), l.came)
+      w.enter(info, times, l.bundle.sections, l.bundle.jumps, l.bundle.outroBar, loopable, maxOf(0, l.landBar), l.came, l.cameOffsetMs)
       l.entered = true
     }
   }

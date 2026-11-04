@@ -37,3 +37,15 @@ Mean overall: **4.80** over 5 of 5 renders (target >= 4.0, none below 3).
 | walk 2 from Aaron Smith - Dancin (Krono Remix) (Ba | 11 | 4 | 6 | 5 |
 
 Mean overall: **4.00** over 2 of 2 renders (target >= 4.0, none below 3).
+
+## Round 3b: seam handover styles
+
+0 of 54 rated, 18 portals.
+
+Measured on the plain cut, before -> after the volume and timing fixes (median): level step 1.4 -> 0.1 dB, first beats 19 -> 13 ms.
+
+| Style | Clips rated | Mean | >=4 | Change from round 3 (same portals) | Flux spike |
+|---|---|---|---|---|---|
+| cut | 0 | | | | 3.90 |
+| dip | 0 | | | | 3.72 |
+| swap | 0 | | | | 4.47 |
