@@ -102,6 +102,7 @@ class PlaybackService : MediaLibraryService() {
 
   private val audio by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
   private val live by lazy { LiveCard(this) }
+  private val lite by lazy { LiteAnalyzer(this) { setLibrary(library) } }
 
   /** Playback started from the app screen may use the phone speaker (owner testing at home);
    *  anything else (helmet keys, focus regain after a call, resumption) never may. */
@@ -128,6 +129,8 @@ class PlaybackService : MediaLibraryService() {
       emit("onButton", ev)
     }
     loadSettings()
+    library = lite.merge(library)
+    lite.start()
     player.engine.setLibrary(library.map { it.toSong() })
     player.engine.setForever(forever)
     player.engine.setVinyl(vinyl)
@@ -163,6 +166,7 @@ class PlaybackService : MediaLibraryService() {
   override fun dump(fd: java.io.FileDescriptor?, writer: java.io.PrintWriter, args: Array<out String>?) {
     writer.println(player.engine.dump())
     writer.println("live card: ${live.status}")
+    writer.println(lite.dump())
   }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
@@ -179,6 +183,7 @@ class PlaybackService : MediaLibraryService() {
     }
     session = null
     live.cancel()
+    lite.release()
     feedback.release()
     instance = null
     super.onDestroy()
@@ -299,7 +304,7 @@ class PlaybackService : MediaLibraryService() {
       "isPlaying" to player.isPlaying, "title" to t?.title, "version" to t?.version, "group" to t?.group,
       "forever" to forever, "vinyl" to vinyl, "station" to STATIONS[station], "stationIndex" to station,
       "queueLength" to player.mediaItemCount, "position" to player.engine.positionMs(), "duration" to player.engine.durationMs(),
-      "libraryCount" to library.size,
+      "libraryCount" to library.size, "analysing" to lite.pending, "analysingTitle" to lite.current,
       "liked" to (t != null && t.uri in liked),
       "versionIndex" to versions.indexOfFirst { it.uri == t?.uri } + 1, "versionCount" to versions.size,
       "versions" to versions.map { mapOf("uri" to it.uri, "title" to it.title, "version" to it.version) },
@@ -357,9 +362,9 @@ class PlaybackService : MediaLibraryService() {
   // ── persistence (playback resumption) ───────────────────────────────────────
 
   fun setLibrary(tracks: List<Track>) {
-    library = tracks
-    player.engine.setLibrary(tracks.map { it.toSong() })
-    prefs.edit().putString("library", JSONArray(tracks.map { it.toJson() }).toString()).apply()
+    library = lite.merge(tracks)
+    player.engine.setLibrary(library.map { it.toSong() })
+    prefs.edit().putString("library", JSONArray(library.map { it.toJson() }).toString()).apply()
     emitState()
   }
 
