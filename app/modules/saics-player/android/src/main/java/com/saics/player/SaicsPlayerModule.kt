@@ -178,6 +178,11 @@ class SaicsPlayerModule : Module() {
       }
     }
 
+    /** After the media permission is granted: look in Download now. */
+    AsyncFunction("refreshAnalysis") { promise: Promise ->
+      onService(promise) { it.setLibrary(it.library); null }
+    }
+
     /** The library from the last scan (kept by the service), instantly; no folder walk. */
     AsyncFunction("getLibrary") { promise: Promise ->
       onService(promise) { svc -> svc.library.map { it.toMap() } }

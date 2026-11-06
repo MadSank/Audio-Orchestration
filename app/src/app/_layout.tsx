@@ -4,13 +4,19 @@ import { useEffect } from "react";
 import { PermissionsAndroid, Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import SaicsPlayer from "../../modules/saics-player";
 import { color } from "../theme/tokens";
 
 export default function RootLayout() {
-  // The media notification, the status bar chip and the island all need this permission.
+  // Notifications: the media card, the status bar chip and the island. Media: new songs in Download.
   useEffect(() => {
     if (Platform.OS === "android" && Platform.Version >= 33) {
-      PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).catch(() => {});
+      PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO,
+      ])
+        .then(() => SaicsPlayer.refreshAnalysis())
+        .catch(() => {});
     }
   }, []);
 

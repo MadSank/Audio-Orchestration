@@ -828,8 +828,14 @@ def build_round3c(folder: Path, eval_dir: Path, rater: str = "owner", log=print)
     }
     rated = [(r["rating"], man[r["clip_id"]]) for r in load_ratings(eval_dir / "results")
              if r["clip_id"] in man and r.get("rater", "owner") == rater]  # fmt: skip
-    picks = [(v, c) for v, c in rated if c["variant"] == "current" and v >= 3
-             and c["reveal"]["from_file"] in by_file and c["reveal"]["to_file"] in by_file]  # fmt: skip
+    picks = [
+        (v, c)
+        for v, c in rated
+        if c["variant"] == "current"
+        and v >= 3
+        and c["reveal"]["from_file"] in by_file
+        and c["reveal"]["to_file"] in by_file
+    ]
     picks.sort(key=lambda p: p[1]["id"])
     step = max(1, len(picks) // ROUND3C_PORTALS)
     picks = picks[::step][:ROUND3C_PORTALS]

@@ -106,6 +106,7 @@ declare class SaicsPlayerModule extends NativeModule<Events> {
   pickFolder(): Promise<string | null>;
   getFolder(): string | null;
   scanLibrary(): Promise<Track[]>;
+  refreshAnalysis(): Promise<void>;
   /** The last scan's result, without walking the folder again. */
   getLibrary(): Promise<Track[]>;
   canWriteOverrides(): boolean;
