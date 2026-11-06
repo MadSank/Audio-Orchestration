@@ -56,6 +56,8 @@ class Renderer(val slots: Array<Slot>) {
     private set
   @Volatile var atEnd = false // the current song ran out with nothing to follow
     private set
+  @Volatile var starved = 0 // frames of silence because decoding fell behind playback
+    private set
 
   // Controls (written by other threads).
   @Volatile var playing = false
@@ -70,6 +72,7 @@ class Renderer(val slots: Array<Slot>) {
   private var cur = -1
   private var pos = 0
   private var armed: Instruction? = null
+  private var starvedFrames = 0
   // crossfade state
   private var xf: Instruction? = null
   private var xfK = 0
@@ -123,8 +126,7 @@ class Renderer(val slots: Array<Slot>) {
           cur = x.toSlot
           pos = xfToPos
           xf = null
-          armedSlot = -1
-          executed++
+          finished()
         }
       } else if (cur >= 0) {
         val s = slots[cur]
@@ -135,6 +137,7 @@ class Renderer(val slots: Array<Slot>) {
           pos++
         } else {
           atEnd = p != null && p.complete
+          if (p != null && !p.complete) starvedFrames++
         }
       }
       // Landing trim: to its level across the crossfade, then home to the song's own level.
@@ -170,6 +173,17 @@ class Renderer(val slots: Array<Slot>) {
     }
     slot = cur
     frame = pos
+    starved = starvedFrames
+  }
+
+  /** An instruction has taken effect. The scheduler reads these from another thread: it must
+   *  never see it counted without the new position, nor "not armed" without it counted, or it
+   *  takes the instruction for dropped and issues it again. */
+  private fun finished() {
+    frame = pos
+    slot = cur
+    executed++
+    armedSlot = -1
   }
 
   private fun start(ins: Instruction) {
@@ -191,8 +205,7 @@ class Renderer(val slots: Array<Slot>) {
     if (ins.half <= 0 || cur < 0) {
       cur = ins.toSlot
       pos = ins.to + late
-      armedSlot = -1
-      executed++
+      finished()
       return
     }
     xf = ins
@@ -209,8 +222,7 @@ class Renderer(val slots: Array<Slot>) {
     pendingAfterGap = null
     cur = ins.toSlot
     pos = ins.to
-    armedSlot = -1
-    executed++
+    finished()
   }
 
   /** Take the pending instruction once it is due within the next block (it can no longer change). */
@@ -222,10 +234,12 @@ class Renderer(val slots: Array<Slot>) {
       return
     }
     if (p.at < 0 || pos + frames + ARM_AHEAD >= p.at - p.half) {
+      armedSlot = p.toSlot // before it leaves pending, so that it's never seen as neither
       if (pending.compareAndSet(p, null)) {
         armed = p
-        armedSlot = p.toSlot
         atEnd = false
+      } else {
+        armedSlot = -1
       }
     }
   }

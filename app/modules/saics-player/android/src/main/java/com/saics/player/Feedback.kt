@@ -2,14 +2,16 @@ package com.saics.player
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioManager
-import android.media.ToneGenerator
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.sin
 
 /**
  * Audio feedback for a screen-off ride: a short earcon for every mode change, optionally
@@ -33,11 +35,9 @@ class Feedback(context: Context, private val duck: (Boolean) -> Unit) {
       )
     }
   }
-  private val tone = try {
-    ToneGenerator(AudioManager.STREAM_MUSIC, 70)
-  } catch (e: RuntimeException) {
-    null
-  }
+  // Our own one-shot buffers: a static track with no loop points plays once and stops. The system
+  // ToneGenerator runs a state machine that can keep sounding until the next tone replaces it.
+  private val tones = HashMap<String, AudioTrack?>()
 
   init {
     tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -59,13 +59,32 @@ class Feedback(context: Context, private val duck: (Boolean) -> Unit) {
   /** kind: "on" (rising), "off" (falling), "step" (neutral), "error". */
   fun earcon(kind: String) {
     if (!earcons) return
-    val t = when (kind) {
-      "on" -> ToneGenerator.TONE_PROP_ACK
-      "off" -> ToneGenerator.TONE_PROP_NACK
-      "error" -> ToneGenerator.TONE_SUP_ERROR
-      else -> ToneGenerator.TONE_PROP_BEEP
+    val key = if (kind in EARCONS) kind else "step"
+    val track = tones.getOrPut(key) { buildTone(render(EARCONS.getValue(key))) } ?: return
+    try {
+      if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.stop()
+      track.reloadStaticData() // back to the first sample
+      track.play()
+    } catch (e: IllegalStateException) {
+      tones.remove(key)?.release()
     }
-    tone?.startTone(t, 150)
+  }
+
+  private fun buildTone(pcm: ShortArray): AudioTrack? = try {
+    AudioTrack.Builder()
+      .setAudioAttributes(
+        AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
+      )
+      .setAudioFormat(
+        AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(RATE)
+          .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build(),
+      )
+      .setBufferSizeInBytes(pcm.size * 2)
+      .setTransferMode(AudioTrack.MODE_STATIC)
+      .build()
+      .also { it.write(pcm, 0, pcm.size) }
+  } catch (e: RuntimeException) {
+    null
   }
 
   fun say(text: String) {
@@ -80,6 +99,35 @@ class Feedback(context: Context, private val duck: (Boolean) -> Unit) {
 
   fun release() {
     tts.shutdown()
-    tone?.release()
+    tones.values.forEach { it?.release() }
+    tones.clear()
+  }
+
+  companion object {
+    private const val RATE = 44100
+    private const val LEVEL = 0.3
+    private const val EDGE_MS = 5.0
+
+    /** kind -> notes as (Hz, ms); 0 Hz is a rest. */
+    val EARCONS = mapOf(
+      "on" to listOf(660.0 to 70.0, 990.0 to 90.0),
+      "off" to listOf(990.0 to 70.0, 660.0 to 90.0),
+      "step" to listOf(880.0 to 70.0),
+      "error" to listOf(330.0 to 120.0, 0.0 to 60.0, 330.0 to 120.0),
+    )
+
+    /** The notes as 16-bit PCM, each with short raised-cosine edges so it never clicks. */
+    fun render(notes: List<Pair<Double, Double>>): ShortArray {
+      val out = ArrayList<Short>()
+      for ((hz, ms) in notes) {
+        val n = (ms / 1000 * RATE).toInt()
+        val edge = (EDGE_MS / 1000 * RATE).toInt()
+        for (i in 0 until n) {
+          val env = sin(PI / 2 * minOf(1.0, minOf(i, n - 1 - i).toDouble() / edge)).let { it * it }
+          out.add((sin(2 * PI * hz * i / RATE) * env * LEVEL * 32767).toInt().toShort())
+        }
+      }
+      return out.toShortArray()
+    }
   }
 }
