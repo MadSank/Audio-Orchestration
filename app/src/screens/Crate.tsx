@@ -2,11 +2,11 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Circle } from "react-native-svg";
+import Svg, { Circle, Path } from "react-native-svg";
 
 import SaicsPlayer, { type PortalGroup, type Track } from "../../modules/saics-player";
 import { artistLine, displayName, versionLabel } from "../names";
-import { keyColor, MiniRecord, Mono, Serif, useK, Word } from "../obi";
+import { keyColor, MiniRecord, Mono, Narrow, Serif, useK, Word } from "../obi";
 import { type SongGroup, useLibrary, usePlayerState } from "../usePlayer";
 import { color, font } from "../theme/tokens";
 
@@ -14,6 +14,8 @@ type Filter = "all" | "key" | "tempo" | "pending";
 const FILTERS: [Filter, string][] = [["all", "All"], ["key", "By key"], ["tempo", "By tempo"], ["pending", "Unread"]];
 const ROW = 86;
 const main = (g: SongGroup) => g.versions.find((v) => v.version === "original") ?? g.versions[0];
+/** For searching: lower case, with accents and punctuation out, so "deja vu" finds "Déjà-Vu". */
+const fold = (s: string) => s.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /** Records leaning out of a crate: they follow a slow curve down the screen, with no lines between. */
 export default function Crate() {
@@ -33,11 +35,14 @@ export default function Crate() {
   }, [trackId]);
 
   const shown = useMemo(() => {
-    const needle = q.trim().toLowerCase();
+    const words = fold(q).split(" ").filter(Boolean);
     let out = groups;
-    if (needle) {
-      out = out.filter((g) => g.name.toLowerCase().includes(needle) || g.versions.some((v) =>
-        v.title.toLowerCase().includes(needle) || v.camelot.toLowerCase() === needle || String(Math.round(v.bpm)) === needle));
+    if (words.length) {
+      // Every word has to appear somewhere in the song: its name, a version, a key or a tempo.
+      out = out.filter((g) => {
+        const text = fold([g.name, ...g.versions.flatMap((v) => [v.title, v.version, v.file, v.camelot, v.bpm ? String(Math.round(v.bpm)) : ""])].join(" "));
+        return words.every((w) => text.includes(w));
+      });
     }
     if (filter === "pending") out = out.filter((g) => g.versions.every((v) => !v.trackId));
     if (filter === "key") out = [...out].sort((a, b) => main(a).camelot.localeCompare(main(b).camelot, undefined, { numeric: true }));
@@ -65,7 +70,14 @@ export default function Crate() {
           <Word label="Groups" size={17} onPress={() => router.push("/groups")} />
         </View>
         <Mono>{loading ? "LOADING…" : `${groups.length} SONGS · ${tracks.length} VERSIONS`}</Mono>
-        <TextInput value={q} onChangeText={setQ} placeholder="Flick through by title, artist, key or BPM" placeholderTextColor={color.paperDim} style={s.input} accessibilityLabel="Search the crate" />
+        <View style={s.search}>
+          <Svg width={20} height={20} viewBox="0 0 20 20">
+            <Circle cx={8.5} cy={8.5} r={6} fill="none" stroke={color.vermilion} strokeWidth={2} />
+            <Path d="M13 13l5 5" stroke={color.vermilion} strokeWidth={2} strokeLinecap="round" />
+          </Svg>
+          <TextInput value={q} onChangeText={setQ} placeholder="Search songs" placeholderTextColor={color.paperDim} returnKeyType="search" autoCorrect={false} style={s.input} accessibilityLabel="Search songs" />
+          {q ? <Word label="×" size={24} accessibilityLabel="Clear the search" style={{ width: 44, alignItems: "center" }} onPress={() => setQ("")} /> : null}
+        </View>
         <View style={s.filters}>
           {FILTERS.map(([id, label]) => <Word key={id} label={label} size={16} on={filter === id} onPress={() => setFilter(id)} />)}
         </View>
@@ -75,6 +87,9 @@ export default function Crate() {
         data={shown}
         keyExtractor={(g) => g.id}
         ListHeaderComponent={header}
+        ListEmptyComponent={loading ? undefined : <Narrow style={{ paddingHorizontal: 24 }}>{q ? `Nothing in the crate for “${q}”.` : "Nothing here."}</Narrow>}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         contentContainerStyle={{ paddingTop: 12, paddingBottom: 12 }}
         initialNumToRender={10}
         windowSize={7}
@@ -128,7 +143,8 @@ function Pressing({ track, left }: { track: Track; left: number }) {
 
 const s = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  input: { height: 44, paddingHorizontal: 0, color: color.paper, fontFamily: font.narrow, fontSize: 17 },
+  search: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 48 },
+  input: { flex: 1, height: 48, paddingHorizontal: 0, color: color.paper, fontFamily: font.narrow, fontSize: 20 },
   filters: { flexDirection: "row", justifyContent: "space-between" },
   portal: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 34 },
 });

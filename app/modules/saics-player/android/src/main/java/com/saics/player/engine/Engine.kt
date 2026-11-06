@@ -702,7 +702,7 @@ class Engine(private val context: Context, private val listener: Listener) {
           l.came = Triple(prev.trackId, mv.at, mv.toBar)
           l.cameOffsetMs = mv.offsetMs
         }
-        event("portal", l.song.title)
+        event("portal", "${mv.kind}|${l.song.title}") // only a real portal lands on the beat
       }
       index = queue.indexOfFirst { it.id == l.song.id }.let { if (it >= 0) it else index }
       log("playing ${l.song.title} [${l.song.version}] bundle=${l.bundle != null} decoded=${l.pcm.complete}")

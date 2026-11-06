@@ -24,6 +24,12 @@ const SPAN = STEP * STOPS.length;
 /** A stop's angle on the rim for this rotation, wrapped so that the names go round for ever. */
 const wrap = (deg: number) => ((((deg + SPAN / 2) % SPAN) + SPAN) % SPAN) - SPAN / 2;
 
+/** A slice of light across the record, from the centre to the rim. */
+function wedge(c: number, r: number, from: number, to: number): string {
+  const at = (d: number) => `${(c + r * Math.cos((d * Math.PI) / 180)).toFixed(1)} ${(c + r * Math.sin((d * Math.PI) / 180)).toFixed(1)}`;
+  return `M${c} ${c} L${at(from)} A${r} ${r} 0 0 1 ${at(to)} Z`;
+}
+
 /** Stations as a disc: spin it to bring a station to the pointer, tap the name to play. */
 export default function Stations({ onOpenHelmet }: { onOpenHelmet: () => void }) {
   const router = useRouter();
@@ -35,7 +41,7 @@ export default function Stations({ onOpenHelmet }: { onOpenHelmet: () => void })
   const insets = useSafeAreaInsets();
 
   const CX = -120 * k;
-  const CY = Math.round(H * 0.47);
+  const CY = Math.round(H * 0.51);
   const R = 300 * k;
 
   const stationIndex = state?.stationIndex ?? 0;
@@ -123,8 +129,8 @@ export default function Stations({ onOpenHelmet }: { onOpenHelmet: () => void })
             <Circle cx={D / 2} cy={D / 2} r={R} fill={color.vinyl} />
             {grooves.map((r) => <Circle key={r} cx={D / 2} cy={D / 2} r={r * k} fill="none" stroke={color.groove} />)}
             <Path d={ticks} stroke="#6E6556" strokeWidth={1.5} />
-            <Path d={`M${D / 2 + 150 * k} ${D / 2 - 90 * k} L${D / 2 + 262 * k} ${D / 2 - 118 * k} L${D / 2 + 262 * k} ${D / 2 - 40 * k} Z`} fill={color.paper} opacity={0.05} />
-            <Path d={`M${D / 2 + 90 * k} ${D / 2 + 150 * k} L${D / 2 + 118 * k} ${D / 2 + 262 * k} L${D / 2 + 40 * k} ${D / 2 + 262 * k} Z`} fill={color.paper} opacity={0.05} />
+            <Path d={wedge(D / 2, R, -70, -30)} fill={color.paper} opacity={0.05} />
+            <Path d={wedge(D / 2, R, 110, 150)} fill={color.paper} opacity={0.05} />
             <Circle cx={D / 2} cy={D / 2} r={108 * k} fill={color.vermilion} />
           </Svg>
         </Animated.View>
@@ -151,7 +157,7 @@ export default function Stations({ onOpenHelmet }: { onOpenHelmet: () => void })
         const tuned = closeness > 0.5;
         const lit = stop.index < 0 ? !!state?.forever : tuned;
         return (
-          <Pressable key={stop.name} accessibilityRole="button" accessibilityState={{ selected: lit }} onPress={() => tuned && choose(stop)}
+          <Pressable key={stop.name} accessibilityRole="button" accessibilityState={{ selected: lit }} onPress={() => (tuned ? choose(stop) : Animated.spring(rotation, { toValue: at.current - angle, useNativeDriver: false, friction: 8 }).start())}
             style={[s.stop, { left: x, top: y - 24 - (tuned ? 20 : 0), width: Math.max(0, 390 * k - x - 12), opacity: fade }]}>
             <Serif size={(22 + 12 * closeness) * k} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} c={lit ? color.vermilion : color.paper}>{stop.name}</Serif>
             {tuned ? <Narrow size={15} numberOfLines={2}>{stop.line}</Narrow> : null}
