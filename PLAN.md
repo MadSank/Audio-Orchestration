@@ -600,12 +600,12 @@ Each edge stores its score breakdown and its **chosen transition style**:
 - **Song groups review:** polish of the P5 screen: listen to versions side by side and drag a file between groups.
 - **Ratings:** likes and skips from the helmet are logged for the sequencer, and an optional "rate this seam" prompt feeds the P2 dataset.
 
-### P8 — Website overhaul (secondary, later)
-- Rebuild `web/` on the same engine and API with a proper design pass (frontend-design plugin + Playwright screenshots).
+### P8 — Website (the very last thing; owner, 2026-11-06)
+- An extension of the app: same design, built after the app's redesign is done. It also explains how the jumping works.
+- Rebuild `web/` on the same engine and API (frontend-design plugin + Playwright screenshots).
 - Fix D14 (or replace the page) and remove the Tone.js version chains in favour of the reference chains.
-- Out of scope until P6 is done.
 
-### P9 — Virtual radio jockey (RJ): **PARKED** (owner, 2026-11-04; do not work on this; research in `docs/research/2026-11-03-mix-web-and-radio-jockey.md`)
+### P9 — Virtual radio jockey (RJ): **DROPPED** (owner, 2026-11-06: "not worth it"; the idea below is kept for the record only; research in `docs/research/2026-11-03-mix-web-and-radio-jockey.md`)
 A spoken host that knows the time, the weather and the route, and talks like a DJ who is looping songs by hand, to keep the rider awake.
 
 - **When it talks:** about one segment every 3–5 songs, at the top of the hour, at ETA milestones, and over Forever loops and breaks. Each line is timed to **hit the post**: it ends on the first vocal downbeat (from `vocal_activity`), or fits inside an instrumental stretch.

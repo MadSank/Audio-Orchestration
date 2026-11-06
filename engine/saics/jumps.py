@@ -138,7 +138,8 @@ def best_alignment(info: BarInfo, a: int, b: int) -> tuple:
     return k, True
 
 
-def find_jumps(info: BarInfo, sections: list, breaks: list, downbeats: list) -> list:
+def find_jumps(info: BarInfo, sections: list, breaks: list, downbeats: list,
+               ctx_mean: float = CTX_MEAN) -> list:  # fmt: skip
     """Structural jump candidates, aligned, scored and pruned (see module doc)."""
     n = len(info.feats)
     if n < 2 * MIN_JUMP_BARS or not sections:
@@ -176,7 +177,7 @@ def find_jumps(info: BarInfo, sections: list, breaks: list, downbeats: list) -> 
                 continue
             m, lo = float(diag.mean()), float(diag.min())
             same_group = sections[sec[a]].group == sections[sec[b]].group
-            if lo < CTX_MIN or m < (CTX_MEAN if same_group else STRONG_STRIPE):
+            if lo < CTX_MIN or m < (ctx_mean if same_group else max(ctx_mean, STRONG_STRIPE)):
                 continue
             cands.append((a, b, m, lo))
 

@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     e = sub.add_parser("eval", help="listening-test harness")
     e.add_argument(
         "action",
-        choices=["build", "build2", "build2b", "build3", "build3b", "report", "feedback"],
+        choices=["build", "build2", "build2b", "build3", "build3c", "report", "feedback"],
     )
     e.add_argument("folder", nargs="?", default="", help="music folder (build)")
     e.add_argument("--set", default="eval/set.txt", help="songs to evaluate, one per line")
