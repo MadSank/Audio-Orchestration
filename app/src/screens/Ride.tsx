@@ -1,4 +1,3 @@
-import { useRouter } from "expo-router";
 import { Animated, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
@@ -11,9 +10,8 @@ import { color, OBI_WIDTH } from "../theme/tokens";
 
 const GROOVES = [122, 134, 146, 158, 170, 182, 194];
 
-/** Stopped at the lights: pure black, and the whole record is the pause button. */
+/** The last page: pure black, and the whole record is the pause button. Swipe back to leave. */
 export default function Ride() {
-  const router = useRouter();
   const state = usePlayerState();
   const k = useK();
   const insets = useSafeAreaInsets();
@@ -52,7 +50,6 @@ export default function Ride() {
 
       <View style={{ position: "absolute", left: 24 * k, right: (OBI_WIDTH + 24) * k, bottom: insets.bottom + 16, flexDirection: "row", justifyContent: "space-between" }}>
         <Word label="Next" size={28} onPress={() => SaicsPlayer.simulatePress("NEXT")} style={{ minHeight: 64 }} />
-        <Word label="Exit" size={20} onPress={() => router.back()} style={{ minHeight: 64 }} />
       </View>
     </View>
   );

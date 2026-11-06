@@ -26,7 +26,6 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.night }, animation: "fade" }}>
         <Stack.Screen name="now-playing" options={{ animation: "slide_from_bottom" }} />
         <Stack.Screen name="versions" options={{ animation: "fade" }} />
-        <Stack.Screen name="ride" options={{ animation: "fade", contentStyle: { backgroundColor: color.ride } }} />
       </Stack>
     </SafeAreaProvider>
   );
