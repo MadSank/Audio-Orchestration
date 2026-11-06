@@ -37,6 +37,10 @@ LEVEL_S = 1.0
 TRIM_MAX_DB = 6.0
 TRIM_DEADBAND_DB = 0.5
 GLIDE_BARS = 4  # bars over which a trim returns to the song's own level
+# Tracked beats sit ~11 ms after the attack, so a 30 ms fade centred on them has both songs'
+# attacks inside it: A's next hit leaks through while B's is still fading in. Round 3c tests
+# moving the seam earlier in both songs (11 ms + half the fade + 3 ms), which keeps them aligned.
+EARLY_MS = -29.0
 FLOOR_DB = -70.0
 
 

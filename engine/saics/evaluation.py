@@ -20,8 +20,9 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from saics import seams
 from saics.io import decode
-from saics.render import render_segments
+from saics.render import portal_join, render_segments
 
 OUT_SR = 44100
 CTX_S = 5.0
@@ -276,8 +277,8 @@ def run_eval(args) -> int:
         build_round3(Path(args.folder), root / "round3")
         build_walks(Path(args.folder), root / "walks")
         return 0
-    if args.action == "build3b":
-        build_round3b(Path(args.folder), root)
+    if args.action == "build3c":
+        build_round3c(Path(args.folder), root)
         return 0
     if args.action == "feedback":
         write_jump_feedback(Path(args.folder), root)
@@ -301,6 +302,8 @@ def run_eval(args) -> int:
             )
         if (root / "round3b" / "manifest.json").exists():
             md += "\n\n## Round 3b: seam handover styles\n\n" + report_round3b(root)
+        if (root / "round3c" / "manifest.json").exists():
+            md += "\n\n## Round 3c: seam timing\n\n" + report_round3c(root)
         (root / "report.md").write_text(md + "\n", encoding="utf-8")
         print(md)
         return 0
@@ -788,29 +791,49 @@ def build_walks(
     return manifest
 
 
-ROUND3B_STYLES = ("cut", "dip", "swap")
+ROUND3B_STYLES = (
+    "cut",
+    "dip",
+    "swap",
+)  # rejected by ear (2026-11-06); manifest kept for the report
+ROUND3C_VARIANTS = ("current", "early", "early_grid")
+ROUND3C_CTX_S = 10.0
+ROUND3C_PORTALS = 20
 
 
-def build_round3b(folder: Path, eval_dir: Path, rater: str = "owner", log=print) -> dict:
-    """The portals rated 2 or 3 in round 3, with the volume and timing fixes, each in every
-    handover style. Blind: same portal, three clips, shuffled."""
-    from saics import seams
+def round3c_shifts(off_ms: float, err_out, err_in) -> dict:
+    """variant -> (ms both songs move, ms the landing moves on top of that).
+
+    current: the app today. early: the seam before the attacks. early_grid: the same, and the
+    landing always on the grid when both sides have one, without needing the onset correlation."""
+    grid = 0.0
+    if err_out is not None and err_in is not None:
+        grid = float(np.clip((err_in - err_out) * 1000, -80.0, 80.0))
+    return {"current": (0.0, off_ms), "early": (seams.EARLY_MS, off_ms),
+            "early_grid": (seams.EARLY_MS, grid)}  # fmt: skip
+
+
+def build_round3c(folder: Path, eval_dir: Path, rater: str = "owner", log=print) -> dict:
+    """Portals rated 3 to 5 in round 3 (the 2s are banned), the same seam three ways. Blind."""
     from saics.portals import read_graph
-    from saics.render import portal_join
 
     folder, eval_dir = Path(folder), Path(eval_dir)
-    out_dir = eval_dir / "round3b"
+    out_dir = eval_dir / "round3c"
     out_dir.mkdir(parents=True, exist_ok=True)
     graph = read_graph(folder)
     by_file = {t.file: tid for tid, t in graph.tracks.items()}
     man = {
         c["id"]: c
         for c in json.loads((eval_dir / "round3" / "manifest.json").read_text("utf-8"))["clips"]
-    }  # noqa: E501
+    }
     rated = [(r["rating"], man[r["clip_id"]]) for r in load_ratings(eval_dir / "results")
              if r["clip_id"] in man and r.get("rater", "owner") == rater]  # fmt: skip
-    picks = [(v, c) for v, c in rated if c["variant"] == "current" and v <= 3]
-    manifest = {"round": "3b", "context_s": ROUND2_CTX_S, "clips": []}
+    picks = [(v, c) for v, c in rated if c["variant"] == "current" and v >= 3
+             and c["reveal"]["from_file"] in by_file and c["reveal"]["to_file"] in by_file]  # fmt: skip
+    picks.sort(key=lambda p: p[1]["id"])
+    step = max(1, len(picks) // ROUND3C_PORTALS)
+    picks = picks[::step][:ROUND3C_PORTALS]
+    manifest = {"round": "3c", "context_s": ROUND3C_CTX_S, "clips": []}
     cache: dict = {}
 
     def load(tid):
@@ -821,64 +844,79 @@ def build_round3b(folder: Path, eval_dir: Path, rater: str = "owner", log=print)
             b = _bundle_for(folder, graph.tracks[tid].file)
             sd = np.load(folder / ".saics" / "seams" / f"{tid}.npz")
             cache[tid] = (
-                y,
-                bt,
-                np.asarray(b.beats, float),
-                np.asarray(b.downbeats, int),
-                np.asarray(sd["beats_fine"]),
-                np.asarray(sd["level_out"], float),
-                np.asarray(sd["level_in"], float),
-                np.asarray(sd["env"]),
-            )
+                y, bt, np.asarray(b.beats, float), np.asarray(b.downbeats, int),
+                np.asarray(sd["beats_fine"]), np.asarray(sd["level_out"], float),
+                np.asarray(sd["level_in"], float), np.asarray(sd["env"]),
+            )  # fmt: skip
         return cache[tid]
 
-    ctx = int(ROUND2_CTX_S * OUT_SR)
+    ctx = int(ROUND3C_CTX_S * OUT_SR)
     for old, c in picks:
         rv = c["reveal"]
-        ta, tb = by_file.get(rv["from_file"]), by_file.get(rv["to_file"])
-        if ta is None or tb is None:
-            log(f"  skipped (no longer in the graph): {rv['text']}")
-            continue
-        ya, bta, ba, da, fa, loa, _, ea = load(ta)
-        yb, btb, bb, db, fb, _, lib, eb = load(tb)
+        ya, bta, ba, da, fa, loa, _, ea = load(by_file[rv["from_file"]])
+        yb, btb, bb, db, fb, _, lib, eb = load(by_file[rv["to_file"]])
         i = int(np.argmin(np.abs(bta - rv["from_s"])))
         j = int(np.argmin(np.abs(btb - rv["to_s"])))
         ibi = float(np.median(np.diff(ba)))
         lag, peak = seams.onset_lag_ms(ea, float(ba[da[i]]), eb, float(bb[db[j]]), 2 * ibi)
-        off = seams.landing_offset_ms(
-            seams.grid_error_out(ba, fa, int(da[i])),
-            seams.grid_error_in(bb, fb, int(db[j])),
-            lag,
-            peak,
-        )
+        err_out = seams.grid_error_out(ba, fa, int(da[i]))
+        err_in = seams.grid_error_in(bb, fb, int(db[j]))
+        off = seams.landing_offset_ms(err_out, err_in, lag, peak)
         trim = seams.seam_trim_db(loa, i, lib, j)
-        bar = int((bta[min(i + 1, len(bta) - 1)] - bta[i]) * OUT_SR)
-        beat = max(1, bar // max(1, int(round(bar / OUT_SR / ibi))))
         glide = int((btb[min(j + seams.GLIDE_BARS, len(btb) - 1)] - btb[j]) * OUT_SR)
-        pb, a = int(bta[i] * OUT_SR), int((btb[j] + off / 1000) * OUT_SR)
-        before = _portal_clip(ya, float(bta[i]), yb, float(btb[j]))
-        mono = before[0].mean(0)
-        m_before = seam_metrics(mono, OUT_SR, before[1], _beats(mono, OUT_SR))
-        for style in ROUND3B_STYLES:
-            clip, s = portal_join(ya, pb, yb, a, ctx, style, trim, glide, bar, beat, OUT_SR)
+        shifts = round3c_shifts(off, err_out, err_in)
+        for variant in ROUND3C_VARIANTS:
+            both, land = shifts[variant]
+            pb = int((bta[i] + both / 1000) * OUT_SR)
+            a = int((btb[j] + (both + land) / 1000) * OUT_SR)
+            clip, s = portal_join(ya, pb, yb, a, ctx, trim, glide, OUT_SR)
             mono = clip.mean(0)
             cid = secrets.token_hex(6)
             sf.write(out_dir / f"{cid}.wav", _normalise(clip.T, OUT_SR), OUT_SR, subtype="PCM_16")
             manifest["clips"].append({
-                "id": cid, "kind": "portal", "round": "3b", "song": c["song"], "variant": style,
+                "id": cid, "kind": "portal", "round": "3c", "song": c["song"], "variant": variant,
                 "seam_s": round(s / OUT_SR, 3), "duration_s": round(clip.shape[1] / OUT_SR, 3),
                 "score": c["score"], "tempo_diff_pct": c["tempo_diff_pct"],
-                "portal": c["id"], "round3_rating": old, "offset_ms": round(off, 1),
+                "portal": c["id"], "round3_rating": old, "both_ms": both, "land_ms": round(land, 1),
                 "trim_db": round(trim, 2), "reveal": rv,
                 "metrics": seam_metrics(mono, OUT_SR, s / OUT_SR, _beats(mono, OUT_SR)),
-                "metrics_before": m_before,
             })  # fmt: skip
-        log(f"  was {old}  shift {off:+5.0f} ms  trim {trim:+5.1f} dB  {rv['text'][:70]}")
-    np.random.default_rng(2).shuffle(manifest["clips"])
+        log(
+            f"  was {old}  land {off:+5.0f} / {shifts['early_grid'][1]:+5.0f} ms  {rv['text'][:70]}"
+        )
+    np.random.default_rng(3).shuffle(manifest["clips"])
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8"
     )
     return manifest
+
+
+def report_round3c(eval_dir: Path, rater: str = "owner") -> str:
+    """Each variant against the others, on the same portals, and against round 3."""
+    eval_dir = Path(eval_dir)
+    clips = json.loads((eval_dir / "round3c" / "manifest.json").read_text("utf-8"))["clips"]
+    man = {c["id"]: c for c in clips}
+    got = {r["clip_id"]: r["rating"] for r in load_ratings(eval_dir / "results")
+           if r["clip_id"] in man and r.get("rater", "owner") == rater}  # fmt: skip
+    lines = [
+        f"{len(got)} of {len(clips)} rated.", "",
+        "| Variant | Rated | Mean | >=4 | Change from round 3 | First-beat median ms |",
+        "|---|---|---|---|---|---|",
+    ]  # fmt: skip
+    for v in ROUND3C_VARIANTS:
+        cs = [c for c in clips if c["variant"] == v]
+        rs = [(got[c["id"]], c) for c in cs if c["id"] in got]
+        ms = _median([c["metrics"]["first_beat_ms"] for c in cs])
+        if not rs:
+            lines.append(f"| {v} | 0 | | | | {ms:.1f} |")
+            continue
+        vals = [x for x, _ in rs]
+        lines.append(
+            f"| {v} | {len(vals)} | {np.mean(vals):.2f} | "
+            f"{100 * sum(x >= 4 for x in vals) / len(vals):.0f}% | "
+            f"{np.mean([x - c['round3_rating'] for x, c in rs]):+.2f} | {ms:.1f} |"
+        )
+    return "\n".join(lines)
 
 
 def _median(xs: list) -> float:

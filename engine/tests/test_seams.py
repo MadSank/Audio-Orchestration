@@ -104,38 +104,22 @@ def _band(y, hz, sr=44100):
     )
 
 
-def test_every_style_has_a_at_the_start_and_b_at_the_end_at_the_right_length():
+def test_the_join_has_a_at_the_start_and_b_at_the_end_at_the_right_length():
     sr = 44100
     ya, yb = _tone(1000, 20 * sr), _tone(3000, 20 * sr)
     ctx = 5 * sr
-    for style in ("cut", "dip", "swap"):
-        y, s = portal_join(ya, 10 * sr, yb, 8 * sr, ctx, style, 0.0, 0, 2 * sr, sr // 2, sr)
-        assert y.shape == (2, 2 * ctx) and s == ctx
-        assert np.isfinite(y).all()
-        mono = y.mean(0)
-        assert _band(mono[: 2 * sr], 1000) > 0.15 > 0.01 > _band(mono[: 2 * sr], 3000)
-        assert _band(mono[-2 * sr :], 3000) > 0.15 > 0.01 > _band(mono[-2 * sr :], 1000)
-
-
-def test_swap_changes_the_bass_at_the_seam_and_the_rest_across_the_bar():
-    sr = 44100
-    bar = 2 * sr
-    ya = _tone(60, 20 * sr) + _tone(1000, 20 * sr)
-    yb = _tone(80, 20 * sr) + _tone(3000, 20 * sr)
-    y, s = portal_join(ya, 10 * sr, yb, 10 * sr, 5 * sr, "swap", 0.0, 0, bar, sr // 2, sr)
+    y, s = portal_join(ya, 10 * sr, yb, 8 * sr, ctx, 0.0, 0, sr)
+    assert y.shape == (2, 2 * ctx) and s == ctx
+    assert np.isfinite(y).all()
     mono = y.mean(0)
-    before = mono[s - sr // 2 : s - sr // 8]  # the last quarter-second-ish before the seam
-    after = mono[s + sr // 8 : s + sr // 2]
-    assert _band(before, 60) > 0.1 and _band(before, 80) < 0.04  # bass: still A's
-    assert _band(after, 80) > 0.1 and _band(after, 60) < 0.04  # bass: already B's
-    assert _band(before, 3000) > 0.02  # above it: B has come in already
-    assert _band(after, 1000) > 0.02  # and A hasn't gone
+    assert _band(mono[: 2 * sr], 1000) > 0.15 > 0.01 > _band(mono[: 2 * sr], 3000)
+    assert _band(mono[-2 * sr :], 3000) > 0.15 > 0.01 > _band(mono[-2 * sr :], 1000)
 
 
 def test_the_trim_lands_on_b_only_and_glides_back():
     sr = 44100
     ya, yb = _tone(1000, 20 * sr), _tone(1000, 20 * sr)
-    y, s = portal_join(ya, 10 * sr, yb, 10 * sr, 5 * sr, "cut", 6.0, 2 * sr, 2 * sr, sr // 2, sr)
+    y, s = portal_join(ya, 10 * sr, yb, 10 * sr, 5 * sr, 6.0, 2 * sr, sr)
     mono = y.mean(0)
     rms = lambda a: float(np.sqrt(np.mean(a**2)))  # noqa: E731
     assert abs(20 * np.log10(rms(mono[s - sr // 4 : s]) / rms(ya.mean(0)))) < 0.3

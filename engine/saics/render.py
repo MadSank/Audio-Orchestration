@@ -168,10 +168,6 @@ def write_audio(path, y: np.ndarray, sr: int, lufs: float = -14.0) -> None:
 # ── P4a: rendering a walk across songs ──────────────────────────────────────────
 
 
-BASS_SPLIT_HZ = 180.0
-DIP_DB = -9.0
-
-
 def join_seam(pieces: list, prev: tuple, next_: tuple, half: int) -> None:
     """Append the crossfaded seam between two (audio, end/start sample) sides to `pieces`.
 
@@ -204,31 +200,14 @@ def trim_envelope(n: int, seams: list) -> np.ndarray:
     return 10 ** (db / 20)
 
 
-def split_bass(y: np.ndarray, sr: int, hz: float = BASS_SPLIT_HZ) -> tuple:
-    """(bass, the rest) with a causal Linkwitz-Riley crossover, as the phone would run it."""
-    from scipy.signal import butter, sosfilt
-
-    lo = butter(2, hz, "low", fs=sr, output="sos")
-    hi = butter(2, hz, "high", fs=sr, output="sos")
-    return (
-        sosfilt(lo, sosfilt(lo, y, axis=-1), axis=-1),
-        sosfilt(hi, sosfilt(hi, y, axis=-1), axis=-1),
-    )
-
-
 def portal_join(
-    ya: np.ndarray, pb: int, yb: np.ndarray, a: int, ctx: int, style: str, trim_db: float,
-    glide: int, bar: int, beat: int, sr: int, xfade_ms: float = 30.0,
+    ya: np.ndarray, pb: int, yb: np.ndarray, a: int, ctx: int, trim_db: float, glide: int, sr: int,
+    xfade_ms: float = 30.0,
 ) -> tuple:  # fmt: skip
-    """`ctx` samples of A up to the seam + `ctx` of B from the landing, joined in a handover style.
-
-    cut: the plain seam, a short crossfade. dip: the same, with both sides dipped around it (A
-    over its last beat, B over its first two), which only needs a gain. swap: one bar of overlap
-    centred on the seam; the bass swaps at the seam, everything above it crosses over the bar and
-    dips in the middle. B carries the landing trim in every style. Returns (audio, seam sample)."""
+    """`ctx` samples of A up to the seam + `ctx` of B from the landing, joined by the plain short
+    crossfade, with B carrying the landing trim. Returns (audio, seam sample)."""
     s = pb - max(0, pb - ctx)
     n = s + min(yb.shape[1] - a, ctx)
-    t = np.arange(n) - s
 
     def side(y, at):  # the song on the clip's timeline, zero where it has run out
         lo = at - s
@@ -242,22 +221,6 @@ def portal_join(
     if trim_db:
         tb[:, :s] *= float(10 ** (trim_db / 20))  # the overlap before the seam: at the trim too
     half = int(round(xfade_ms / 1000 * sr / 2))
-    w = np.clip((t + half) / max(1, 2 * half), 0.0, 1.0)
-    if style == "swap":
-        lo_a, hi_a = split_bass(ta, sr)
-        lo_b, hi_b = split_bass(tb, sr)
-        x = np.clip((t + bar // 2) / max(1, bar), 0.0, 1.0)
-        fo, fi = np.cos(x * np.pi / 2) ** 2, np.sin(x * np.pi / 2) ** 2  # -6 dB each mid-way
-        mix = lo_a * np.cos(w * np.pi / 2) + lo_b * np.sin(w * np.pi / 2) + hi_a * fo + hi_b * fi
-        edge = int(0.01 * sr)  # raw <-> split: the crossover isn't phase-flat, so don't jump
-        ein = np.clip((t + bar // 2) / edge, 0.0, 1.0)
-        eout = np.clip((bar - bar // 2 - t) / edge, 0.0, 1.0)
-        e = ein * eout
-        raw = np.where(t < 0, ta, tb)
-        return ((raw * (1 - e) + mix * e).astype(np.float32), s)
-    if style == "dip":
-        ta = ta * 10 ** (DIP_DB * np.clip(1 + t / max(1, beat), 0.0, 1.0) / 20)
-        tb = tb * 10 ** (DIP_DB * (1 - np.clip(t / max(1, 2 * beat), 0.0, 1.0)) / 20)
     window = (ta[:, s - half : s + half], tb[:, s - half : s + half])
     den = float(np.sqrt(np.sum(window[0] ** 2) * np.sum(window[1] ** 2))) + 1e-12
     rho = float(np.sum(window[0] * window[1])) / den

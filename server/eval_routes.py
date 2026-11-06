@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 
 EVAL_DIR = Path(__file__).resolve().parents[1] / "eval"
 ROUNDS = {"1": EVAL_DIR / "clips", "2": EVAL_DIR / "round2", "2b": EVAL_DIR / "round2b",
-          "3": EVAL_DIR / "round3", "3b": EVAL_DIR / "round3b"}  # fmt: skip
-LATEST_ROUND = "3b"
+          "3": EVAL_DIR / "round3", "3b": EVAL_DIR / "round3b", "3c": EVAL_DIR / "round3c"}  # fmt: skip
+LATEST_ROUND = "3c"
 FULL_DIR = EVAL_DIR / "walks"  # P4a walks; P3 renders stay in eval/full
 router = APIRouter(prefix="/eval", tags=["Eval"])
 
