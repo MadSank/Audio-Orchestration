@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, AppState, Easing, Image, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle, ClipPath, Defs } from "react-native-svg";
+import Svg, { Circle, ClipPath, Defs, Path } from "react-native-svg";
 
 import SaicsPlayer, { addListener } from "../../modules/saics-player";
 import { displayName, versionLabel } from "../names";
@@ -203,6 +203,14 @@ export default function NowPlaying() {
         <Serif size={26}>‹</Serif>
       </Pressable>
 
+      <Pressable accessibilityRole="button" accessibilityLabel={state?.liked ? "Liked" : "Like"} accessibilityState={{ selected: !!state?.liked }} onPress={() => uri && SaicsPlayer.toggleLike(uri)}
+        style={[s.heart, { top: top + 4, right: (OBI_WIDTH + 8) * k }]}>
+        <Svg width={26} height={26} viewBox="0 0 24 24">
+          <Path d="M12 20.5s-8-4.9-8-10.6C4 6.9 6.2 5 8.5 5c1.5 0 2.8.8 3.5 2 .7-1.2 2-2 3.5-2C17.8 5 20 6.9 20 9.9c0 5.7-8 10.6-8 10.6z"
+            fill={state?.liked ? color.vermilion : "none"} stroke={state?.liked ? color.vermilion : color.paper} strokeWidth={2} strokeLinejoin="round" />
+        </Svg>
+      </Pressable>
+
       <Animated.View style={[s.body, { left: 24 * k, right: (OBI_WIDTH + 24) * k, bottom: bottom + 20 * k, opacity: lerp([0, 0.14, 0.26, 0.8, 0.92, 1], [1, 1, 0, 0, 1, 1]) }]}>
         <Serif size={32 * k} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{name.title || "Nothing playing"}</Serif>
         <Pressable accessibilityRole="button" accessibilityLabel="Open versions" onPress={() => router.push("/versions")} style={{ minHeight: 28, justifyContent: "center" }}>
@@ -215,8 +223,6 @@ export default function NowPlaying() {
         <View style={s.words}>
           <Word label="Forever" size={17} on={state?.forever} onPress={() => SaicsPlayer.toggleForever()} />
           <Word label="Vinyl" size={17} on={state?.vinyl} onPress={() => SaicsPlayer.toggleVinyl()} />
-          <Word label={state?.liked ? "Liked" : "Like"} size={17} on={state?.liked} onPress={() => uri && SaicsPlayer.toggleLike(uri)} />
-          <Word label="Ride" size={17} onPress={() => router.push("/ride")} />
         </View>
         <View style={s.transport}>
           <SkipButton dir="prev" label="Previous" onPress={() => SaicsPlayer.previous()} />
@@ -256,9 +262,10 @@ export default function NowPlaying() {
 const s = StyleSheet.create({
   obi: { flex: 1, backgroundColor: color.vermilion, alignItems: "center" },
   back: { position: "absolute", left: 10, width: 48, height: 48, alignItems: "center", justifyContent: "center" },
+  heart: { position: "absolute", width: 48, height: 48, alignItems: "center", justifyContent: "center" },
   body: { position: "absolute", gap: 2 },
   statusRow: { flexDirection: "row", alignItems: "center", minHeight: 28, gap: 8 },
-  words: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
+  words: { flexDirection: "row", gap: 28 },
   transport: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
   crossCopy: { position: "absolute", gap: 6, paddingTop: 12, paddingBottom: 120 },
 });

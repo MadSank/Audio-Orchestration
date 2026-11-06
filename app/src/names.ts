@@ -13,7 +13,10 @@ export function displayName(raw: string): { title: string; artist: string } {
     .trim();
   s = s.replace(/\s+/g, " ");
   const m = s.match(/^(.{2,40}?)\s+-\s+(.+)$/);
-  return m ? { artist: m[1], title: m[2] } : { title: s, artist: "" };
+  if (!m) return { title: s, artist: "" };
+  // "Song - Official Lyric Video": what follows the dash is only a label, not the title.
+  if (/^(official|lyrics?|audio|visuali[sz]er|music video|video|full version)\b/i.test(m[2])) return { title: m[1], artist: "" };
+  return { artist: m[1], title: m[2] };
 }
 
 /** "slowed+reverb" -> "Slowed + reverb" (design: version labels start with a capital). */
