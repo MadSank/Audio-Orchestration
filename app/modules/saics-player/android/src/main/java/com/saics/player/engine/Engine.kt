@@ -450,6 +450,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     renderer.pending.set(Instruction(cs, at, cs, to, XF_HALF, rho, tag = TAG_JUMP, trim = 0f))
     log("jump ${j.label} ($why) at ${at / ENGINE_RATE.toDouble()}s rho=%.2f".format(rho))
     jumpPending = "${j.label} ($why)" // reported when it executes (see tick)
+    event("jump-soon", j.label) // a bar ahead: the hand on Now Playing reaches for the record
     jumps++
   }
 

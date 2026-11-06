@@ -8,7 +8,7 @@
     "userInterfaceStyle": "dark",
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0A0A0C",
+        "backgroundColor": "#0E0C0A",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -24,22 +24,16 @@
         "expo-font",
         {
           "fonts": [
-            "./assets/fonts/Archivo-Regular.ttf",
-            "./assets/fonts/Archivo-Medium.ttf",
-            "./assets/fonts/Archivo-SemiBold.ttf",
-            "./assets/fonts/Archivo-Bold.ttf",
-            "./assets/fonts/Archivo-ExtraBold.ttf",
-            "./assets/fonts/Archivo-Black.ttf",
-            "./assets/fonts/ArchivoExpanded-ExtraBold.ttf",
-            "./assets/fonts/ArchivoExpanded-Black.ttf",
-            "./assets/fonts/IBMPlexMono-Regular.ttf",
-            "./assets/fonts/IBMPlexMono-Medium.ttf",
-            "./assets/fonts/IBMPlexMono-SemiBold.ttf"
+            "./assets/fonts/ShipporiMincho-ExtraBold.ttf",
+            "./assets/fonts/ArchivoNarrow-Regular.ttf",
+            "./assets/fonts/ArchivoNarrow-SemiBold.ttf",
+            "./assets/fonts/ArchivoNarrow-Bold.ttf",
+            "./assets/fonts/IBMPlexMono-Regular.ttf"
           ]
         }
       ]
     ],
     "scheme": "saics",
-    "backgroundColor": "#0A0A0C"
+    "backgroundColor": "#0E0C0A"
   }
 }
