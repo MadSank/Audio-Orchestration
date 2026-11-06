@@ -101,6 +101,7 @@ class PlaybackService : MediaLibraryService() {
   var listener: ((String, Map<String, Any?>) -> Unit)? = null
 
   private val audio by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+  private val live by lazy { LiveCard(this) }
 
   /** Playback started from the app screen may use the phone speaker (owner testing at home);
    *  anything else (helmet keys, focus regain after a call, resumption) never may. */
@@ -161,6 +162,7 @@ class PlaybackService : MediaLibraryService() {
   /** `adb shell dumpsys activity service com.saics.app/com.saics.player.PlaybackService` */
   override fun dump(fd: java.io.FileDescriptor?, writer: java.io.PrintWriter, args: Array<out String>?) {
     writer.println(player.engine.dump())
+    writer.println("live card: ${live.status}")
   }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
@@ -176,6 +178,7 @@ class PlaybackService : MediaLibraryService() {
       release()
     }
     session = null
+    live.cancel()
     feedback.release()
     instance = null
     super.onDestroy()
@@ -435,7 +438,11 @@ class PlaybackService : MediaLibraryService() {
     main.post { listener?.invoke(name, body) }
   }
 
-  fun emitState() = emit("onState", state())
+  fun emitState() {
+    val modes = listOfNotNull(STATIONS[station], "Forever".takeIf { forever }, "Vinyl".takeIf { vinyl })
+    live.update(currentTrack()?.title, modes.joinToString(" · "), player.isPlaying)
+    emit("onState", state())
+  }
 
   inner class Callback : MediaLibrarySession.Callback {
     override fun onMediaButtonEvent(

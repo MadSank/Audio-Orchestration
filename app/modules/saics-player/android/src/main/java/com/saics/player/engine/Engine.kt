@@ -107,6 +107,7 @@ class Engine(private val context: Context, private val listener: Listener) {
   private var endRetry = -1 // slot whose song end couldn't be handed over yet (next song loading)
   private var jumpPending: String? = null // the scheduled Forever jump, announced once executed
   private var executedSeen = 0
+  private var starvedSeen = 0
   private val bad = HashSet<String>() // songs that won't open or decode on this phone
 
   // Mix Web (P4a).
@@ -377,6 +378,10 @@ class Engine(private val context: Context, private val listener: Listener) {
   private fun tick() {
     val cs = renderer.slot
     if (cs != lastSlot) songStarted(cs)
+    if (renderer.starved - starvedSeen > ENGINE_RATE / 20) {
+      log("decoding behind playback: ${(renderer.starved - starvedSeen) * 1000 / ENGINE_RATE} ms silent, ${loaded.getOrNull(cs)?.song?.title}")
+      starvedSeen = renderer.starved
+    }
     if (renderer.executed != executedSeen) {
       executedSeen = renderer.executed
       jumpPending?.let { event("jump", it) }
@@ -581,6 +586,7 @@ class Engine(private val context: Context, private val listener: Listener) {
         if (it.kind == Kind.RESTART || it.kind == Kind.PREVIOUS || it.kind == Kind.TRACK) loaded[s]?.walk?.reset(0)
       } else if (renderer.pending.get() == null && renderer.armedSlot != s) {
         it.issuedAt = -1 // something else ran first: issue again
+        log("reissue ${it.kind} -> ${target.title} (slot ${renderer.slot}, target $s, executed ${renderer.executed})")
       }
       return
     }
