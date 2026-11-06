@@ -1,22 +1,22 @@
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { Alert, FlatList, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import SaicsPlayer, { type Track } from "../../modules/saics-player";
-import { Back, ChevronDown, ChevronRight, Search } from "../icons";
 import { displayName, versionLabel } from "../names";
-import { Badge, Body, Display, IconBtn, Label, Mono, Pill } from "../ui";
+import { Mono, Narrow, Serif, useK, Word } from "../obi";
 import { type SongGroup, useLibrary } from "../usePlayer";
-import { color, font, radius, space } from "../theme/tokens";
+import { color, font } from "../theme/tokens";
 
 /**
- * Song groups review (design revision 2, "not drawn"): every group expands to its versions,
- * with Merge and Split and a per-version "not loopable" toggle. Changes apply at once and are
- * written to .saics/groups_overrides.csv and forever_overrides.csv (hard rule 3).
+ * Song groups review: every group expands to its versions, with Merge and Split and a per-version
+ * "not loopable" switch. Changes apply at once and are written to .saics/groups_overrides.csv and
+ * forever_overrides.csv (hard rule 3).
  */
 export default function Groups() {
   const router = useRouter();
+  const k = useK();
   const { groups, tracks, reload } = useLibrary();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export default function Groups() {
   }, [groups, q, merging]);
 
   function saved(ok: boolean) {
-    if (!ok) Alert.alert("Couldn't save", "SAICS needs write access to the music folder. Tap Change folder on the Helmet tab and pick it again.");
+    if (!ok) Alert.alert("Couldn't save", "SAICS needs write access to the music folder. Tap Change folder on the Helmet screen and pick it again.");
     reload();
   }
   function merge(into: SongGroup) {
@@ -44,29 +44,25 @@ export default function Groups() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: color.bg }} edges={["top", "bottom"]}>
-      <View style={s.head}>
-        <IconBtn onPress={() => router.back()} accessibilityLabel="Back"><Back size={20} /></IconBtn>
-        <Display size={22}>SONG GROUPS</Display>
+    <SafeAreaView style={{ flex: 1, backgroundColor: color.night }} edges={["top", "bottom"]}>
+      <View style={{ paddingHorizontal: 24, paddingTop: 14 }}>
+        <View style={s.head}>
+          <Serif size={44 * k}>Groups</Serif>
+          <Word label={merging ? "Cancel" : "Done"} size={18} on onPress={() => (merging ? setMerging(null) : router.back())} />
+        </View>
+        <Narrow size={15}>
+          {merging ? `Pick the song that “${displayName(merging.name).title}” belongs to.` : `Versions of one song live together. ${groups.length} songs, ${tracks.length} versions; no audio is touched.`}
+        </Narrow>
+        {!canWrite ? <Mono c={color.vermilion} numberOfLines={2} style={{ marginTop: 4 }}>Read-only folder: tap Change folder on the Helmet screen to save changes.</Mono> : null}
+        <TextInput value={q} onChangeText={setQ} placeholder="Find a song" placeholderTextColor={color.paperDim} style={s.input} accessibilityLabel="Find a song" />
       </View>
-      <Body style={s.intro}>
-        {merging ? `Pick the song that “${displayName(merging.name).title}” belongs to.` : `Versions of the same song live together. ${groups.length} songs, ${tracks.length} versions; changes stay in .saics/ and no audio is touched.`}
-      </Body>
-      {!canWrite ? <Mono c={color.danger} style={s.warn} numberOfLines={2}>Read-only folder: tap Change folder on the Helmet tab and pick it again to save changes.</Mono> : null}
-
-      <View style={s.search}>
-        <Search />
-        <TextInput value={q} onChangeText={setQ} placeholder="Find a song" placeholderTextColor={color.textFaint} style={s.input} />
-      </View>
-      {merging ? <Pill label="Cancel merge" onPress={() => setMerging(null)} style={{ marginHorizontal: space.xl, marginBottom: space.sm }} /> : null}
-
       <FlatList
         data={shown}
         keyExtractor={(g) => g.id}
-        contentContainerStyle={{ paddingHorizontal: space.xl, paddingBottom: space.xl }}
+        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 20 }}
         initialNumToRender={14}
         renderItem={({ item }) => (
-          <GroupCard group={item} open={open === item.id} merging={!!merging}
+          <Group group={item} open={open === item.id} merging={!!merging}
             onPress={() => (merging ? merge(item) : setOpen(open === item.id ? null : item.id))}
             onMerge={() => { setOpen(null); setQ(""); setMerging(item); }}
             onSplit={(t) => SaicsPlayer.splitTrack(t.uri).then(saved)}
@@ -77,38 +73,30 @@ export default function Groups() {
   );
 }
 
-function GroupCard({ group, open, merging, onPress, onMerge, onSplit, onLoopable }: {
+function Group({ group, open, merging, onPress, onMerge, onSplit, onLoopable }: {
   group: SongGroup; open: boolean; merging: boolean; onPress: () => void; onMerge: () => void;
   onSplit: (t: Track) => void; onLoopable: (t: Track, notLoopable: boolean) => void;
 }) {
   const n = group.versions.length;
   return (
-    <View style={{ borderTopWidth: 1, borderColor: color.divider }}>
-      <Pressable onPress={onPress} style={s.row} accessibilityState={{ expanded: open }}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={s.title}>{displayName(group.name).title}</Text>
-        </View>
-        <Badge text={`${n} ${n === 1 ? "VERSION" : "VERSIONS"}`} />
-        {merging ? null : open ? <ChevronDown size={16} c={color.textFaint} /> : <ChevronRight size={16} c={color.textFaint} />}
+    <View>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={onPress} style={({ pressed }) => [s.row, pressed && { opacity: 0.6 }]}>
+        <Serif size={19} numberOfLines={1} style={{ flex: 1 }} c={open ? color.vermilion : color.paper}>{displayName(group.name).title}</Serif>
+        <Mono>{n}</Mono>
       </Pressable>
       {open ? (
-        <View style={{ paddingBottom: space.md, gap: space.xs }}>
+        <View style={{ paddingLeft: 16, paddingBottom: 10 }}>
           {group.versions.map((t) => (
-            <View key={t.uri} style={s.version}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ fontFamily: font.bold, fontSize: 14, color: color.text }}>{versionLabel(t.version)}</Text>
-                  <Mono numberOfLines={1}>{t.file || t.title}</Mono>
-                </View>
-                {n > 1 ? <Pill h={44} label="Split" onPress={() => onSplit(t)} /> : null}
-              </View>
-              <View style={s.toggle}>
-                <Label>NOT LOOPABLE</Label>
-                <Switch value={t.notLoopable} onValueChange={(v) => onLoopable(t, v)} trackColor={{ true: color.amber, false: color.border }} thumbColor={t.notLoopable ? color.amberInk : color.textMuted} />
+            <View key={t.uri} style={{ paddingVertical: 4 }}>
+              <Serif size={17} numberOfLines={1}>{versionLabel(t.version)}</Serif>
+              <Mono numberOfLines={1}>{t.file || t.title}</Mono>
+              <View style={s.row}>
+                <Word label="Don't loop" size={16} on={t.notLoopable} onPress={() => onLoopable(t, !t.notLoopable)} />
+                {n > 1 ? <Word label="Split off" size={16} onPress={() => onSplit(t)} /> : null}
               </View>
             </View>
           ))}
-          <Pill label="Merge into another song" onPress={onMerge} />
+          <Word label="Merge into another song" size={16} onPress={onMerge} />
         </View>
       ) : null}
     </View>
@@ -116,13 +104,7 @@ function GroupCard({ group, open, merging, onPress, onMerge, onSplit, onLoopable
 }
 
 const s = StyleSheet.create({
-  head: { flexDirection: "row", alignItems: "center", gap: space.md, paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.sm },
-  intro: { marginHorizontal: space.xl, marginTop: space.xs, marginBottom: space.md, lineHeight: 20 },
-  warn: { marginHorizontal: space.xl, marginBottom: space.md },
-  search: { flexDirection: "row", alignItems: "center", gap: 10, height: 48, marginHorizontal: space.xl, marginBottom: space.md, paddingHorizontal: 14, borderRadius: radius.row, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
-  input: { flex: 1, height: 44, color: color.text, fontFamily: font.regular, fontSize: 15 },
-  row: { flexDirection: "row", alignItems: "center", gap: space.md, minHeight: 58 },
-  title: { fontFamily: font.bold, fontSize: 15, color: color.text },
-  version: { padding: space.md, gap: space.xs, borderRadius: radius.row, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
-  toggle: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  input: { height: 44, paddingHorizontal: 0, color: color.paper, fontFamily: font.narrow, fontSize: 17 },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, minHeight: 48 },
 });

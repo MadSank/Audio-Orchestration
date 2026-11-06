@@ -178,6 +178,28 @@ class SaicsPlayerModule : Module() {
       }
     }
 
+    AsyncFunction("getSetAside") { promise: Promise ->
+      val folder = prefs.getString("folder", null)
+      val doc = prefs.getString("saicsDoc", null)
+      if (folder == null || doc == null) return@AsyncFunction promise.resolve(emptyList<Map<String, String>>())
+      val tree = Uri.parse(folder)
+      val out = ArrayList<Map<String, String>>()
+      try {
+        children(tree, doc)["set_aside_manifest.json"]?.let { id ->
+          context.contentResolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, id))?.bufferedReader()?.use { r ->
+            val moves = org.json.JSONObject(r.readText()).getJSONArray("moves")
+            for (i in 0 until moves.length()) {
+              val m = moves.getJSONObject(i)
+              out.add(mapOf("source" to m.getString("source"), "dest" to m.getString("dest")))
+            }
+          }
+        }
+      } catch (e: Exception) {
+        // unreadable: nothing to list
+      }
+      promise.resolve(out)
+    }
+
     /** After the media permission is granted: look in Download now. */
     AsyncFunction("refreshAnalysis") { promise: Promise ->
       onService(promise) { it.setLibrary(it.library); null }

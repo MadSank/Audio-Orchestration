@@ -1,69 +1,88 @@
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useMemo, useState } from "react";
+import { Pressable, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, Defs, Path, Text as SvgText, TextPath } from "react-native-svg";
 
 import SaicsPlayer from "../../modules/saics-player";
-import { Close } from "../icons";
 import { displayName, versionLabel } from "../names";
-import { Body, Display, IconBtn, Mono } from "../ui";
+import { Mono, Narrow, Serif, useK, Word } from "../obi";
 import { usePlayerState } from "../usePlayer";
-import { color, font, radius, space } from "../theme/tokens";
+import { color, font } from "../theme/tokens";
 
-/** Versions sheet (design 03, revision 2): the song group's versions, switching on the next bar. */
+const PER_RECORD = 6;
+const BAND = 34;
+const OUTER = 262;
+const BANDS = [["#23312A", "#E4F0E6"], ["#272139", "#E9E3F7"], ["#3A281D", "#F6E6D8"], ["#25303F", "#E2EAF4"], ["#2C261E", color.paper]];
+
+/** One song, every groove: each ring of the record is a version. Tap a ring to switch. */
 export default function Versions() {
   const router = useRouter();
   const state = usePlayerState();
-  const current = state?.versions?.[(state?.versionIndex ?? 1) - 1]?.uri;
+  const k = useK();
+  const insets = useSafeAreaInsets();
+  const [page, setPage] = useState(0);
+  const versions = useMemo(() => state?.versions ?? [], [state?.versions]);
+  const current = versions[(state?.versionIndex ?? 1) - 1]?.uri;
+  const pages = Math.max(1, Math.ceil(versions.length / PER_RECORD));
+  const shown = versions.slice(page * PER_RECORD, (page + 1) * PER_RECORD);
+  const size = 470 * k;
+
+  // A touch anywhere on the record picks the ring under it.
+  function touch(x: number, y: number) {
+    const r = Math.hypot(x - size / 2, y - size / 2) * (560 / size);
+    const i = Math.floor((OUTER + BAND / 2 - r) / BAND);
+    if (i >= 0 && i < shown.length) SaicsPlayer.pickVersion(shown[i].uri);
+  }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "rgba(5,5,6,0.72)" }}>
-      <Pressable style={{ height: 118 }} onPress={() => router.back()} accessibilityLabel="Close versions" />
-      <SafeAreaView edges={["bottom"]} style={s.sheet}>
-        <View style={s.handle} />
-        <View style={s.head}>
-          <View style={{ flex: 1 }}>
-            <Display size={22}>VERSIONS</Display>
-            <Body style={{ fontSize: 13 }}>Switches on the next bar, at the same point in the song</Body>
-          </View>
-          <IconBtn bg={color.surfaceRaised} onPress={() => router.back()} accessibilityLabel="Close"><Close size={18} /></IconBtn>
-        </View>
+    <View style={{ flex: 1, backgroundColor: color.night, overflow: "hidden" }}>
+      <View style={{ position: "absolute", left: 24, right: 24, top: insets.top + 16 }}>
+        <Mono>{displayName(state?.title ?? "").title.toUpperCase()}</Mono>
+        <Serif size={40 * k} style={{ marginTop: 4 }}>One song,{"\n"}every groove</Serif>
+      </View>
 
-        <ScrollView contentContainerStyle={{ gap: 6 }} style={{ flex: 1 }}>
-          {state?.versions?.map((v) => {
+      <Pressable accessibilityRole="adjustable" accessibilityLabel={`Versions: ${shown.map((v) => versionLabel(v.version)).join(", ")}`}
+        onPress={(e) => touch(e.nativeEvent.locationX, e.nativeEvent.locationY)}
+        style={{ position: "absolute", left: -40 * k, top: insets.top + 150 * k, width: size, height: size }}>
+        <Svg width={size} height={size} viewBox="0 0 560 560" pointerEvents="none">
+          <Circle cx={280} cy={280} r={278} fill={color.vinyl} />
+          <Defs>
+            {shown.map((_, i) => {
+              const tr = OUTER - i * BAND - 6;
+              return <Path key={i} id={`ring${i}`} d={`M${280 - tr} 280 A${tr} ${tr} 0 0 1 ${280 + tr} 280`} />;
+            })}
+          </Defs>
+          {shown.map((v, i) => {
             const on = v.uri === current;
+            const [band, ink] = on ? [color.paper, color.night] : BANDS[i % BANDS.length];
             return (
-              <Pressable key={v.uri} onPress={() => SaicsPlayer.pickVersion(v.uri)} style={[s.row, on && s.rowOn]} accessibilityState={{ selected: on }}>
-                <View style={[s.dot, on && s.dotOn]} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ fontFamily: on ? font.extrabold : font.bold, fontSize: 16, color: color.text }}>{versionLabel(v.version)}</Text>
-                  <Body numberOfLines={1} style={{ fontSize: 12, color: on ? "#D9C9AE" : color.textMuted }}>{displayName(v.title).title}</Body>
-                </View>
-                {on ? <Mono size={11} c={color.amber} bold>ON</Mono> : null}
-              </Pressable>
+              <Circle key={v.uri} cx={280} cy={280} r={OUTER - i * BAND} fill="none" stroke={band} strokeWidth={BAND - 4} />
             );
           })}
-        </ScrollView>
+          {shown.map((v, i) => {
+            const on = v.uri === current;
+            const ink = on ? color.night : BANDS[i % BANDS.length][1];
+            const label = `${versionLabel(v.version).toUpperCase()}${on ? " · PLAYING" : ""}`;
+            return (
+              <SvgText key={v.uri} fontFamily={font.narrowBold} fontSize={17} letterSpacing={1.5} fill={ink}>
+                <TextPath href={`#ring${i}`} startOffset="50%" textAnchor="middle">{label}</TextPath>
+              </SvgText>
+            );
+          })}
+          <Circle cx={280} cy={280} r={62} fill={color.vermilion} />
+          <Circle cx={280} cy={280} r={6} fill={color.night} />
+        </Svg>
+      </Pressable>
 
-        <View style={s.footer}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: font.bold, fontSize: 15, color: color.text }}>Vinyl</Text>
-            <Body style={{ fontSize: 12 }}>Warm band-pass, crackle, wow and flutter</Body>
-          </View>
-          <Switch value={!!state?.vinyl} onValueChange={() => SaicsPlayer.toggleVinyl()}
-            trackColor={{ true: color.amber, false: color.border }} thumbColor={state?.vinyl ? color.amberInk : color.textMuted} />
+      <View style={{ position: "absolute", left: 24, right: 24, bottom: insets.bottom + 12 }}>
+        <Narrow>Tap a ring. It changes on the next bar, and the music never stops.</Narrow>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <Word label="Vinyl" on={state?.vinyl} onPress={() => SaicsPlayer.toggleVinyl()} />
+          {pages > 1 ? <Word label={`More (${page + 1}/${pages})`} onPress={() => setPage((page + 1) % pages)} /> : null}
+          <Word label="Done" on onPress={() => router.back()} />
         </View>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
-
-const s = StyleSheet.create({
-  sheet: { flex: 1, backgroundColor: color.surface, borderTopLeftRadius: radius.sheet, borderTopRightRadius: radius.sheet, borderTopWidth: 1, borderColor: color.border, paddingHorizontal: space.lg, paddingTop: 10, gap: space.md },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: color.section, alignSelf: "center" },
-  head: { flexDirection: "row", alignItems: "center", gap: space.md },
-  row: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: space.md, paddingVertical: 6, paddingHorizontal: 14, borderRadius: radius.row, borderWidth: 1, borderColor: color.border },
-  rowOn: { backgroundColor: color.amberTint, borderColor: color.amber, borderWidth: 1.5 },
-  dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: color.textFaint },
-  dotOn: { backgroundColor: color.amber, borderColor: color.amber },
-  footer: { flexDirection: "row", alignItems: "center", gap: space.md, padding: 14, borderRadius: radius.row, backgroundColor: color.surfaceRaised, marginBottom: space.md },
-});

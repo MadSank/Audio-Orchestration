@@ -1,121 +1,230 @@
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Animated, AppState, Easing, Image, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, ClipPath, Defs } from "react-native-svg";
 
-import SaicsPlayer from "../../modules/saics-player";
-import { ChevronDown, Heart, HeartLine, Helmet, Infinity_, ListIcon, Next, Pause, Play, Prev } from "../icons";
+import SaicsPlayer, { addListener } from "../../modules/saics-player";
 import { displayName, versionLabel } from "../names";
-import { Record } from "../Record";
-import { Body, IconBtn, Label, Mono, Pill } from "../ui";
+import { Mono, Narrow, ObiTitle, PlayButton, Record, Serif, SkipButton, useK, useSpin, Word } from "../obi";
 import { usePlayerState } from "../usePlayer";
-import { color, font, radius, space } from "../theme/tokens";
+import { color, OBI_WIDTH } from "../theme/tokens";
+
+const HAND = [require("../../assets/hand/hand0.png"), require("../../assets/hand/hand1.png"), require("../../assets/hand/hand2.png")];
+/** Hand-drawn motion moves on twos: 8 positions a phase, about 12 a second. */
+const onTwos = (t: number) => Math.floor(t * 8) / 8;
+const SCRATCH_DEG = -72;
 
 export default function NowPlaying() {
   const router = useRouter();
   const state = usePlayerState();
+  const k = useK();
+  const { height: H } = useWindowDimensions();
+  const top = useSafeAreaInsets().top;
+  const bottom = useSafeAreaInsets().bottom;
   const name = displayName(state?.title ?? "");
   const portal = state?.nextPortal ?? null;
   const uri = state?.versions?.[(state?.versionIndex ?? 1) - 1]?.uri;
-  const sections = state?.sections ?? [];
-  const total = sections.reduce((n, x) => n + x.bars, 0);
-  const version = state?.version ? versionLabel(state.version) : "";
+
+  // ── the record ──────────────────────────────────────────────────────────────
+  const D = 520 * k; // on screen its centre is at (70, 304) of the 390-wide layout
+  const discTop = top + 44 * k;
+  const discLeft = -190 * k;
+  const spin = useSpin(!!state?.isPlaying);
+  const scratch = useRef(new Animated.Value(0)).current;
+  const scratchAt = useRef(0);
+  const rotate = Animated.add(spin, scratch).interpolate({ inputRange: [0, 360], outputRange: ["0deg", "360deg"] });
+
+  // ── the hand (a jump) ───────────────────────────────────────────────────────
+  const hand = useRef(new Animated.Value(0)).current; // 0 off, 1 on the record, 2 dragged, 3 off
+  const [handOn, setHandOn] = useState(false);
+  const [frame, setFrame] = useState(0);
+  const [flash, setFlash] = useState<string | null>(null);
+  const giveUp = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handAt = useRef(0);
+  const toHand = useCallback((to: number, ms: number, done?: () => void) => {
+    handAt.current = to;
+    Animated.timing(hand, { toValue: to, duration: ms, easing: onTwos, useNativeDriver: true }).start(() => done?.());
+  }, [hand]);
+  const leave = useCallback(() => {
+    if (giveUp.current) clearTimeout(giveUp.current);
+    toHand(3, 650, () => {
+      hand.setValue(0);
+      handAt.current = 0;
+      setHandOn(false);
+    });
+  }, [hand, toHand]);
+  const reach = useCallback((ms: number, then?: () => void) => {
+    setHandOn(true);
+    hand.setValue(0);
+    toHand(1, ms, then);
+  }, [hand, toHand]);
+  const drag = useCallback(() => {
+    if (giveUp.current) clearTimeout(giveUp.current);
+    scratchAt.current += SCRATCH_DEG;
+    Animated.timing(scratch, { toValue: scratchAt.current, duration: 700, easing: onTwos, useNativeDriver: true }).start();
+    toHand(2, 700, () => setTimeout(leave, 250));
+  }, [leave, scratch, toHand]);
+
+  useEffect(() => {
+    if (!handOn) return;
+    const id = setInterval(() => setFrame((f) => (f + 1) % HAND.length), 125);
+    return () => clearInterval(id);
+  }, [handOn]);
+
+  // ── the portal (a change of song) ───────────────────────────────────────────
+  const swap = useRef(new Animated.Value(0)).current;
+  const [crossing, setCrossing] = useState<{ from: string; to: string; pair: string; landed: boolean } | null>(null);
+  const shownTitle = useRef("");
+  const lastPair = useRef("");
+  useEffect(() => { if (portal) lastPair.current = portal.pair; }, [portal]);
+  useEffect(() => { if (!crossing && name.title) shownTitle.current = name.title; }, [crossing, name.title]);
+
+  useEffect(() => {
+    const visible = () => AppState.currentState === "active"; // nobody to draw for with the screen off
+    const sub = addListener("onAction", (a) => {
+      if (a.action === "version") {
+        setFlash(versionLabel(a.detail ?? ""));
+        setTimeout(() => setFlash(null), 2500);
+      }
+      if (!visible()) return;
+      if (a.action === "jump-soon") {
+        reach(600);
+        giveUp.current = setTimeout(leave, 5000); // the jump was dropped
+      } else if (a.action === "jump") {
+        setFlash("Jumping back");
+        setTimeout(() => setFlash(null), 2500);
+        if (handAt.current === 1) drag();
+        else reach(320, drag);
+      } else if (a.action === "portal") {
+        setCrossing({ from: shownTitle.current, to: displayName(a.detail ?? "").title, pair: lastPair.current, landed: false });
+        setTimeout(() => setCrossing((c) => c && { ...c, landed: true }), 2000); // while the strip is off-screen
+        swap.setValue(0);
+        Animated.timing(swap, { toValue: 1, duration: 3200, easing: Easing.linear, useNativeDriver: true }).start(() => setCrossing(null));
+      }
+    });
+    return () => {
+      sub.remove();
+      if (giveUp.current) clearTimeout(giveUp.current);
+    };
+  }, [drag, leave, reach, swap]);
+
+  const lerp = (input: number[], output: number[]) => swap.interpolate({ inputRange: input, outputRange: output });
+  const SHRINK = 380 / 520;
+  const outgoing = crossing ? {
+    transform: [
+      { translateX: lerp([0, 0.14, 0.3, 0.62, 0.82, 1], [0, 0, 40 * k, 40 * k, -400 * k, -400 * k]) },
+      { translateY: lerp([0, 0.14, 0.3, 0.62, 0.82, 1], [0, 0, -134 * k, -134 * k, -520 * k, -520 * k]) },
+      { scale: lerp([0, 0.14, 0.3, 1], [1, 1, SHRINK, SHRINK]) },
+    ],
+  } : null;
+  const incoming = {
+    transform: [
+      { translateX: lerp([0, 0.16, 0.32, 0.62, 0.84, 1], [550 * k, 550 * k, 210 * k, 210 * k, 0, 0]) },
+      { translateY: lerp([0, 0.16, 0.32, 0.62, 0.84, 1], [476 * k, 476 * k, 86 * k, 86 * k, 0, 0]) },
+      { scale: lerp([0, 0.62, 0.84, 1], [SHRINK, SHRINK, 1, 1]) },
+    ],
+  };
+  const fade = (a: number, b: number, c: number, d: number) => lerp([0, a, b, c, d, 1].map((x, i, v) => (i && x <= v[i - 1] ? v[i - 1] + 0.0001 : x)), [0, 0, 1, 1, 0, 0]);
+
+  const obiWidth = OBI_WIDTH * k;
+  const obiH = H - 200 * k;
+  const status = flash ?? (portal
+    ? `${portal.kind === "cut" ? "Cut" : portal.kind === "back" ? "Back" : "Portal"} in ${portal.inBars} ${portal.inBars === 1 ? "bar" : "bars"}: ${displayName(portal.title).title}`
+    : state?.forever ? `Forever · ${state.jumps ?? 0} ${state.jumps === 1 ? "jump" : "jumps"}` : state?.station ?? "");
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: color.bg }} edges={["top", "bottom"]}>
-      <View style={s.header}>
-        <IconBtn onPress={() => router.back()} accessibilityLabel="Back to stations"><ChevronDown size={20} /></IconBtn>
-        <View style={{ alignItems: "center" }}>
-          <Label style={{ letterSpacing: 1.5 }}>PLAYING FROM</Label>
-          <Text style={{ fontFamily: font.displayXb, fontSize: 14, color: color.text }}>{(state?.station ?? "").toUpperCase()}</Text>
+    <View style={{ flex: 1, backgroundColor: color.night, overflow: "hidden" }}>
+      <Animated.View style={[{ position: "absolute", left: discLeft, top: discTop, width: D, height: D }, outgoing]}>
+        <Animated.View style={{ transform: [{ rotate }] }}>
+          <Record size={D} text={`${name.title} · `.repeat(3).slice(0, 44)} />
+        </Animated.View>
+      </Animated.View>
+
+      {crossing ? (
+        <>
+          <Animated.View style={[{ position: "absolute", left: discLeft, top: discTop, width: D, height: D }, incoming]}>
+            <Animated.View style={{ transform: [{ rotate }] }}><Record size={D} /></Animated.View>
+          </Animated.View>
+          <Animated.View pointerEvents="none" style={{ position: "absolute", left: 0, top: discTop - 44 * k, opacity: lerp([0, 0.3, 0.36, 0.44, 0.48, 0.52, 0.6, 0.66, 1], [0, 0, 1, 1, 0.75, 1, 1, 0, 0]) }}>
+            <Svg width={390 * k} height={600 * k} viewBox="0 0 390 600">
+              <Defs><ClipPath id="a"><Circle cx={110} cy={170} r={190} /></ClipPath></Defs>
+              <Circle cx={280} cy={390} r={190} fill={color.vermilion} clipPath="url(#a)" />
+            </Svg>
+          </Animated.View>
+        </>
+      ) : null}
+
+      <Animated.View style={[StyleSheet.absoluteFill, { left: undefined, width: obiWidth }, crossing ? { transform: [{ translateX: lerp([0, 0.12, 0.24, 0.72, 0.86, 1], [0, 0, 100 * k, 100 * k, 0, 0]) }] } : null]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Open versions" onPress={() => router.push("/versions")} style={[s.obi, { paddingTop: top + 26 * k, paddingBottom: bottom + 22 * k }]}>
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <ObiTitle title={crossing ? (crossing.landed ? crossing.to : crossing.from) : name.title || "SAICS"} height={obiH * 0.74} />
+          </View>
+          <Mono c={color.night} style={{ textAlign: "center" }}>{state?.bpm ? Math.round(state.bpm) : ""}</Mono>
+          <Mono c={color.night} style={{ textAlign: "center" }}>{state?.camelot ?? ""}</Mono>
+        </Pressable>
+      </Animated.View>
+
+      <Pressable accessibilityRole="button" accessibilityLabel="Back to stations" onPress={() => router.back()} style={[s.back, { top: top + 4 }]}>
+        <Serif size={26}>‹</Serif>
+      </Pressable>
+
+      <View style={[s.body, { left: 24 * k, right: (OBI_WIDTH + 24) * k, bottom: bottom + 20 * k }]}>
+        <Serif size={32 * k} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{name.title || "Nothing playing"}</Serif>
+        <Pressable accessibilityRole="button" accessibilityLabel="Open versions" onPress={() => router.push("/versions")} style={{ minHeight: 28, justifyContent: "center" }}>
+          <Narrow numberOfLines={1}>{[name.artist, state?.version ? versionLabel(state.version) : ""].filter(Boolean).join(" · ")}</Narrow>
+        </Pressable>
+        <View style={s.statusRow}>
+          <Mono style={{ flex: 1 }}>{status}</Mono>
+          {portal && !flash ? <Word label="Stay" size={17} onPress={() => SaicsPlayer.stayPortal()} /> : null}
         </View>
-        <IconBtn onPress={() => router.push("/buttons")} accessibilityLabel="Helmet controls"><Helmet size={20} c={color.amber} /></IconBtn>
+        <View style={s.words}>
+          <Word label="Forever" size={17} on={state?.forever} onPress={() => SaicsPlayer.toggleForever()} />
+          <Word label="Vinyl" size={17} on={state?.vinyl} onPress={() => SaicsPlayer.toggleVinyl()} />
+          <Word label={state?.liked ? "Liked" : "Like"} size={17} on={state?.liked} onPress={() => uri && SaicsPlayer.toggleLike(uri)} />
+          <Word label="Ride" size={17} onPress={() => router.push("/ride")} />
+        </View>
+        <View style={s.transport}>
+          <SkipButton dir="prev" label="Previous" onPress={() => SaicsPlayer.previous()} />
+          <PlayButton state={state} />
+          <SkipButton dir="next" label="Next: once for the next portal, twice for a new song" onPress={() => SaicsPlayer.simulatePress("NEXT")} />
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={s.page}>
-        <Record position={state?.position ?? 0} duration={state?.duration ?? 0} playing={!!state?.isPlaying}
-          bpm={state?.bpm ?? 0} camelot={state?.camelot ?? ""} sections={sections} />
-
-        <View style={s.body}>
-          <View style={s.titleRow}>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text numberOfLines={2} style={s.title}>{name.title || "Nothing playing"}</Text>
-              {name.artist ? <Body numberOfLines={1} style={{ fontSize: 16 }}>{name.artist}</Body> : null}
-              {state?.title && (state.versionCount ?? 0) > 0 ? (
-                <Pressable onPress={() => router.push("/versions")} style={s.versionChip} accessibilityLabel="Open versions">
-                  <Mono c={color.amber} bold>VERSION {state.versionIndex} OF {state.versionCount}</Mono>
-                  <Mono bold style={{ flexShrink: 1 }}>· {version}</Mono>
-                </Pressable>
-              ) : null}
-            </View>
-            <IconBtn bg={color.surface} border={color.border} accessibilityLabel="Like" onPress={() => uri && SaicsPlayer.toggleLike(uri)}>
-              {state?.liked ? <Heart size={20} c={color.pink} /> : <HeartLine size={20} c={color.pink} />}
-            </IconBtn>
+      {crossing ? (
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: "transparent", opacity: fade(0.28, 0.34, 0.62, 0.68) }]}>
+          <View style={[s.crossCopy, { left: 24 * k, right: (OBI_WIDTH + 24) * k, bottom: bottom + 20 * k, backgroundColor: color.night }]}>
+            <Serif size={30 * k} numberOfLines={2}>Same beat. New song.</Serif>
+            {crossing.pair ? <Narrow numberOfLines={1}>{crossing.pair.replace("→", "into")}, on the downbeat</Narrow> : null}
           </View>
+          <Serif size={25} numberOfLines={1} style={{ position: "absolute", left: 20 * k, right: 150 * k, top: top + 24 * k }}>{crossing.from}</Serif>
+          <Serif size={25} numberOfLines={1} style={{ position: "absolute", left: 150 * k, right: 20 * k, top: top + 536 * k, textAlign: "right" }}>{crossing.to}</Serif>
+        </Animated.View>
+      ) : null}
 
-          <View style={{ gap: 6 }}>
-            <View style={s.strip}>
-              {sections.map((x, i) => (
-                <View key={i} style={{ flexGrow: x.bars, flexBasis: 0, borderRadius: 3, backgroundColor: x.kind === "chorus" ? color.amberDim : color.section }} />
-              ))}
-              {total > 0 && state?.bar != null ? (
-                <View style={[s.cursor, { left: `${Math.min(100, (100 * Math.max(0, state.bar)) / total)}%` }]} />
-              ) : null}
-            </View>
-            <View style={s.status}>
-              <Mono style={{ flexShrink: 1 }}>{state?.sectionKind ? `${state.sectionKind.toUpperCase()} · ` : ""}{total > 0 ? `BAR ${Math.max(0, (state?.bar ?? 0)) + 1}/${total}` : ""}</Mono>
-              {state?.forever ? <Mono c={color.cyan}>FOREVER · {state.jumps ?? 0} JUMPS</Mono> : null}
-            </View>
-          </View>
-
-          {portal ? (
-            <View style={s.portal}>
-              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                <Label c={color.cyan} style={{ letterSpacing: 1.1 }}>
-                  {portal.kind === "portal" ? "PORTAL" : portal.kind === "back" ? "BACK" : "CUT"} IN {portal.inBars} {portal.inBars === 1 ? "BAR" : "BARS"} · {portal.pair.toUpperCase()}
-                </Label>
-                <Text numberOfLines={1} style={{ fontFamily: font.extrabold, fontSize: 16, color: color.text }}>{displayName(portal.title).title}</Text>
-                <Mono>{Math.round(portal.bpm)} BPM · {portal.camelot} · lands at bar {portal.landBar + 1}</Mono>
-              </View>
-              <Pill kind="raised" label="Stay" onPress={() => SaicsPlayer.stayPortal()} />
-            </View>
-          ) : null}
-
-          {(state?.versions?.length ?? 0) > 1 || state?.title ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
-              <Pill h={40} kind={state?.vinyl ? "primary" : "outline"} label="Vinyl" onPress={() => SaicsPlayer.toggleVinyl()} />
-              {state?.versions?.map((v) => (
-                <Pill key={v.uri} h={40} kind={v.uri === uri ? "primary" : "outline"} label={versionLabel(v.version)} onPress={() => SaicsPlayer.pickVersion(v.uri)} />
-              ))}
-            </ScrollView>
-          ) : null}
-        </View>
-      </ScrollView>
-
-      <View style={s.transport}>
-        <IconBtn size={48} bg="transparent" border={color.border} onPress={() => SaicsPlayer.toggleForever()} accessibilityLabel="Loop this song forever">
-          <Infinity_ c={state?.forever ? color.cyan : color.textMuted} />
-        </IconBtn>
-        <IconBtn size={56} bg="transparent" onPress={() => SaicsPlayer.previous()} accessibilityLabel="Previous"><Prev size={28} /></IconBtn>
-        <IconBtn size={80} bg={color.amber} onPress={() => SaicsPlayer.togglePlay()} accessibilityLabel={state?.isPlaying ? "Pause" : "Play"}>
-          {state?.isPlaying ? <Pause size={30} c={color.amberInk} /> : <Play size={30} c={color.amberInk} />}
-        </IconBtn>
-        <IconBtn size={56} bg="transparent" onPress={() => SaicsPlayer.simulatePress("NEXT")} accessibilityLabel="Next: once for the next portal, twice for a new song"><Next size={28} /></IconBtn>
-        <IconBtn size={48} bg="transparent" border={color.border} onPress={() => router.push("/versions")} accessibilityLabel="All versions"><ListIcon c={color.textMuted} /></IconBtn>
-      </View>
-    </SafeAreaView>
+      {handOn ? (
+        <Animated.View pointerEvents="none" style={{
+          position: "absolute", left: 152 * k, top: top + 337 * k, width: 559 * k, height: 1170 * k,
+          transformOrigin: [65 * k, 52 * k, 0],
+          transform: [
+            { translateX: hand.interpolate({ inputRange: [0, 1, 2, 3], outputRange: [170 * k, 0, -17 * k, 200 * k] }) },
+            { translateY: hand.interpolate({ inputRange: [0, 1, 2, 3], outputRange: [520 * k, 0, -194 * k, 540 * k] }) },
+            { rotate: hand.interpolate({ inputRange: [0, 1, 2, 3], outputRange: ["14deg", "0deg", "-9deg", "16deg"] }) },
+          ],
+        }}>
+          {HAND.map((src, i) => <Image key={i} source={src} fadeDuration={0} style={{ position: "absolute", width: 559 * k, height: 1170 * k, opacity: frame === i ? 1 : 0 }} />)}
+        </Animated.View>
+      ) : null}
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.xs },
-  page: { paddingBottom: space.sm, gap: space.xs },
-  body: { paddingHorizontal: space.xl, gap: 10 },
-  titleRow: { flexDirection: "row", alignItems: "flex-end", gap: space.md },
-  title: { fontFamily: font.black, fontSize: 26, lineHeight: 28, color: color.text },
-  versionChip: { marginTop: 6, alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6, height: 28, paddingHorizontal: 10, borderRadius: radius.chip, backgroundColor: color.surfaceRaised, borderWidth: 1, borderColor: color.border, maxWidth: "100%" },
-  strip: { height: 10, flexDirection: "row", gap: 2 },
-  cursor: { position: "absolute", top: -4, width: 4, height: 18, borderRadius: 2, backgroundColor: color.text },
-  status: { flexDirection: "row", justifyContent: "space-between", gap: space.sm },
-  portal: { flexDirection: "row", alignItems: "center", gap: space.md, paddingVertical: space.md, paddingLeft: 14, paddingRight: space.md, borderRadius: 18, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
-  transport: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space.xxl, paddingTop: space.md, paddingBottom: space.lg },
+  obi: { flex: 1, backgroundColor: color.vermilion, alignItems: "center" },
+  back: { position: "absolute", left: 10, width: 48, height: 48, alignItems: "center", justifyContent: "center" },
+  body: { position: "absolute", gap: 2 },
+  statusRow: { flexDirection: "row", alignItems: "center", minHeight: 28, gap: 8 },
+  words: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
+  transport: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
+  crossCopy: { position: "absolute", gap: 6, paddingTop: 12, paddingBottom: 120 },
 });

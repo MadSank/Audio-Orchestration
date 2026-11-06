@@ -72,6 +72,9 @@ export interface PlayerState {
   bar?: number;
   sections?: SectionInfo[];
   sectionKind?: string;
+  /** Songs waiting to be analysed on the phone, and the one in progress. */
+  analysing?: number;
+  analysingTitle?: string | null;
   /** Forever jumps taken in this song. */
   jumps?: number;
   nextPortal?: NextPortal | null;
@@ -98,7 +101,7 @@ export interface PlayerSettings {
 type Events = {
   onButton(e: ButtonEvent): void;
   onState(s: PlayerState): void;
-  /** Button actions and engine events: "jump" | "version" | "track" | "repeat" | "error" | ... */
+  /** Button actions and engine events: "jump-soon" | "jump" | "portal" | "version" | "track" | "repeat" | "error" | ... */
   onAction(a: { action: string; detail?: string; version?: string }): void;
 };
 
@@ -107,6 +110,8 @@ declare class SaicsPlayerModule extends NativeModule<Events> {
   getFolder(): string | null;
   scanLibrary(): Promise<Track[]>;
   refreshAnalysis(): Promise<void>;
+  /** What the laptop set aside, from .saics/set_aside_manifest.json (empty if it isn't on the phone). */
+  getSetAside(): Promise<{ source: string; dest: string }[]>;
   /** The last scan's result, without walking the folder again. */
   getLibrary(): Promise<Track[]>;
   canWriteOverrides(): boolean;
