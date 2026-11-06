@@ -4,7 +4,9 @@
  */
 export function displayName(raw: string): { title: string; artist: string } {
   let s = raw
-    .replace(/^y2(meta\.app|mate\.is)\s*-\s*/i, "")
+    .replace(/_/g, " ")
+    .replace(/\s*\((getmp3\.pro|[a-z0-9-]+\.(com|net|to|io|me))\)/gi, "")
+    .replace(/^(y2(meta\.app|mate\.is|mate\.com)|x2mate\.com|yt1s\.com|yt5s\.io|onlymp3\.to)\s*-?\s*/i, "")
     .replace(/\s*\(\d+\s*kbps\)/gi, "")
     .replace(/\s*\[[A-Za-z0-9_-]{11}\]/g, "") // YouTube id
     .replace(/\s*[([](official\s*(music\s*)?(video|audio|lyric video)|lyrics?|audio|hd|4k)[)\]]/gi, "")

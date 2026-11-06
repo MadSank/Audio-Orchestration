@@ -97,10 +97,14 @@ export default function NowPlaying() {
         if (handAt.current === 1) drag();
         else reach(320, drag);
       } else if (a.action === "portal") {
-        setCrossing({ from: shownTitle.current, to: displayName(a.detail ?? "").title, pair: lastPair.current, landed: false });
+        const [kind, ...title] = (a.detail ?? "").split("|");
+        setCrossing({ from: shownTitle.current, to: displayName(title.join("|")).title, pair: kind === "portal" ? lastPair.current : "", landed: false });
         setTimeout(() => setCrossing((c) => c && { ...c, landed: true }), 2000); // while the strip is off-screen
         swap.setValue(0);
-        Animated.timing(swap, { toValue: 1, duration: 3200, easing: Easing.linear, useNativeDriver: true }).start(() => setCrossing(null));
+        Animated.timing(swap, { toValue: 1, duration: 3200, easing: Easing.linear, useNativeDriver: true }).start(() => {
+          swap.setValue(0); // the record is back where it started, showing the new song
+          setCrossing(null);
+        });
       }
     });
     return () => {
@@ -111,13 +115,14 @@ export default function NowPlaying() {
 
   const lerp = (input: number[], output: number[]) => swap.interpolate({ inputRange: input, outputRange: output });
   const SHRINK = 380 / 520;
-  const outgoing = crossing ? {
+  // Always attached: a native-driven transform stays where it ended if its style is taken away.
+  const outgoing = {
     transform: [
       { translateX: lerp([0, 0.14, 0.3, 0.62, 0.82, 1], [0, 0, 40 * k, 40 * k, -400 * k, -400 * k]) },
       { translateY: lerp([0, 0.14, 0.3, 0.62, 0.82, 1], [0, 0, -134 * k, -134 * k, -520 * k, -520 * k]) },
       { scale: lerp([0, 0.14, 0.3, 1], [1, 1, SHRINK, SHRINK]) },
     ],
-  } : null;
+  };
   const incoming = {
     transform: [
       { translateX: lerp([0, 0.16, 0.32, 0.62, 0.84, 1], [550 * k, 550 * k, 210 * k, 210 * k, 0, 0]) },
@@ -155,7 +160,7 @@ export default function NowPlaying() {
         </>
       ) : null}
 
-      <Animated.View style={[StyleSheet.absoluteFill, { left: undefined, width: obiWidth }, crossing ? { transform: [{ translateX: lerp([0, 0.12, 0.24, 0.72, 0.86, 1], [0, 0, 100 * k, 100 * k, 0, 0]) }] } : null]}>
+      <Animated.View style={[StyleSheet.absoluteFill, { left: undefined, width: obiWidth }, { transform: [{ translateX: lerp([0, 0.12, 0.24, 0.72, 0.86, 1], [0, 0, 100 * k, 100 * k, 0, 0]) }] }]}>
         <Pressable accessibilityRole="button" accessibilityLabel="Open versions" onPress={() => router.push("/versions")} style={[s.obi, { paddingTop: top + 26 * k, paddingBottom: bottom + 22 * k }]}>
           <View style={{ flex: 1, alignItems: "center" }}>
             <ObiTitle title={crossing ? (crossing.landed ? crossing.to : crossing.from) : name.title || "SAICS"} height={obiH * 0.74} />
@@ -169,7 +174,7 @@ export default function NowPlaying() {
         <Serif size={26}>‹</Serif>
       </Pressable>
 
-      <View style={[s.body, { left: 24 * k, right: (OBI_WIDTH + 24) * k, bottom: bottom + 20 * k }]}>
+      <Animated.View style={[s.body, { left: 24 * k, right: (OBI_WIDTH + 24) * k, bottom: bottom + 20 * k, opacity: lerp([0, 0.14, 0.26, 0.8, 0.92, 1], [1, 1, 0, 0, 1, 1]) }]}>
         <Serif size={32 * k} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{name.title || "Nothing playing"}</Serif>
         <Pressable accessibilityRole="button" accessibilityLabel="Open versions" onPress={() => router.push("/versions")} style={{ minHeight: 28, justifyContent: "center" }}>
           <Narrow numberOfLines={1}>{[name.artist, state?.version ? versionLabel(state.version) : ""].filter(Boolean).join(" · ")}</Narrow>
@@ -189,12 +194,12 @@ export default function NowPlaying() {
           <PlayButton state={state} />
           <SkipButton dir="next" label="Next: once for the next portal, twice for a new song" onPress={() => SaicsPlayer.simulatePress("NEXT")} />
         </View>
-      </View>
+      </Animated.View>
 
       {crossing ? (
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: "transparent", opacity: fade(0.28, 0.34, 0.62, 0.68) }]}>
-          <View style={[s.crossCopy, { left: 24 * k, right: (OBI_WIDTH + 24) * k, bottom: bottom + 20 * k, backgroundColor: color.night }]}>
-            <Serif size={30 * k} numberOfLines={2}>Same beat. New song.</Serif>
+          <View style={[s.crossCopy, { left: 24 * k, right: (OBI_WIDTH + 24) * k, bottom: bottom + 20 * k }]}>
+            <Serif size={30 * k} numberOfLines={2}>{crossing.pair ? "Same beat. New song." : "New song."}</Serif>
             {crossing.pair ? <Narrow numberOfLines={1}>{crossing.pair.replace("→", "into")}, on the downbeat</Narrow> : null}
           </View>
           <Serif size={25} numberOfLines={1} style={{ position: "absolute", left: 20 * k, right: 150 * k, top: top + 24 * k }}>{crossing.from}</Serif>
