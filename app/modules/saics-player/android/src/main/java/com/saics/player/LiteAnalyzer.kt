@@ -8,6 +8,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
 import android.database.ContentObserver
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -104,8 +105,10 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
 
   /** The library plus Download, with what's been analysed here. Queues whatever has no bundle. */
   fun merge(base: List<Track>): List<Track> {
-    val names = base.map { nameOf(it) }.toHashSet()
-    val all = base + downloads().filter { nameOf(it) !in names }
+    // Download's songs come fresh from the media library, so that deleted ones go.
+    val folder = base.filterNot { it.uri.startsWith(MEDIA_URI) }
+    val names = folder.map { nameOf(it) }.toHashSet()
+    val all = folder + downloads().filter { nameOf(it) !in names }
     val merged = all.map { t ->
       val e = if (t.trackId.isEmpty()) index.optJSONObject(nameOf(t)) else null
       if (e == null || !e.has("bundle")) t else t.copy(
@@ -115,12 +118,18 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
     }
     for (t in merged) {
       val name = nameOf(t)
-      if (t.trackId.isEmpty() && !index.has(name) && queued.add(name)) {
+      if (t.trackId.isEmpty() && canTry(name) && queued.add(name)) {
         pending++
         work.post { analyse(t, name) }
       }
     }
     return merged
+  }
+
+  /** Not done, and hasn't taken the app down twice: music comes before analysis. */
+  private fun canTry(name: String): Boolean {
+    val e = index.optJSONObject(name) ?: return true
+    return e.length() == 1 && e.optInt("attempts") in 1 until MAX_ATTEMPTS
   }
 
   private fun put(name: String, entry: JSONObject) {
@@ -131,7 +140,25 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
   private fun analyse(t: Track, name: String) {
     current = t.title
     val t0 = SystemClock.elapsedRealtime()
+    // Written first: a native crash here takes the process down before any catch can run.
+    put(name, JSONObject().put("attempts", (index.optJSONObject(name)?.optInt("attempts") ?: 0) + 1))
     try {
+      // Before decoding: a whole hour-long file would take the memory the music needs.
+      val known = MediaMetadataRetriever().run {
+        try {
+          setDataSource(context, Uri.parse(t.uri))
+          extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+        } finally {
+          release()
+        }
+      }
+      if (known != null && known > MAX_MS) {
+        put(name, JSONObject().put("skipped", "length ${known / 1000} s"))
+        log("$name: skipped, ${known / 1000} s")
+        current = null
+        pending--
+        return
+      }
       val opened = Decoder.open(context, Uri.parse(t.uri)) ?: throw IllegalStateException("won't open")
       val (pcm, job) = opened
       job()
@@ -203,8 +230,10 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
   }
 
   companion object {
+    private const val MEDIA_URI = "content://media/"
     private const val MODEL = "beat_small.onnx"
     private const val MODEL_THREADS = 2
+    private const val MAX_ATTEMPTS = 2
     private const val SETTLE_MS = 5000L
     private const val MIN_MS = 45_000L // ringtones and clips
     private const val MAX_MS = 15 * 60_000L // triage's "long": compilations and hour-long loops
