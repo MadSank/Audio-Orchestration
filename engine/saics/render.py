@@ -237,8 +237,8 @@ def render_walk(
 
     tracks: id -> (path, gain_db, bar_times(n_samples) -> seconds per bar). Decoded songs are
     cached while they may still be needed (a walk can come back through a portal). The landing
-    shift moves the seam in the incoming song; the trim is applied on the finished output, as the
-    phone's renderer does."""
+    shift moves the seam in the incoming song and the early shift moves it in both; the trim is
+    applied on the finished output, as the phone's renderer does."""
     from saics.io import decode
 
     cache: dict = {}
@@ -268,16 +268,18 @@ def render_walk(
         y = load(tid)
         bt = tracks[tid][2](y.shape[1])
         a = 0 if s == 0 else int(bt[s] * sr)  # bar 0 = the top of the song, pickup included
+        early = int(round(seam[2] / 1000 * sr)) if len(seam) > 2 and s > 0 else 0
         if seam and s > 0:
-            a = max(0, a + int(round(seam[0] / 1000 * sr)))
+            a = max(0, a + int(round(seam[0] / 1000 * sr)) + early)
         b = int(bt[min(e, len(bt) - 1)] * sr)
         h = half if prev is not None else 0
         if prev is not None:
-            pieces.append(prev[0][:, prev[2] : prev[1] - h])
+            leave = prev[1] + early
+            pieces.append(prev[0][:, prev[2] : leave - h])
             before = len(pieces)
-            join_seam(pieces, (prev[0], prev[1]), (y, a), half)
+            join_seam(pieces, (prev[0], leave), (y, a), half)
             if len(pieces) == before:  # no room for a crossfade
-                pieces.append(prev[0][:, prev[1] - h : prev[1]])
+                pieces.append(prev[0][:, leave - h : leave])
                 h = 0
         if seam:
             at = sum(p.shape[1] for p in pieces) - h

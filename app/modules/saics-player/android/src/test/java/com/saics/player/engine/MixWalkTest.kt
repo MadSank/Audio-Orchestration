@@ -181,6 +181,14 @@ class MixWalkTest {
     assertTrue(w.fallback != "lofi")
   }
 
+  @Test fun onlyAPortalIntoASongsMiddleMovesItsSeamEarly() {
+    assertEquals(Seams.EARLY_MS, Seams.earlyMs("portal", 8), 1e-9)
+    assertEquals(Seams.EARLY_MS, Seams.earlyMs("back", 8), 1e-9)
+    assertEquals(0.0, Seams.earlyMs("portal", 0), 1e-9)
+    assertEquals(0.0, Seams.earlyMs("cut", 8), 1e-9)
+    assertEquals(false, Seams.LANDING_TRIM)
+  }
+
   @Test fun aPortalCarriesItsNudgeAndGoingBackUndoesIt() {
     val g = graph(track("a", portals = listOf(PortalGraph.Edge(40, "b", 8, 0.9, "chorus → chorus", false, 12.5))), track("b"))
     val w = MixWalk(g, Random(1))

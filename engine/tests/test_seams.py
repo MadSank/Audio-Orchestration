@@ -160,7 +160,8 @@ def test_the_walk_never_lands_on_an_unwalkable_song():
         assert all(s[0] != "lofi" for s in segs)
 
 
-def test_a_portal_move_carries_its_nudge_and_trim_and_back_undoes_them():
+def test_a_portal_move_carries_its_nudge_and_trim_and_back_undoes_them(monkeypatch):
+    monkeypatch.setattr(seams, "LANDING_TRIM", True)
     g = {"a": _track("a", [_Edge(40, "b", 8, off=12.5)]), "b": _track("b", db=-18.0)}
     w = MixWalk(g, "a", seed=1)
     m = None
@@ -177,7 +178,8 @@ def test_a_portal_move_carries_its_nudge_and_trim_and_back_undoes_them():
     assert move_trim_db(g, w.cur, back) == -4.0
 
 
-def test_a_song_that_ran_out_gets_no_trim():
+def test_a_song_that_ran_out_gets_no_trim(monkeypatch):
+    monkeypatch.setattr(seams, "LANDING_TRIM", True)
     g = {"a": _track("a"), "b": _track("b", db=-30.0)}
     w = MixWalk(g, "a", seed=1)
     m = w._song_end(120)
@@ -189,4 +191,24 @@ def test_walk_segments_after_a_move_carry_the_seam():
     segs, log = walk_path(g, "a", 3, seed=1)
     i = next(k for k, s in enumerate(segs) if s[0] == "b")
     assert len(segs[0]) == 3
-    assert segs[i][3] == -9.0 and segs[i][4] == 2.0
+    # Round 3c: the nudge stays, the trim is off, and the seam moves early in both songs.
+    assert segs[i][3:] == (-9.0, 0.0, seams.EARLY_MS)
+
+
+def test_the_early_shift_moves_the_seam_in_both_songs(monkeypatch):
+    import saics.io
+    from saics.render import render_walk
+
+    sr = 1000
+    n = 10 * sr
+    ramps = {"a": np.arange(n, dtype=np.float32), "b": np.arange(n, dtype=np.float32) + 100000}
+    monkeypatch.setattr(saics.io, "decode", lambda path, sr, mono: np.stack([ramps[path]] * 2))
+
+    def bars(_n):
+        return np.arange(0, 11, dtype=float)
+
+    tracks = {"a": ("a", 0.0, bars), "b": ("b", 0.0, bars)}
+    out = render_walk([("a", 0, 4), ("b", 3, 5, 0.0, 0.0, -29.0)], tracks, sr=sr, xfade_ms=0.0)
+    # 29 ms before each song's bar: A stops at 3971, B starts at 2971 of its own samples.
+    assert out[0, 3970] == 3970
+    assert out[0, 3971] == 100000 + 2971

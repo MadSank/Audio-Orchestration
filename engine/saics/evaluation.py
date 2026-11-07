@@ -799,7 +799,7 @@ ROUND3B_STYLES = (
 ROUND3C_VARIANTS = ("current", "early", "early_grid")
 ROUND3C_CTX_S = 10.0
 ROUND3C_PORTALS = 20
-ROUND3C_MISTAKES = {"ba7a2e5b9407"}  # the owner's first rating was a slip; the results file stays as is
+ROUND3C_MISTAKES = {"ba7a2e5b9407"}  # the owner's first rating was a slip; the file stays as is
 
 
 def round3c_shifts(off_ms: float, err_out, err_in) -> dict:

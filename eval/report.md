@@ -40,12 +40,22 @@ Mean overall: **4.00** over 2 of 2 renders (target >= 4.0, none below 3).
 
 ## Round 3b: seam handover styles
 
-0 of 54 rated, 18 portals.
+7 of 54 rated, 18 portals.
 
 Measured on the plain cut, before -> after the volume and timing fixes (median): level step 1.4 -> 0.1 dB, first beats 19 -> 13 ms.
 
 | Style | Clips rated | Mean | >=4 | Change from round 3 (same portals) | Flux spike |
 |---|---|---|---|---|---|
-| cut | 0 | | | | 3.90 |
-| dip | 0 | | | | 3.72 |
-| swap | 0 | | | | 4.47 |
+| cut | 2 | 3.50 | 50% | +1.00 | 3.90 |
+| dip | 3 | 2.00 | 0% | -0.33 | 3.72 |
+| swap | 2 | 2.00 | 0% | +0.00 | 4.47 |
+
+## Round 3c: seam timing
+
+59 of 59 rated.
+
+| Variant | Rated | Mean | >=4 | Change from round 3 | First-beat median ms |
+|---|---|---|---|---|---|
+| current | 20 | 3.85 | 65% | -0.30 | 10.2 |
+| early | 19 | 3.95 | 68% | -0.21 | 11.4 |
+| early_grid | 20 | 3.75 | 60% | -0.40 | 14.7 |

@@ -24,7 +24,9 @@ def song() -> np.ndarray:
     n = int(n_bars * BPB * BEAT_S * SR)
     t = np.arange(n) / SR
     beat = np.floor(t / BEAT_S).astype(int)
-    letter = np.array([PLAN[min(b // (4 * BPB), len(PLAN) - 1)] for b in range(int(beat.max()) + 1)])
+    letter = np.array(
+        [PLAN[min(b // (4 * BPB), len(PLAN) - 1)] for b in range(int(beat.max()) + 1)]
+    )
     f = np.array([ROOT[c] for c in letter])[beat]
     step = (beat % BPB) * 0.25  # the chord moves within the bar, so that order counts
     phase_t = t - beat * BEAT_S

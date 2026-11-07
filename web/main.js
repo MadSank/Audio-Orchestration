@@ -120,12 +120,19 @@ async function toggle(fromBar = 0) {
     live = startAt(0, ctx.currentTime + 0.05, (typeof fromBar === "number" ? fromBar : 0) * songs[0].barS, 0);
     lastJumpBar = typeof fromBar === "number" ? fromBar : 0;
     playing = true;
-  } else if (playing) {
-    await ctx.suspend();
-    playing = false;
   } else {
-    await ctx.resume();
-    playing = true;
+    // The state flips first: waking the audio can take a moment, and a press mustn't wait on it.
+    playing = !playing;
+    paintPlaying();
+    status();
+    if (playing) await ctx.resume();
+    else {
+      // Long enough for a helmet button's beep to finish, and a quick press of play cancels it.
+      setTimeout(() => {
+        if (!playing) ctx.suspend();
+      }, 110);
+    }
+    return;
   }
   paintPlaying();
   status();
@@ -261,12 +268,12 @@ async function cross() {
   to += next % 8;
   const when = ctx.currentTime + (next - barNow) * s.barS;
   seam(other, when, to * o.barS);
-  $("#stage").dataset.at = String(other);
-  animateGrips();
+  crossOnStage(other, (when - ctx.currentTime) * 1000);
   setTimeout(() => {
     crossing = false;
+    promote();
     status();
-  }, (when - ctx.currentTime) * 1000 + 100);
+  }, (when - ctx.currentTime) * 1000 + 250);
 }
 
 function updateObi() {
@@ -587,7 +594,27 @@ const watcher = new IntersectionObserver(
 );
 document.querySelectorAll(".step, .hero").forEach((n) => watcher.observe(n));
 
+const HANDS_UP_MS = 450; // matches .grip's transition
+const SLIDE_MS = 1500; // matches .slide's transition
 let gripTimer = 0;
+let stageTimers = [];
+
+/** The hands come up from below, carry the records across around the seam, and drop away. */
+function crossOnStage(at, untilSeamMs) {
+  const stage = $("#stage");
+  stageTimers.forEach(clearTimeout);
+  stage.classList.add("holding");
+  animateGrips();
+  const slideAt = Math.max(HANDS_UP_MS, untilSeamMs - SLIDE_MS / 2);
+  stageTimers = [
+    setTimeout(() => {
+      stage.dataset.at = String(at);
+    }, slideAt),
+    setTimeout(() => stage.classList.remove("holding"), slideAt + SLIDE_MS + 150),
+    setTimeout(() => clearInterval(gripTimer), slideAt + SLIDE_MS + 150 + HANDS_UP_MS),
+  ];
+}
+
 function animateGrips() {
   if (calm) return;
   const grips = document.querySelectorAll(".grip");
@@ -598,7 +625,6 @@ function animateGrips() {
     grips.forEach((g2, k) => {
       g2.src = GRIPS[(i + k) % 3];
     });
-    if (i > 12) clearInterval(gripTimer);
   }, TWOS * 2);
 }
 
@@ -683,7 +709,16 @@ function beep(count) {
     o.stop(ctx.currentTime + 0.1);
   };
   if (ctx.state === "running") go();
-  else ctx.resume().then(() => { go(); if (!playing) setTimeout(() => ctx.suspend(), 150); });
+  else {
+    // Paused: wake just long enough for the beep. Decide later, since this press may be the one
+    // that resumes the music.
+    ctx.resume().then(() => {
+      go();
+      setTimeout(() => {
+        if (!playing) ctx.suspend();
+      }, 150);
+    });
+  }
 }
 
 function act(key, n) {
@@ -693,8 +728,9 @@ function act(key, n) {
   beep(n);
   if (key === "play") {
     if (n === 1) {
+      const pausing = playing;
       toggle();
-      return say(`×1: ${playing ? "pause" : "play"}`);
+      return say(`×1: ${pausing ? "pause" : "play"}`);
     }
     return say(n === 2 ? "×2: Vinyl, on the phone. This page only plays it straight." : "×3: Next station, on the phone. This page has no stations.");
   }

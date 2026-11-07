@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from saics import seams
 from saics.jumps import AVOID_MAX_USES, REPEAT_ONE_GAP_S, REUSE_PENALTY, TAKE_MIN
 from saics.seams import seam_trim_db
 
@@ -184,9 +185,16 @@ class Move:
 def move_trim_db(graph: dict, cur: TrackInfo, m: Move) -> float:
     """The landing trim of this move (saics.seams). 0 for a song that ran out or a version."""
     to = graph.get(m.to)
+    if not seams.LANDING_TRIM:
+        return 0.0
     if to is None or m.kind not in ("portal", "back", "cut", "break") or m.at >= cur.n:
         return 0.0
     return seam_trim_db(cur.level_out, m.at, to.level_in, m.to_bar)
+
+
+def move_early_ms(m: Move) -> float:
+    """How far both songs' seam moves before the beat. Only where the ratings tested it."""
+    return seams.EARLY_MS if m.kind in ("portal", "back") and m.to_bar > 0 else 0.0
 
 
 class MixWalk:
@@ -441,7 +449,8 @@ def walk_path(
 ) -> tuple:
     """A whole walk: (segments, log). A segment is (track, start_bar, end_bar); log entries are
     the moves and loops with the time they happen at. The first segment after a move has two more
-    fields: (track, start_bar, end_bar, landing shift in ms, landing trim in dB)."""
+    fields: (track, start_bar, end_bar, landing shift in ms, landing trim in dB, ms both songs' seam
+    moves)."""
     w = MixWalk(graph, start, seed=seed, pool=pool)
     segs: list = []
     log: list = []
@@ -471,7 +480,7 @@ def walk_path(
                     "score": round(r.score, 3),
                 }
             )
-            seam = (r.offset_ms, move_trim_db(graph, w.cur, r))
+            seam = (r.offset_ms, move_trim_db(graph, w.cur, r), move_early_ms(r))
             w.arrive(r)
             seg_start = bar = r.to_bar
             continue
