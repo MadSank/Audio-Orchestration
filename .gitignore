@@ -40,3 +40,6 @@ eval/round3/
 eval/round3b/
 eval/round3c/
 eval/walks/
+
+# website: lint screenshots
+web/.hallmark/

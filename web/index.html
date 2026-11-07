@@ -1,22 +1,141 @@
 <!doctype html>
-<html lang="en" class="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="SAICS — Advanced audio orchestration engine for infinite playback, intelligent track transitions, and DSP-powered library management." />
-    <title>SAICS · Audio Orchestration Engine</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <style>
-      html, body { height: 100%; }
-      body { font-family: 'Inter', system-ui, sans-serif; }
-      code, .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
-    </style>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAICS: a record with no last groove</title>
+<meta name="description" content="SAICS is an Android music player for motorbike riders. It finds bars of a song that match and jumps between them, so a song never has to end.">
+<meta name="theme-color" content="#0E0C0A">
+<link rel="icon" href="assets/favicon.png">
+<link rel="preload" href="assets/fonts/ShipporiMincho-ExtraBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<noscript><style>.needs-js { display: none !important; }</style></noscript>
+</head>
+<body>
+
+<aside class="obi" aria-label="Now playing">
+  <p class="obi-name">SAICS</p>
+  <div class="obi-foot needs-js">
+    <p class="mono" id="obi-bar" aria-live="off">bar 1</p>
+    <p class="mono">116</p>
+    <p class="mono" id="obi-key">8A</p>
+    <button class="obi-play" type="button" data-toggle aria-label="Play the demo song">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-play" d="M7 4l13 8-13 8z"/><path class="i-pause" d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+    </button>
+  </div>
+</aside>
+
+<main>
+  <div class="deck-wrap">
+    <div class="deck" id="deck" aria-hidden="true">
+      <canvas id="record"></canvas>
+      <img class="finger" id="finger" src="assets/hand/hand0.webp" alt="" width="537" height="1125" hidden>
+    </div>
+
+    <section class="hero">
+      <h1>This record has no last groove</h1>
+      <p class="lede">It jumps between bars that match, so the song never ends.</p>
+      <div class="hero-actions">
+        <button class="play needs-js" type="button" data-toggle aria-label="Play the demo song">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-play" d="M7 4l13 8-13 8z"/><path class="i-pause" d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+        </button>
+        <div class="hero-words">
+          <button class="word on needs-js" type="button" id="forever" aria-pressed="true">Forever</button>
+          <a class="word" href="https://github.com/MadSank/Audio-Orchestration">Source</a>
+        </div>
+      </div>
+      <p class="mono status needs-js" data-status aria-live="polite">Pressing the demo song</p>
+      <noscript><p class="mono status">The demo needs JavaScript. The explanation below doesn’t.</p></noscript>
+    </section>
+
+    <section class="steps" aria-label="How a jump is found">
+      <article class="step" data-mode="beats">
+        <h2>First, every downbeat</h2>
+        <p>A neural beat tracker, Beat This!, marks each beat. Jumps may only land on the first beat of a bar, and the meter comes from what it hears. Four beats to a bar is never assumed.</p>
+      </article>
+      <article class="step" data-mode="compare">
+        <h2>Every bar meets every other bar</h2>
+        <p>Harmony and timbre become a fingerprint for each bar. In this map, a pale line is a stretch of music that comes back. The demo song was measured just now, in your browser.</p>
+        <canvas id="matrix" class="matrix needs-js" width="88" height="88" role="img" aria-label="A map of how alike each bar of the demo song is to every other bar. Pale diagonal lines show repeated sections."></canvas>
+      </article>
+      <article class="step" data-mode="context">
+        <h2>The neighbours have to agree</h2>
+        <p>One bar can match by luck. So four bars before the seam and four after must match too, and the two places must sit at least 16 bars apart.</p>
+        <p class="mono needs-js" id="pair"></p>
+      </article>
+      <article class="step" data-mode="jump">
+        <h2>Then a finger moves the record</h2>
+        <p>The jump waits for the downbeat, and the two bars overlap for 30 ms. A bad jump breaks all of it: no match, no downbeat, no overlap.</p>
+        <div class="words needs-js">
+          <button class="word on" type="button" id="jump-good">Jump at the next match</button>
+          <button class="word" type="button" id="jump-bad">Hear a bad one</button>
+        </div>
+        <p class="mono status needs-js" data-status></p>
+      </article>
+    </section>
+  </div>
+
+  <section class="portal">
+    <div class="portal-text">
+      <h2>Songs join the same way</h2>
+      <p>A portal needs tempos within 5%, the same chords for four bars on both sides, and no sung line across the seam. The owner’s 518 songs hold 2,341 of them.</p>
+      <button class="word on needs-js" type="button" id="cross">Cross to the next song</button>
+    </div>
+    <div class="portal-stage" id="stage" data-at="0" aria-hidden="true">
+      <div class="slide">
+        <div class="disc disc-a"><img class="grip" src="assets/hand/grip0.webp" alt="" width="537" height="1125"></div>
+        <div class="disc disc-b"><img class="grip" src="assets/hand/grip1.webp" alt="" width="537" height="1125"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ears">
+    <!--RESULTS-->
+    <h2>Ears have the last word</h2>
+    <p>No change to a jump goes in until it has been rated blind, against what it would replace. Two cleverer joins, a volume dip and a bass swap, sounded worse, so they’re gone.</p>
+  </section>
+
+  <section class="versions">
+    <div class="rings needs-js" id="rings"></div>
+    <div class="versions-text">
+      <h2>One song, every groove</h2>
+      <p>The versions of a song share one record, a ring each. Vinyl is the owner’s favourite, and the phone makes it live from any song.</p>
+      <p class="mono" id="ring-note"></p>
+    </div>
+  </section>
+
+  <section class="helmet">
+    <h2>Under your thumb</h2>
+    <p class="helmet-lede">On the bike, the phone stays in a bag with the screen off. Three buttons on a Cardo helmet intercom run everything, with a beep or a spoken word back. Try them here.</p>
+    <div class="map" id="map">
+      <div class="row">
+        <button class="key needs-js" type="button" data-key="play" aria-label="Play or pause button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg></button>
+        <ul><li><span class="mono">×1</span>Pause or resume</li><li><span class="mono">×2</span>Vinyl on or off</li><li><span class="mono">×3</span>Next station</li></ul>
+      </div>
+      <div class="row">
+        <button class="key needs-js" type="button" data-key="next" aria-label="Next button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4l12 8-12 8zM18 4h3v16h-3z"/></svg></button>
+        <ul><li><span class="mono">×1</span>Next portal</li><li><span class="mono">×2</span>A new song now</li></ul>
+      </div>
+      <div class="row">
+        <button class="key needs-js" type="button" data-key="prev" aria-label="Previous button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 4L7 12l12 8zM3 4h3v16H3z"/></svg></button>
+        <ul><li><span class="mono">×1</span>Restart, or the song before</li><li><span class="mono">×2</span>Forever on or off</li></ul>
+      </div>
+    </div>
+    <p class="mono press needs-js" id="press" aria-live="polite">&nbsp;</p>
+  </section>
+
+  <section class="phone">
+    <h2>It needs no laptop, just more patience</h2>
+    <p>A laptop analyses best. For a song you just downloaded, a small beat tracker runs on the phone: a 3:33 song took 17.5 seconds, and 62% of its jumps matched the laptop’s. Playback is always offline.</p>
+    <!--SCREENS-->
+  </section>
+</main>
+
+<footer class="foot">
+  <a class="foot-link" href="https://github.com/MadSank/Audio-Orchestration">The code is on GitHub</a>
+  <p>Android only, built from source. The two songs here are made by this page, so it carries no recordings.</p>
+</footer>
+
+<script type="module" src="main.js"></script>
+</body>
 </html>

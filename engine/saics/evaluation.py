@@ -799,6 +799,7 @@ ROUND3B_STYLES = (
 ROUND3C_VARIANTS = ("current", "early", "early_grid")
 ROUND3C_CTX_S = 10.0
 ROUND3C_PORTALS = 20
+ROUND3C_MISTAKES = {"ba7a2e5b9407"}  # the owner's first rating was a slip; the results file stays as is
 
 
 def round3c_shifts(off_ms: float, err_out, err_in) -> dict:
@@ -903,7 +904,9 @@ def report_round3c(eval_dir: Path, rater: str = "owner") -> str:
     clips = json.loads((eval_dir / "round3c" / "manifest.json").read_text("utf-8"))["clips"]
     man = {c["id"]: c for c in clips}
     got = {r["clip_id"]: r["rating"] for r in load_ratings(eval_dir / "results")
-           if r["clip_id"] in man and r.get("rater", "owner") == rater}  # fmt: skip
+           if r["clip_id"] in man and r["clip_id"] not in ROUND3C_MISTAKES
+           and r.get("rater", "owner") == rater}  # fmt: skip
+    clips = [c for c in clips if c["id"] not in ROUND3C_MISTAKES]
     lines = [
         f"{len(got)} of {len(clips)} rated.", "",
         "| Variant | Rated | Mean | >=4 | Change from round 3 | First-beat median ms |",

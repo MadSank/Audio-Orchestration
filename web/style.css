@@ -1,0 +1,175 @@
+/* Hallmark · shape: one record, kept in view while the page explains it · genre: atmospheric · theme: custom · job: listen · idea: "the page is a record that plays while you read how it never ends" · vibe: "night, vinyl, one vermilion strip, pencil"
+ * paper: #0E0C0A from the app · accent: #E8452A from the app · display: Shippori Mincho · body: Archivo Narrow · hero: the record cropped by the edges with the head over its lower half, as on the app's Now Playing · nav: none, a fixed obi strip holds the name and transport · footer: a line and a link · imagery: the product itself, its record and pencil hands · signature: a playing record whose needle a pencil finger moves at each jump
+ * axes: dark/roman-serif/warm · posture: the obi strip is a declared colour field, the app's own · contrast: pass · fold: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H4 E4 S5 R4 V4 · weakest: H, the design is the owner's, so hierarchy follows the app rather than a fresh idea
+ * waive 26b: the page has no control that is ever disabled
+ * waive 11: the round buttons share one press signal, as in the app */
+@import url("./tokens.css");
+@import url("./base.css");
+
+@font-face { font-family: "Shippori Mincho"; src: url("assets/fonts/ShipporiMincho-ExtraBold.woff2") format("woff2"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Archivo Narrow"; src: url("assets/fonts/ArchivoNarrow-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Archivo Narrow"; src: url("assets/fonts/ArchivoNarrow-SemiBold.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "IBM Plex Mono"; src: url("assets/fonts/IBMPlexMono-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+
+:root {
+  --obi: clamp(44px, 8vw, 104px);
+  --measure: 34rem;
+  --container: 1240px;
+  --gutter: clamp(20px, 5vw, 72px);
+  --deck-h: 100dvh;
+  --edge: max(var(--gutter), calc((100% - var(--container)) / 2));
+}
+
+body { font-size: 1.1875rem; line-height: 1.45; }
+h1, h2 { font-weight: 800; letter-spacing: -0.01em; line-height: 1.04; }
+h2 { font-size: clamp(2.25rem, 1.6rem + 2.6vw, 4rem); }
+p { color: var(--color-ink-2); }
+.mono { font-family: var(--font-outlier); font-size: 0.875rem; color: var(--color-ink-2); }
+
+/* The strip stays on the right edge for the whole page, as it does in the app. */
+.obi {
+  position: fixed; z-index: var(--z-sticky-nav); inset: 0 0 0 auto; width: var(--obi);
+  background: var(--color-accent); color: var(--color-accent-ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  padding: var(--space-lg) 0 var(--space-md);
+}
+.obi p { color: inherit; }
+.obi-name { font-family: var(--font-display); font-weight: 800; writing-mode: vertical-rl; font-size: clamp(1.75rem, 1rem + 3vw, 4.5rem); line-height: 1; }
+.obi-foot { display: flex; flex-direction: column; align-items: center; gap: var(--space-3xs); text-align: center; }
+.obi-foot .mono { font-size: 0.8125rem; color: var(--color-accent-ink); }
+.obi-play {
+  appearance: none; border: 0; cursor: pointer; margin-top: var(--space-sm); width: 40px; height: 40px; border-radius: 50%;
+  background: var(--color-accent-ink); color: var(--color-ink); display: grid; place-items: center; padding: 0;
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+.obi-play:hover { transform: scale(1.06); }
+.obi-play:active { transform: scale(0.95); }
+.obi-play svg { width: 18px; fill: currentColor; }
+.obi-play:focus-visible { outline-color: var(--color-accent-ink); outline-offset: 3px; }
+
+main, .foot { padding-right: var(--obi); }
+
+/* ── the record ─────────────────────────────────────────────────────── */
+.deck-wrap { position: relative; overflow: clip; }
+.deck-wrap::after { content: ""; position: absolute; inset: auto 0 0; height: 60dvh; background: linear-gradient(to top, var(--color-paper) 15%, transparent); pointer-events: none; }
+.deck {
+  position: sticky; top: 0; height: var(--deck-h); margin-bottom: calc(-1 * var(--deck-h)); overflow: clip;
+  /* Grooves without scripting; the canvas paints over them. */
+  background: repeating-radial-gradient(circle at 30% 38%, var(--color-paper-2) 0 13px, var(--color-paper-3) 13px 14px);
+}
+#record { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: var(--color-paper); }
+.finger { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; will-change: transform; pointer-events: none; }
+
+.hero {
+  position: relative; z-index: var(--z-base); min-height: 100dvh; padding: 0 var(--edge) clamp(var(--space-lg), 5vh, var(--space-xl));
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start;
+}
+.hero h1 { font-size: clamp(3rem, 1.4rem + 5.4vw, 6rem); max-width: 11em; }
+.lede { font-size: clamp(1.25rem, 1.1rem + 0.5vw, 1.625rem); margin-top: var(--space-md); color: var(--color-ink); }
+.hero-actions { display: flex; align-items: center; gap: clamp(var(--space-lg), 3vw, var(--space-xl)); margin-top: var(--space-lg); }
+.hero-words { display: flex; gap: var(--space-lg); align-items: baseline; }
+.status { margin-top: var(--space-md); min-height: 1lh; }
+
+.play {
+  appearance: none; border: 0; cursor: pointer; width: 88px; height: 88px; border-radius: 50%; padding: 0;
+  background: var(--color-ink); color: var(--color-paper); display: grid; place-items: center; flex: none;
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+.play:hover { transform: scale(1.04); }
+.play:active { transform: scale(0.96); }
+.play svg { width: 34px; fill: currentColor; }
+.i-pause { display: none; }
+.playing .i-play { display: none; }
+.playing .i-pause { display: inline; }
+
+/* The app's "word" control: a serif word that turns vermilion when it's on. */
+.word {
+  white-space: nowrap;
+  appearance: none; background: none; border: 0; padding: var(--space-xs) 0; cursor: pointer; text-decoration: none; text-align: left;
+  font-family: var(--font-display); font-weight: 800; font-size: clamp(1.25rem, 1.1rem + 0.5vw, 1.5rem); line-height: 1.15; color: var(--color-ink);
+  transition: color var(--dur-micro) linear, opacity var(--dur-micro) linear;
+}
+.word.on { color: var(--color-word); }
+.word:hover { opacity: 0.78; }
+.word:active { opacity: 0.6; }
+
+.steps { position: relative; z-index: var(--z-base); padding: 0 var(--gutter) 10dvh calc(50% + 3vw); }
+.step { min-height: 92dvh; display: flex; flex-direction: column; justify-content: center; gap: var(--space-md); max-width: var(--measure); }
+.step p { color: var(--color-ink); }
+.words { display: flex; flex-wrap: wrap; gap: var(--space-2xs) var(--space-lg); }
+.matrix { width: min(280px, 100%); aspect-ratio: 1; image-rendering: pixelated; }
+#pair { min-height: 1lh; }
+
+/* ── below the record ───────────────────────────────────────────────── */
+main > section { padding: clamp(var(--space-2xl), 12vh, var(--space-3xl)) var(--gutter); max-width: calc(var(--container) + var(--gutter) * 2); margin-inline: auto; }
+main > section p { max-width: var(--measure); }
+main > section > h2 + p { margin-top: var(--space-md); }
+
+.portal { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--space-xl); align-items: center; }
+.portal-text { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-md); }
+.portal-stage { position: relative; aspect-ratio: 1; overflow: clip; --d: 100%; }
+.slide { position: absolute; inset: 0; transition: transform 1.5s steps(18, end); }
+[data-at="1"] .slide { transform: translateX(-74%); }
+.disc {
+  position: absolute; width: 74%; aspect-ratio: 1; top: 8%; border-radius: 50%;
+  background: radial-gradient(circle, var(--label) 0 25%, transparent 25.4%), repeating-radial-gradient(circle, var(--color-paper-2) 0 7px, var(--color-paper-3) 7px 8px);
+}
+.disc-a { left: 0; --label: var(--color-accent); }
+.disc-b { left: 74%; --label: var(--color-ink); }
+.grip { position: absolute; width: 62%; max-width: none; left: 18%; top: 62%; }
+.disc-b .grip { left: 8%; top: 66%; }
+
+.ears, .phone { display: block; }
+.versions { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: var(--space-xl); align-items: center; }
+.versions-text { display: flex; flex-direction: column; gap: var(--space-md); }
+.rings { aspect-ratio: 1; max-width: 560px; }
+.rings svg { width: 100%; height: auto; overflow: visible; }
+.rings .ring { fill: none; cursor: pointer; transition: stroke var(--dur-micro) linear; }
+.rings text { font-family: var(--font-body); font-weight: 600; font-size: 19px; pointer-events: none; }
+.rings .ring:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+#ring-note { min-height: 3lh; }
+
+.helmet { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--space-md) var(--space-xl); align-items: start; }
+.helmet h2, .helmet-lede { grid-column: 1; }
+.helmet-lede { margin-top: 0; }
+.map { grid-column: 2; grid-row: 1 / span 3; display: grid; gap: var(--space-xl); }
+.press { grid-column: 1; align-self: end; }
+.row { display: flex; align-items: center; gap: clamp(var(--space-md), 3vw, var(--space-xl)); }
+.row ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-xs); }
+.row li { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.125rem, 1rem + 0.5vw, 1.375rem); line-height: 1.2; display: flex; gap: var(--space-sm); align-items: baseline; }
+.row li .mono { color: var(--color-word); }
+.key {
+  appearance: none; flex: none; cursor: pointer; width: 88px; height: 88px; border-radius: 50%; padding: 0;
+  border: 1px solid var(--color-rule); background: radial-gradient(circle, var(--color-accent) 0 45%, var(--color-paper-2) 46%);
+  display: grid; place-items: center; color: var(--color-paper);
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+.key:hover { transform: scale(1.04); }
+.key:active { transform: scale(0.94); }
+.key svg { width: 24px; fill: currentColor; }
+.press { min-height: 1lh; }
+
+.screens { margin-top: var(--space-xl); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-md); max-width: 980px; }
+.screens img { width: 100%; height: auto; border-radius: 4px; }
+
+.foot { padding-block: var(--space-xl); padding-left: var(--gutter); display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-xl); align-items: baseline; }
+.foot-link { white-space: nowrap; font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; color: var(--color-ink); }
+.foot-link:hover { color: var(--color-word); }
+.foot p { max-width: 44rem; font-size: 1rem; }
+
+/* ── a phone: the record stays above, and the text scrolls under it ──── */
+@media (max-width: 60rem) {
+  :root { --deck-h: 46dvh; }
+  .deck { margin-bottom: 0; z-index: var(--z-raised); }
+  .hero { min-height: calc(54dvh - 1px); justify-content: flex-start; padding-top: var(--space-md); }
+  .hero h1 { font-size: clamp(2.5rem, 1.5rem + 5vw, 4rem); }
+  .steps { padding: 0 var(--gutter) 6dvh; }
+  .step { min-height: 54dvh; justify-content: flex-start; padding-top: var(--space-lg); }
+  .matrix { width: min(200px, 100%); }
+  .portal, .versions, .helmet { grid-template-columns: minmax(0, 1fr); }
+  .map { grid-column: 1; grid-row: auto; }
+  .screens { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .play { width: 72px; height: 72px; }
+}
+@media (max-height: 640px) and (min-width: 60.01rem) { .hero h1 { font-size: 3.5rem; } }
