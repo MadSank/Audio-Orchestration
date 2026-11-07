@@ -64,8 +64,12 @@ data class Move(
   val offsetMs: Double = 0.0, // landing shift (portal and back moves)
 )
 
-/** engine/saics/seams.py: the landing trim, which glides back to the song's own level. */
+/** engine/saics/seams.py: the portal seam's timing, and the landing trim. */
 object Seams {
+  /** Before the beat in both songs, so the fade doesn't hold both attacks (round 3c). */
+  const val EARLY_MS = -29.0
+  /** Off since round 3c: trimmed portals rated worse. The renderer's support for it stays. */
+  const val LANDING_TRIM = false
   const val GLIDE_BARS = 4
   const val TRIM_MAX_DB = 6.0
   const val TRIM_DEADBAND_DB = 0.5
@@ -76,6 +80,10 @@ object Seams {
     val d = levelOut[exitBar] - levelIn[landBar]
     return if (abs(d) < TRIM_DEADBAND_DB) 0.0 else d.coerceIn(-TRIM_MAX_DB, TRIM_MAX_DB)
   }
+
+  /** How far a move's seam shifts in both songs: only portals, and only into a song's middle. */
+  fun earlyMs(kind: String, toBar: Int): Double =
+    if ((kind == "portal" || kind == "back") && toBar > 0) EARLY_MS else 0.0
 }
 
 /**

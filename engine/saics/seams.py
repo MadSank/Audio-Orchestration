@@ -38,9 +38,13 @@ TRIM_MAX_DB = 6.0
 TRIM_DEADBAND_DB = 0.5
 GLIDE_BARS = 4  # bars over which a trim returns to the song's own level
 # Tracked beats sit ~11 ms after the attack, so a 30 ms fade centred on them has both songs'
-# attacks inside it: A's next hit leaks through while B's is still fading in. Round 3c tests
-# moving the seam earlier in both songs (11 ms + half the fade + 3 ms), which keeps them aligned.
+# attacks inside it: A's next hit leaks through while B's is still fading in. So a portal's seam
+# moves earlier in both songs (11 ms + half the fade + 3 ms), which keeps them aligned. Round 3c:
+# 3.95 against 3.85, better on 7 portals and worse on 4. Not proof, but no regression.
 EARLY_MS = -29.0
+# Round 3c: portals trimmed by 1 dB or more fell from 4.11 to 3.67, against 4.14 to 4.00 where the
+# audio hadn't changed. So the trim is off, on the owner's call. Earlier rounds' clips still use it.
+LANDING_TRIM = False
 FLOOR_DB = -70.0
 
 

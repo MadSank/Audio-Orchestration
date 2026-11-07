@@ -485,7 +485,7 @@ class Engine(private val context: Context, private val listener: Listener) {
       if (!atEnd) log("move to ${song.title} skipped: not decoded yet")
       return false
     }
-    val at = if (atEnd) cur.pcm.frames else bars[m.at]
+    val at = if (atEnd) cur.pcm.frames else bars[m.at] + earlyFrames(m)
     val half = if (atEnd) 0 else XF_HALF
     val rho = if (m.kind == "portal" || m.kind == "back") correlation(cur.pcm, at, other.pcm, to, XF_HALF) else 0.0
     val trim = if (atEnd) 0.0 else seamTrimDb(cur, m.at, m)
@@ -499,11 +499,14 @@ class Engine(private val context: Context, private val listener: Listener) {
   /** Where a move lands: its bar, plus the shift that puts its first beat on the outgoing grid. */
   private fun landFrame(m: Move, ab: IntArray?): Int {
     if (m.toBar <= 0 || ab == null) return 0
-    val shift = (m.offsetMs / 1000 * ENGINE_RATE).roundToInt()
+    val shift = (m.offsetMs / 1000 * ENGINE_RATE).roundToInt() + earlyFrames(m)
     return maxOf(0, ab[minOf(m.toBar, ab.size - 2)] + shift)
   }
 
+  private fun earlyFrames(m: Move) = (Seams.earlyMs(m.kind, m.toBar) / 1000 * ENGINE_RATE).roundToInt()
+
   private fun seamTrimDb(cur: Loaded, atBar: Int, m: Move): Double {
+    if (!Seams.LANDING_TRIM) return 0.0
     if (m.kind != "portal" && m.kind != "back" && m.kind != "cut" && m.kind != "break") return 0.0
     val a = graph?.tracks?.get(cur.song.trackId)?.levelOut ?: return 0.0
     val b = graph?.tracks?.get(m.to)?.levelIn ?: return 0.0
@@ -611,10 +614,12 @@ class Engine(private val context: Context, private val listener: Listener) {
         if (to + XF_HALF > other.pcm.frames) return // not decoded that far yet (retried each tick)
         val bars = cur?.bars()
         var at = if (m.at < 0 || bars == null) now + 2048 else bars[minOf(m.at, bars.size - 1)]
-        if (at - XF_HALF <= now + BLOCK * 2) at = nextBarFrame(cur, now) // decoding took too long
+        if (at + earlyFrames(m) - XF_HALF <= now + BLOCK * 2) at = nextBarFrame(cur, now) // decoding took too long
         moveInFlight = m.copy(at = if (cur != null) maxOf(0, cur.barAt(at)) else 0)
+        val atBar = if (cur != null) cur.barAt(at) else 0
+        at += earlyFrames(m)
         val rho = if (m.kind == "portal" && cur != null) correlation(cur.pcm, at, other.pcm, to, XF_HALF) else 0.0
-        val trim = if (cur != null) seamTrimDb(cur, cur.barAt(at), m) else 0.0
+        val trim = if (cur != null) seamTrimDb(cur, atBar, m) else 0.0
         log("${m.kind} ${m.pair} -> ${target.title} bar ${m.toBar} shift=%.0fms trim=%.1fdB".format(m.offsetMs, trim))
         Instruction(cs, at, s, to, XF_HALF, rho, tag = TAG_MOVE, trim = dbToGain(trim), glide = glideFrames(m, ab))
       }
