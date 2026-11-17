@@ -48,12 +48,33 @@ class ForeverWalkTest {
     assertEquals(60, forever(1).lastBack)
   }
 
-  @Test fun theEndingIsAvoidedAtMostTwiceThenArrives() {
+  @Test fun noJumpIsTakenTwiceInOneVisit() {
+    repeat(20) { seed ->
+      val (taken, _) = walk(forever(seed.toLong()), 3600.0)
+      val pairs = taken.map { it.from to it.to }
+      assertEquals("seed $seed: $pairs", pairs.size, pairs.toSet().size)
+    }
+  }
+
+  @Test fun aNewVisitOrARestartGivesTheJumpsBack() {
+    val w = forever(3)
+    val (first, ended) = walk(w, 3600.0)
+    assertTrue(first.isNotEmpty() && ended)
+    w.repeatOne()
+    val (again, _) = walk(w, 3600.0)
+    assertTrue("from the top, the jumps are there again", again.isNotEmpty())
+    val v = forever(4)
+    walk(v, 3600.0)
+    v.newVisit()
+    assertTrue("back in the song, the jumps are there again", walk(v, 3600.0).first.isNotEmpty())
+  }
+
+  @Test fun theEndingIsAvoidedOnceThenArrives() {
     repeat(10) { seed ->
       val (taken, ended) = walk(forever(seed.toLong()), 3600.0)
       val avoid = taken.filter { it.why == "avoid the ending" }
       assertTrue("seed $seed: avoided at least once", avoid.isNotEmpty())
-      assertTrue("seed $seed: each loop used at most twice", avoid.groupBy { it.from to it.to }.values.all { it.size <= 2 })
+      assertTrue("seed $seed: each loop used at most once a visit", avoid.groupBy { it.from to it.to }.values.all { it.size <= ForeverWalk.AVOID_MAX_USES })
       assertTrue("seed $seed: the ending arrives once the loops are used up", ended)
     }
   }

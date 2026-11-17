@@ -75,9 +75,35 @@ export interface PlayerState {
   /** Songs waiting to be analysed on the phone, and the one in progress. */
   analysing?: number;
   analysingTitle?: string | null;
+  /** The phone's analysis, by file name: who's waiting, who's being read and how far, who can't be. */
+  analysis?: Analysis;
+  /** The playing song's file, relative to its folder. */
+  path?: string | null;
+  /** Loop points in the playing song's analysis; null when it hasn't been analysed. */
+  jumpPoints?: number | null;
   /** Forever jumps taken in this song. */
   jumps?: number;
   nextPortal?: NextPortal | null;
+}
+
+export interface Analysis {
+  queue: string[];
+  current: string | null;
+  /** How far the current song has got, 0 to 1. */
+  progress: number;
+  unreadable: Record<string, string>;
+}
+
+/** Where a song's analysis stands, in words: Crate and Now Playing say the same thing. */
+export function readingNote(path: string | null | undefined, a: Analysis | undefined): string {
+  const name = (path ?? "").split("/").pop() ?? "";
+  if (a && name) {
+    if (a.current === name) return `Reading now · ${Math.round(a.progress * 100)}%`;
+    const i = a.queue.indexOf(name);
+    if (i >= 0) return `Waiting to be read · ${i + 1} in line`;
+    if (a.unreadable[name]) return "Can't be read on the phone";
+  }
+  return "Not read yet";
 }
 
 export interface ButtonEvent {

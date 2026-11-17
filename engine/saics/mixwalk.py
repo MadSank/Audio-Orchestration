@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from saics import seams
-from saics.jumps import AVOID_MAX_USES, REPEAT_ONE_GAP_S, REUSE_PENALTY, TAKE_MIN
+from saics.jumps import AVOID_MAX_USES, REPEAT_ONE_GAP_S, TAKE_MIN
 from saics.seams import seam_trim_db
 
 DWELL = (60.0, 90.0)
@@ -132,10 +132,7 @@ class ForeverSteps:
             if options:
                 j = max(
                     options,
-                    key=lambda j: (
-                        j[3] == "repeat",
-                        j[2] - REUSE_PENALTY * use(j) + 0.002 * (bar - j[1]),
-                    ),
+                    key=lambda j: (j[3] == "repeat", j[2] + 0.002 * (bar - j[1])),
                 )
                 return self._take(j)
         if self.time >= self.next_at and here and bar < t.n and self.sec[bar] != self.landed:
@@ -144,17 +141,13 @@ class ForeverSteps:
                 j
                 for j in here
                 if j[1] not in fresh
-                and j[2] - REUSE_PENALTY * use(j) >= TAKE_MIN
+                and use(j) == 0
+                and j[2] >= TAKE_MIN
                 and t.bar_t[limit] - t.bar_t[j[1]] >= self.pace[0]
             ]
             if options:
                 return self._take(
-                    max(
-                        options,
-                        key=lambda j: (
-                            j[2] - REUSE_PENALTY * use(j) + float(self.rng.uniform(0, 0.02))
-                        ),
-                    )
+                    max(options, key=lambda j: j[2] + float(self.rng.uniform(0, 0.02)))
                 )
         if bar >= t.n:
             return "end"

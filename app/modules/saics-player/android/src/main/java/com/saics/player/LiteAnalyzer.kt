@@ -52,6 +52,33 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
   @Volatile var pending = 0
     private set
 
+  // Progress for the app: the files waiting, in order, and how far the current one has got.
+  private val waiting = ArrayList<String>()
+  @Volatile private var stage = ""
+  @Volatile private var decoding: com.saics.player.engine.Pcm? = null
+
+  /** Where each song stands: waiting (in order), the one being read and how far (0..1), and
+   *  the ones that couldn't be read, by file name. */
+  fun status(): Map<String, Any?> {
+    val queue = synchronized(waiting) { waiting.toList() }
+    val pcm = decoding
+    val progress = when (stage) {
+      "decoding" -> 0.05 + 0.55 * (pcm?.let { it.frames.toDouble() / maxOf(1, it.capacity) } ?: 0.0).coerceIn(0.0, 1.0)
+      "listening" -> 0.65
+      "beats" -> 0.85
+      else -> 0.0
+    }
+    val failed = HashMap<String, String>()
+    for (k in index.keys()) {
+      val e = index.optJSONObject(k) ?: continue
+      when {
+        e.has("failed") -> failed[k] = "failed"
+        e.has("skipped") -> failed[k] = e.getString("skipped")
+      }
+    }
+    return mapOf("queue" to queue, "current" to current, "progress" to progress, "unreadable" to failed)
+  }
+
   private fun log(msg: String) = synchronized(trace) {
     trace.addLast(msg)
     while (trace.size > 40) trace.removeFirst()
@@ -120,6 +147,7 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
       val name = nameOf(t)
       if (t.trackId.isEmpty() && canTry(name) && queued.add(name)) {
         pending++
+        synchronized(waiting) { waiting.add(name) }
         work.post { analyse(t, name) }
       }
     }
@@ -138,7 +166,9 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
   }
 
   private fun analyse(t: Track, name: String) {
-    current = t.title
+    current = name
+    stage = "opening"
+    synchronized(waiting) { waiting.remove(name) }
     val t0 = SystemClock.elapsedRealtime()
     // Written first: a native crash here takes the process down before any catch can run.
     put(name, JSONObject().put("attempts", (index.optJSONObject(name)?.optInt("attempts") ?: 0) + 1))
@@ -155,13 +185,18 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
       if (known != null && known > MAX_MS) {
         put(name, JSONObject().put("skipped", "length ${known / 1000} s"))
         log("$name: skipped, ${known / 1000} s")
+        stage = ""
         current = null
         pending--
         return
       }
       val opened = Decoder.open(context, Uri.parse(t.uri)) ?: throw IllegalStateException("won't open")
       val (pcm, job) = opened
+      stage = "decoding"
+      decoding = pcm
       job()
+      decoding = null
+      stage = "listening"
       val frames = pcm.frames
       val duration = frames.toDouble() / ENGINE_RATE
       if (pcm.failed || duration * 1000 < MIN_MS || duration * 1000 > MAX_MS) {
@@ -174,6 +209,7 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
         val t1 = SystemClock.elapsedRealtime()
         val (bl, dl) = withModel { run -> Lite.framesToLogits(spect, run) }
         val t2 = SystemClock.elapsedRealtime()
+        stage = "beats"
         val (beats, raw) = Lite.beatsFromLogits(bl, dl)
         val result = Lite.analyse(y22, duration, beats, raw)
         val lufs = Lite.integratedLufs(frames, { pcm.left(it) }, { pcm.right(it) })
@@ -194,6 +230,8 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
     } catch (e: OutOfMemoryError) {
       log("$name: out of memory; tries again next time")
     }
+    decoding = null
+    stage = ""
     current = null
     pending--
     if (pending <= 0) closeModel()

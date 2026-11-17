@@ -15,12 +15,17 @@ import java.nio.ByteOrder
  * returned as soon as decoding starts; playback may begin while the rest is decoded.
  */
 object Decoder {
+  /** Why the last [open] returned null, for the log. */
+  @Volatile var lastError: String? = null
+
   fun open(context: Context, uri: Uri): Pair<Pcm, () -> Unit>? {
+    lastError = null
     val ex = MediaExtractor()
     try {
       ex.setDataSource(context, uri, null)
     } catch (e: Exception) {
       ex.release()
+      lastError = "won't open: $e"
       return null
     }
     val track = (0 until ex.trackCount).firstOrNull {
@@ -28,6 +33,7 @@ object Decoder {
     }
     if (track == null) {
       ex.release()
+      lastError = "no audio track"
       return null
     }
     ex.selectTrack(track)
@@ -37,6 +43,7 @@ object Decoder {
       Pcm.forSeconds(durationS)
     } catch (e: OutOfMemoryError) {
       ex.release()
+      lastError = "out of memory for ${durationS.toInt()} s of audio"
       return null
     }
     return pcm to { run(ex, format, pcm) }
@@ -119,6 +126,7 @@ object Decoder {
       pcm.complete = true
     } catch (e: Exception) {
       pcm.failed = pcm.frames == 0
+      if (pcm.failed) pcm.error = "decoder: $e"
       pcm.complete = true
     } finally {
       try {

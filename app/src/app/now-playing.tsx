@@ -4,7 +4,7 @@ import { Animated, AppState, Easing, Image, Pressable, StyleSheet, useWindowDime
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, ClipPath, Defs, Path } from "react-native-svg";
 
-import SaicsPlayer, { addListener } from "../../modules/saics-player";
+import SaicsPlayer, { addListener, readingNote } from "../../modules/saics-player";
 import { displayName, versionLabel } from "../names";
 import { Mono, Narrow, ObiTitle, PlayButton, Record, Serif, SkipButton, useK, useSpin, Word } from "../obi";
 import { usePlayerState } from "../usePlayer";
@@ -163,6 +163,8 @@ export default function NowPlaying() {
   const obiH = H - 200 * k;
   const status = flash ?? (portal
     ? `${portal.kind === "cut" ? "Cut" : portal.kind === "back" ? "Back" : "Portal"} in ${portal.inBars} ${portal.inBars === 1 ? "bar" : "bars"}: ${displayName(portal.title).title}`
+    : state?.title && state.jumpPoints == null ? `${readingNote(state.path, state.analysis)} · plays straight through`
+    : state?.forever && state.jumpPoints === 0 ? "Forever · no loop points in this song"
     : state?.forever ? `Forever · ${state.jumps ?? 0} ${state.jumps === 1 ? "jump" : "jumps"}` : state?.station ?? "");
 
   return (

@@ -38,10 +38,12 @@ STRONG_STRIPE = 0.70  # a stripe this strong counts as a repeat even if segmenta
 PER_SECONDS = 20.0  # keep about one jump source per 20 s of music
 ALIGN_BARS = 4  # direct alignment searches the target within +-4 bars …
 ALIGN_MARGIN = 0.04  # … and the best offset must beat its +-1/+-2 bar neighbours by this
-REUSE_PENALTY = 0.3  # Forever walk: score penalty per earlier use of the same jump …
-TAKE_MIN = 0.6  # … and a (penalised) jump below this is skipped: keep playing instead
+TAKE_MIN = 0.6  # Forever walk: a jump scoring below this is skipped: keep playing instead
 REPEAT_ONE_GAP_S = 1.5  # (d) silence between the end and the restart
-AVOID_MAX_USES = 2  # an "avoid the ending" loop is used at most twice (no short-loop circling)
+# Owner, 2026-11-17: hearing the same jump twice in a row is boring, so each jump is taken at most
+# once per visit to a song, the "avoid the ending" loop included. Leaving the song (a portal, a
+# skip) or starting it over from the top gives them all back.
+AVOID_MAX_USES = 1
 
 
 @dataclass
@@ -301,7 +303,7 @@ def forever_path(bar_t: np.ndarray, sections: list, jumps: list, minutes: float,
     state = {"bar": 0, "start": 0, "landed": -2, "next": rng.uniform(*pace)}
     t = 0.0
     recent: list = []  # (out_time, bar) of played bars, to avoid landing in the last 60 s
-    used: dict = {}  # jump label -> times taken; reuse is penalised so the walk explores
+    used: dict = {}  # jump label -> times taken this time through the song (at most once each)
 
     def take(j: Jump, why: str):
         bar = state["bar"]
@@ -326,10 +328,9 @@ def forever_path(bar_t: np.ndarray, sections: list, jumps: list, minutes: float,
             usable = [j for j in here if j.to_bar < bar and used.get(j.label, 0) < AVOID_MAX_USES]
             options = [j for j in usable if j.to_bar not in fresh] or usable
             if options:
-                # Prefer repeat over break, then less-used and farther-back targets (variety).
+                # Prefer repeat over break, then farther-back targets (variety).
                 def pref(j, bar=bar):
-                    reuse = REUSE_PENALTY * used.get(j.label, 0)
-                    return (j.kind == "repeat", j.score - reuse + 0.002 * (bar - j.to_bar))
+                    return (j.kind == "repeat", j.score + 0.002 * (bar - j.to_bar))
 
                 take(max(options, key=pref), "avoid the ending")
                 continue
@@ -337,12 +338,11 @@ def forever_path(bar_t: np.ndarray, sections: list, jumps: list, minutes: float,
             # Never land within a minute of the last chance to avoid the ending (or of the
             # end): that would force another jump right away and ping-pong.
             limit = last_back if last_back is not None else n
-            options = [j for j in here if j.to_bar not in fresh
-                       and j.score - REUSE_PENALTY * used.get(j.label, 0) >= TAKE_MIN
+            options = [j for j in here if j.to_bar not in fresh and j.label not in used
+                       and j.score >= TAKE_MIN
                        and bar_t[limit] - bar_t[j.to_bar] >= pace[0]]  # fmt: skip
             if options:
-                j = max(options, key=lambda j: j.score - REUSE_PENALTY * used.get(j.label, 0)
-                        + rng.uniform(0, 0.02))  # fmt: skip
+                j = max(options, key=lambda j: j.score + rng.uniform(0, 0.02))
                 take(j, "pacing")
                 continue
         if bar >= n:  # the ending arrived: (c) another version, else (d) repeat one
@@ -356,6 +356,7 @@ def forever_path(bar_t: np.ndarray, sections: list, jumps: list, minutes: float,
                         "why": "song end"})  # fmt: skip
             segs.append(("gap", REPEAT_ONE_GAP_S))
             t += REPEAT_ONE_GAP_S
+            used.clear()  # from the top: every jump is new again
             state.update(bar=0, start=0, landed=-2, next=t + rng.uniform(*pace))
             continue
         recent.append((t, bar))

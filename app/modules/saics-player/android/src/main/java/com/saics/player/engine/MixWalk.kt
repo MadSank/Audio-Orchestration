@@ -155,6 +155,9 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
     cur?.let { history.add(it.key to t) }
   }
 
+  /** Songs the engine can't play just now (its bans run out); checked with [bad]. */
+  var blocked: (String) -> Boolean = { false }
+
   /** This song won't play on the phone: never walk into it. */
   fun markBad(id: String) {
     bad.add(id)
@@ -163,7 +166,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
 
   private fun allowed(id: String): Boolean {
     val g = graph.tracks[id] ?: return false
-    if (id in bad || !g.walkable) return false
+    if (id in bad || blocked(id) || !g.walkable) return false
     if (pool?.contains(id) == false) return false
     if (g.key == cur?.key) return false
     return history.takeLast(NO_REPEAT_COUNT).none { (k, at) -> k == g.key && t - at < NO_REPEAT_S }
@@ -297,13 +300,13 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
   }
 
   private fun cut(kind: String, bar: Int): Move? {
-    val id = fallback?.takeIf { it in graph.tracks && it !in bad } ?: pickTarget() ?: return null
+    val id = fallback?.takeIf { it in graph.tracks && it !in bad && !blocked(it) } ?: pickTarget() ?: return null
     return Move(kind, id, graph.tracks.getValue(id).entries.first(), bar, "cut")
   }
 
   private fun versions(): List<String> {
     val g = cur?.group.orEmpty()
-    return if (g.isEmpty()) emptyList() else graph.tracks.values.filter { it.group == g && it.id != cur?.id && it.id !in bad && it.walkable }.map { it.id }
+    return if (g.isEmpty()) emptyList() else graph.tracks.values.filter { it.group == g && it.id != cur?.id && it.id !in bad && !blocked(it.id) && it.walkable }.map { it.id }
   }
 
   private fun fallbackMove(bar: Int, looped: Double): Move? {

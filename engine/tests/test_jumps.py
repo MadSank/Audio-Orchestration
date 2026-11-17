@@ -31,6 +31,17 @@ def test_outro_is_the_last_unrepeated_section():
     assert outro_bar(sections, 64) == 56
 
 
+def _passes(log: list) -> list:
+    """The jump log split at each repeat-one: one list per time through the song."""
+    out = [[]]
+    for e in log:
+        if e["kind"] == "repeat_one":
+            out.append([])
+        else:
+            out[-1].append(e)
+    return out
+
+
 def test_pacing_and_ending_avoidance():
     bar_t, sections = _song()
     jumps = [_jump(20, 4), _jump(44, 28), _jump(52, 20)]  # 52 -> 20: last backward before outro
@@ -39,8 +50,12 @@ def test_pacing_and_ending_avoidance():
         assert _played(segs) >= 8 * 60 - 2  # reached the target length
         paced = [e["at_s"] for e in log if e["why"] == "pacing"]
         assert all(b - a >= 60 for a, b in zip(paced[:-1], paced[1:], strict=True)), paced
-        avoid = [e for e in log if e["why"] == "avoid the ending"]
-        assert 1 <= len(avoid) <= AVOID_MAX_USES  # avoided, but never circled forever
+        for one in _passes(log):  # each time through the song, from the top
+            avoid = [e for e in one if e["why"] == "avoid the ending"]
+            assert len(avoid) <= AVOID_MAX_USES  # avoided, but never circled forever
+            pairs = [(e["from"], e["to"]) for e in one]
+            assert len(pairs) == len(set(pairs)), one  # no jump twice in one pass (owner)
+        assert any(e["why"] == "avoid the ending" for e in log)
         times = [e["at_s"] for e in log]
         assert all(b - a >= 30 for a, b in zip(times[:-1], times[1:], strict=True)), log
 
@@ -49,7 +64,7 @@ def test_break_loop_when_there_is_no_repeat_jump():
     bar_t, sections = _song()
     _, log = forever_path(bar_t, sections, [_jump(50, 10, "break", 0.7)], minutes=6, outro=56)
     assert log[0]["kind"] == "break" and log[0]["why"] == "avoid the ending"
-    assert [e["kind"] for e in log].count("break") <= AVOID_MAX_USES
+    assert all([e["kind"] for e in one].count("break") <= AVOID_MAX_USES for one in _passes(log))
 
 
 def test_version_switch_then_repeat_one():
@@ -83,4 +98,4 @@ def test_short_ending_loop_is_not_circled_forever():
     bar_t, sections = _song()
     _, log = forever_path(bar_t, sections, [_jump(52, 36)], minutes=10, outro=56, has_versions=True)
     avoid = [e for e in log if e["why"] == "avoid the ending"]
-    assert len(avoid) == 2 and log[-1]["kind"] == "switch"
+    assert len(avoid) == AVOID_MAX_USES and log[-1]["kind"] == "switch"

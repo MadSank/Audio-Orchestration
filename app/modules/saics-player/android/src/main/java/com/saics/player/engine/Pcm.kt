@@ -25,6 +25,7 @@ class Pcm(val capacity: Int) {
     private set
   @Volatile var complete = false
   @Volatile var failed = false
+  @Volatile var error: String? = null // why it failed, for the log
   @Volatile var cancelled = false
 
   fun left(frame: Int): Float = buf.get(frame * 2) * SCALE

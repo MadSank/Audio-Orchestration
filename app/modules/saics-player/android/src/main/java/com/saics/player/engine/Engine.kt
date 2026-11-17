@@ -108,7 +108,8 @@ class Engine(private val context: Context, private val listener: Listener) {
   private var jumpPending: String? = null // the scheduled Forever jump, announced once executed
   private var executedSeen = 0
   private var starvedSeen = 0
-  private val bad = HashSet<String>() // songs that won't open or decode on this phone
+  private val bad = Bans() // songs that wouldn't open or decode just now (the bans run out)
+  private var skipTo: String? = null // a skip's target: it arrives with the two hands, like a portal
 
   // Mix Web (P4a).
   private var graph: PortalGraph? = null
@@ -146,7 +147,13 @@ class Engine(private val context: Context, private val listener: Listener) {
   /** `.saics/portals.json`; null or unreadable: no portals, plain playback and Forever only. */
   fun setPortals(uri: Uri?) = post {
     graph = uri?.let { readText(it) }?.let { PortalGraph.parse(it) }
-    mix = graph?.let { g -> MixWalk(g).also { it.forever = forever; it.pool = pool } }
+    mix = graph?.let { g ->
+      MixWalk(g).also { w ->
+        w.forever = forever
+        w.pool = pool
+        w.blocked = { tid -> byTrack[tid]?.id?.let { it in bad } == true }
+      }
+    }
     loaded.forEach { it?.entered = false }
     log("portal graph: ${graph?.tracks?.size ?: 0} songs")
   }
@@ -206,7 +213,10 @@ class Engine(private val context: Context, private val listener: Listener) {
   fun setQueue(songs: List<Song>, start: Int) = post {
     queue = songs
     index = start.coerceIn(0, maxOf(0, songs.size - 1))
-    songs.getOrNull(index)?.let { intent = Intent(Kind.TRACK, it) }
+    songs.getOrNull(index)?.let {
+      bad.forgive(it.id) // chosen by hand: try it again, whatever happened before
+      intent = Intent(Kind.TRACK, it)
+    }
   }
 
   fun play() {
@@ -224,7 +234,18 @@ class Engine(private val context: Context, private val listener: Listener) {
     log("next(hard=$hard) forever=$forever current=${current?.title} versions=${current?.let { versionsOf(it).size }} alt=${alt?.version}")
     val w = mix
     val here = loaded.getOrNull(renderer.slot)
-    if (hard && forever) { // a completely different song; Forever stays on
+    if (!(hard && forever) && w != null && mixActive && here != null && here.entered) {
+      val move = w.nextNow(here.barAt(renderer.frame)) // x1: a close portal
+      val song = move?.let { byTrack[it.to] }
+      if (move != null && song != null) {
+        renderer.pending.get()?.let { if (it.tag == TAG_JUMP) renderer.pending.compareAndSet(it, null) }
+        intent = Intent(Kind.MOVE, song, move = if (hard) move.copy(kind = "cut", at = -1) else move)
+        return@post
+      }
+    }
+    // x2, or x1 with no portal close by: a completely different song, now. Forever stays on.
+    // (x1 used to try another version of the song and do nothing when there was none.)
+    if (forever || mixActive) {
       val m = if (w != null && here != null && here.entered) w.newSong(here.barAt(renderer.frame)) else null
       val song = m?.let { byTrack[it.to] }
       if (m != null && song != null) {
@@ -238,25 +259,11 @@ class Engine(private val context: Context, private val listener: Listener) {
         renderer.pending.get()?.let { if (it.tag == TAG_JUMP) renderer.pending.compareAndSet(it, null) }
         intent = Intent(Kind.HARD_NEXT, other)
       }
+      if (other == null) event("error", "No other song to play")
       return@post
     }
-    if (w != null && mixActive && here != null && here.entered) {
-      val move = w.nextNow(here.barAt(renderer.frame))
-      val song = move?.let { byTrack[it.to] }
-      if (move != null && song != null) {
-        renderer.pending.get()?.let { if (it.tag == TAG_JUMP) renderer.pending.compareAndSet(it, null) }
-        intent = Intent(Kind.MOVE, song, move = if (hard) move.copy(kind = "cut", at = -1) else move)
-        return@post
-      }
-    }
-    if (forever && current != null) { // x1 stays in the song: only x2 changes songs
-      val versions = versionsOf(current!!).filter { it.id !in bad }
-      if (versions.isEmpty()) event("error", "No other version")
-      else intent = Intent(Kind.VERSION, alt ?: versions.random(rng))
-    } else {
-      queue.getOrNull(index + 1)?.let { intent = Intent(if (hard) Kind.HARD_NEXT else Kind.NEXT, it) }
-        ?: queue.firstOrNull()?.let { index = -1; intent = Intent(Kind.NEXT, it) }
-    }
+    queue.getOrNull(index + 1)?.let { intent = Intent(if (hard) Kind.HARD_NEXT else Kind.NEXT, it) }
+      ?: queue.firstOrNull()?.let { index = -1; intent = Intent(Kind.NEXT, it) }
   }
 
   fun previous() = post {
@@ -535,6 +542,7 @@ class Engine(private val context: Context, private val listener: Listener) {
       "trackId" to cur.song.trackId, "bpm" to (b?.bpm ?: 0.0), "camelot" to (b?.camelot ?: ""),
       "sections" to sections.mapIndexed { i, x -> mapOf("bars" to (x.endBar - x.startBar), "kind" to (kinds?.getOrNull(i) ?: "section")) },
       "sectionKind" to (kinds?.getOrNull(sectionIndex) ?: ""), "jumps" to jumps,
+      "jumpPoints" to b?.jumps?.size, // null: the song hasn't been analysed
       "nextPortal" to p?.let { m ->
         val t = g?.tracks?.get(m.to)
         val song = byTrack[m.to]
@@ -595,7 +603,7 @@ class Engine(private val context: Context, private val listener: Listener) {
       return
     }
     if (loaded[s]?.pcm?.failed == true) {
-      unplayable(target)
+      unplayable(target, loaded[s]?.pcm?.error)
       return
     }
     if (!ready(s)) return
@@ -649,15 +657,15 @@ class Engine(private val context: Context, private val listener: Listener) {
       Kind.TRACK, Kind.MOVE -> {}
       else -> event("track", target.title)
     }
+    skipTo = if (it.kind == Kind.HARD_NEXT || it.kind == Kind.NEXT) target.id else null
   }
 
   /** A song that won't open or decode: never again this session, and whoever wanted it moves on. */
-  private fun unplayable(song: Song) {
-    if (bad.add(song.id)) {
-      log("can't play ${song.title}: skipping it")
+  private fun unplayable(song: Song, why: String? = null) {
+    if (bad.strike(song.id)) {
+      log("can't play ${song.title}: ${why ?: "no audio came out"}; skipping it for now")
       event("error", "Skipping a song that won't play")
     }
-    mix?.markBad(song.trackId)
     if (alt?.id == song.id) alt = null
     if (plan?.to == song.trackId) plan = null
     val i = slotOf(song)
@@ -708,7 +716,11 @@ class Engine(private val context: Context, private val listener: Listener) {
           l.cameOffsetMs = mv.offsetMs
         }
         event("portal", "${mv.kind}|${l.song.title}") // only a real portal lands on the beat
+      } else if (skipTo == l.song.id) {
+        event("portal", "cut|${l.song.title}") // a skip: the same two hands, without the beat match
       }
+      skipTo = null
+      l.walk?.newVisit() // back in a song it played before: every jump is new again
       index = queue.indexOfFirst { it.id == l.song.id }.let { if (it >= 0) it else index }
       log("playing ${l.song.title} [${l.song.version}] bundle=${l.bundle != null} decoded=${l.pcm.complete}")
       l.landBar = landBar // a version switch landed mid-song: the walk starts there
@@ -780,7 +792,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     loaded[free]?.pcm?.cancelled = true
     log("load ${song.title} [${song.version}] into slot $free")
     val opened = Decoder.open(context, song.uri) ?: run {
-      unplayable(song)
+      unplayable(song, Decoder.lastError)
       return null
     }
     val (pcm, job) = opened

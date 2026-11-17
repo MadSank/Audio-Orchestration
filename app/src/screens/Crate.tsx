@@ -4,7 +4,7 @@ import { FlatList, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
 
-import SaicsPlayer, { type PortalGroup, type Track } from "../../modules/saics-player";
+import SaicsPlayer, { type Analysis, type PortalGroup, readingNote, type Track } from "../../modules/saics-player";
 import { artistLine, displayName, versionLabel } from "../names";
 import { keyColor, MiniRecord, Mono, Narrow, Serif, useK, Word } from "../obi";
 import { type SongGroup, useLibrary, usePlayerState } from "../usePlayer";
@@ -27,6 +27,9 @@ export default function Crate() {
   const [filter, setFilter] = useState<Filter>("all");
   const [open, setOpen] = useState<string | null>(null);
   const [portals, setPortals] = useState<PortalGroup[]>([]);
+  const a = state?.analysis;
+  const left = a ? a.queue.length + (a.current ? 1 : 0) : 0;
+  const reading = left ? `READING ON THE PHONE · ${left} LEFT${a?.current ? ` · ${Math.round(a.progress * 100)}% OF THIS ONE` : ""}` : null;
 
   const trackId = state?.trackId;
   useEffect(() => {
@@ -70,6 +73,7 @@ export default function Crate() {
           <Word label="Groups" size={17} onPress={() => router.push("/groups")} />
         </View>
         <Mono>{loading ? "LOADING…" : `${groups.length} SONGS · ${tracks.length} VERSIONS`}</Mono>
+        {reading ? <Mono c={color.vermilion}>{reading}</Mono> : null}
         <View style={s.search}>
           <Svg width={20} height={20} viewBox="0 0 20 20">
             <Circle cx={8.5} cy={8.5} r={6} fill="none" stroke={color.vermilion} strokeWidth={2} />
@@ -94,7 +98,7 @@ export default function Crate() {
         initialNumToRender={10}
         windowSize={7}
         renderItem={({ item, index }) => (
-          <Row group={item} index={index} open={open === item.id} onToggle={() => setOpen(open === item.id ? null : item.id)} />
+          <Row group={item} index={index} analysis={state?.analysis} open={open === item.id} onToggle={() => setOpen(open === item.id ? null : item.id)} />
         )}
       />
       <MiniRecord state={state} />
@@ -102,7 +106,7 @@ export default function Crate() {
   );
 }
 
-function Row({ group, index, open, onToggle }: { group: SongGroup; index: number; open: boolean; onToggle: () => void }) {
+function Row({ group, index, analysis, open, onToggle }: { group: SongGroup; index: number; analysis?: Analysis; open: boolean; onToggle: () => void }) {
   const m = main(group);
   const n = group.versions.length;
   const analysed = group.versions.some((v) => v.trackId);
@@ -110,7 +114,7 @@ function Row({ group, index, open, onToggle }: { group: SongGroup; index: number
   const dx = Math.round(-46 + 34 * Math.sin(index * 0.82));
   const note = analysed
     ? [m.camelot, artist, n > 1 ? `${n} versions` : ""].filter(Boolean).join(" · ")
-    : "Not read yet";
+    : readingNote(m.path, analysis);
   return (
     <View>
       <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => (n > 1 ? onToggle() : SaicsPlayer.playTrack(m.uri))}
@@ -127,16 +131,16 @@ function Row({ group, index, open, onToggle }: { group: SongGroup; index: number
           <Mono c={analysed ? color.paperDim : color.vermilion} style={{ marginTop: 3 }}>{note}</Mono>
         </View>
       </Pressable>
-      {open ? group.versions.map((v) => <Pressing key={v.uri} track={v} left={dx + 124} />) : null}
+      {open ? group.versions.map((v) => <Pressing key={v.uri} track={v} analysis={analysis} left={dx + 124} />) : null}
     </View>
   );
 }
 
-function Pressing({ track, left }: { track: Track; left: number }) {
+function Pressing({ track, analysis, left }: { track: Track; analysis?: Analysis; left: number }) {
   return (
     <Pressable accessibilityRole="button" onPress={() => SaicsPlayer.playTrack(track.uri)} style={({ pressed }) => ({ minHeight: 48, justifyContent: "center", paddingLeft: left, paddingRight: 16, opacity: pressed ? 0.6 : 1 })}>
       <Serif size={17} numberOfLines={1}>{versionLabel(track.version)}</Serif>
-      <Mono>{track.trackId ? `${Math.round(track.bpm)} BPM · ${track.camelot || "phone"}` : "Not read yet"}</Mono>
+      <Mono>{track.trackId ? `${Math.round(track.bpm)} BPM · ${track.camelot || "phone"}` : readingNote(track.path, analysis)}</Mono>
     </Pressable>
   );
 }

@@ -44,7 +44,7 @@ class ForeverWalk(
   private var landed = -2
   private var nextAt = uniform()
   private val recent = ArrayDeque<Pair<Double, Int>>() // (time, bar) of bars played
-  private val used = HashMap<String, Int>()
+  private val used = HashMap<String, Int>() // jump label -> times taken this visit (at most once)
 
   private fun uniform() = pace.first + (pace.second - pace.first) * rng.nextDouble()
 
@@ -68,7 +68,7 @@ class ForeverWalk(
       if (options.isNotEmpty()) {
         val j = options.maxWithOrNull(
           compareBy<Bundle.Jump> { it.kind == "repeat" }
-            .thenBy { it.score - REUSE_PENALTY * (used[it.label] ?: 0) + 0.002 * (bar - it.toBar) },
+            .thenBy { it.score + 0.002 * (bar - it.toBar) },
         )!!
         return take(j, "avoid the ending")
       }
@@ -76,11 +76,11 @@ class ForeverWalk(
     if (t >= nextAt && here.isNotEmpty() && bar < n && sec[bar] != landed) {
       val limit = lastBack ?: n
       val options = here.filter {
-        it.toBar !in fresh && it.score - REUSE_PENALTY * (used[it.label] ?: 0) >= TAKE_MIN &&
+        it.toBar !in fresh && it.label !in used && it.score >= TAKE_MIN &&
           barT[limit] - barT[it.toBar] >= pace.first
       }
       if (options.isNotEmpty()) {
-        val j = options.maxByOrNull { it.score - REUSE_PENALTY * (used[it.label] ?: 0) + rng.nextDouble() * 0.02 }!!
+        val j = options.maxByOrNull { it.score + rng.nextDouble() * 0.02 }!!
         return take(j, "pacing")
       }
     }
@@ -97,6 +97,11 @@ class ForeverWalk(
     return Step.Play(j.toBar, j, why)
   }
 
+  /** The song was left (a portal, a skip) and is playing again: every jump is new again. */
+  fun newVisit() {
+    used.clear()
+  }
+
   /** A bar played without a walk decision (keeps the clock and the recent list right). */
   fun plain(bar: Int) {
     if (bar in 0 until n) played(bar)
@@ -110,15 +115,15 @@ class ForeverWalk(
   /** Repeat-one: the gap counts as played time, then the walk starts over at bar 0. */
   fun repeatOne() {
     t += REPEAT_ONE_GAP_S
+    used.clear() // from the top: every jump is new again
     landed = -2
     nextAt = t + uniform()
   }
 
   companion object {
-    // engine/saics/jumps.py
-    const val REUSE_PENALTY = 0.3
+    // engine/saics/jumps.py. Each jump at most once per visit (owner, 2026-11-17).
     const val TAKE_MIN = 0.6
     const val REPEAT_ONE_GAP_S = 1.5
-    const val AVOID_MAX_USES = 2
+    const val AVOID_MAX_USES = 1
   }
 }

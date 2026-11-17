@@ -301,10 +301,11 @@ class PlaybackService : MediaLibraryService() {
   fun state(): Map<String, Any?> {
     val t = currentTrack()
     return mapOf(
-      "isPlaying" to player.isPlaying, "title" to t?.title, "version" to t?.version, "group" to t?.group,
+      "isPlaying" to player.isPlaying, "title" to t?.title, "path" to t?.path, "version" to t?.version, "group" to t?.group,
       "forever" to forever, "vinyl" to vinyl, "station" to STATIONS[station], "stationIndex" to station,
       "queueLength" to player.mediaItemCount, "position" to player.engine.positionMs(), "duration" to player.engine.durationMs(),
       "libraryCount" to library.size, "analysing" to lite.pending, "analysingTitle" to lite.current,
+      "analysis" to lite.status(),
       "liked" to (t != null && t.uri in liked),
       "versionIndex" to versions.indexOfFirst { it.uri == t?.uri } + 1, "versionCount" to versions.size,
       "versions" to versions.map { mapOf("uri" to it.uri, "title" to it.title, "version" to it.version) },
