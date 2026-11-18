@@ -99,3 +99,44 @@ def test_short_ending_loop_is_not_circled_forever():
     _, log = forever_path(bar_t, sections, [_jump(52, 36)], minutes=10, outro=56, has_versions=True)
     avoid = [e for e in log if e["why"] == "avoid the ending"]
     assert len(avoid) == AVOID_MAX_USES and log[-1]["kind"] == "switch"
+
+
+def _one_block_song(n=80, rep=(10, 46), length=24, seed=0):
+    """n bars of random features in ONE section, with bars rep[0]..+length repeated at rep[1]."""
+    from saics.jumps import BarInfo
+    from saics.schema import Section
+
+    rng = np.random.default_rng(seed)
+    feats = rng.normal(size=(n, 30))
+    a, b = rep
+    feats[b : b + length] = feats[a : a + length] + 0.05 * rng.normal(size=(length, 30))
+    info = BarInfo(
+        bar_t=np.arange(n + 1) * 2.0, feats=feats, vocal_chroma=np.ones((n, 12)),
+        vocal=np.zeros(n), vocal_edge=np.zeros(n), energy=np.full(n, 0.8), duration=2.0 * n,
+    )  # fmt: skip
+    return info, [Section(start_bar=0, end_bar=n, group=0)], list(range(0, 4 * n + 1, 4))
+
+
+def test_the_fallback_finds_a_repeat_the_sections_hid(monkeypatch):
+    from saics import jumps as J
+
+    info, sections, downbeats = _one_block_song()
+    monkeypatch.setattr(J, "FALLBACK_CTX_MEAN", None)
+    assert J.find_jumps(info, sections, [], downbeats) == []  # one section: nothing allowed
+    monkeypatch.setattr(J, "FALLBACK_CTX_MEAN", 0.45)
+    found = J.find_jumps(info, sections, [], downbeats)
+    assert found and all(abs(abs(j.to_bar - j.from_bar) - 36) <= 1 for j in found)
+
+
+def test_the_fallback_leaves_songs_with_jumps_alone(monkeypatch):
+    from saics import jumps as J
+    from saics.schema import Section
+
+    info, _, downbeats = _one_block_song()
+    sections = [Section(start_bar=0, end_bar=10, group=0), Section(start_bar=10, end_bar=34, group=1),
+                Section(start_bar=34, end_bar=46, group=2), Section(start_bar=46, end_bar=70, group=1),
+                Section(start_bar=70, end_bar=80, group=3)]  # fmt: skip
+    monkeypatch.setattr(J, "FALLBACK_CTX_MEAN", None)
+    normal = J.find_jumps(info, sections, [], downbeats)
+    monkeypatch.setattr(J, "FALLBACK_CTX_MEAN", 0.45)
+    assert normal and J.find_jumps(info, sections, [], downbeats) == normal

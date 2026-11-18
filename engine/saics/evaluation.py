@@ -280,6 +280,9 @@ def run_eval(args) -> int:
     if args.action == "build3c":
         build_round3c(Path(args.folder), root)
         return 0
+    if args.action == "build4":
+        build_round4(Path(args.folder), root)
+        return 0
     if args.action == "feedback":
         write_jump_feedback(Path(args.folder), root)
         write_portal_feedback(Path(args.folder), root)
@@ -304,6 +307,8 @@ def run_eval(args) -> int:
             md += "\n\n## Round 3b: seam handover styles\n\n" + report_round3b(root)
         if (root / "round3c" / "manifest.json").exists():
             md += "\n\n## Round 3c: seam timing\n\n" + report_round3c(root)
+        if (root / "round4" / "manifest.json").exists():
+            md += "\n\n## Round 4: loop points for songs that had none\n\n" + report_round4(root)
         (root / "report.md").write_text(md + "\n", encoding="utf-8")
         print(md)
         return 0
@@ -558,14 +563,16 @@ def write_jump_feedback(folder: Path, eval_dir: Path, rater: str = "owner", log=
     import csv as _csv
 
     man = {}
-    for sub in ("round2", "round2b"):
+    for sub in ("round2", "round2b", "round4"):
         p = Path(eval_dir) / sub / "manifest.json"
         if p.exists():
             man.update({c["id"]: c for c in json.loads(p.read_text("utf-8"))["clips"]})
     rows = []
     for r in load_ratings(Path(eval_dir) / "results"):
         c = man.get(r["clip_id"])
-        if not c or c["variant"] != "current" or r.get("rater", "owner") != rater:
+        if not c or c["variant"] not in ("current", *ROUND4_VARIANTS):
+            continue
+        if r.get("rater", "owner") != rater:
             continue
         action = "keep" if r["rating"] == 5 else "ban" if r["rating"] <= 2 else None
         if action:
@@ -996,3 +1003,168 @@ def write_portal_feedback(folder: Path, eval_dir: Path, rater: str = "owner", lo
         _csv.writer(f).writerows(rows)
     log(f"{len(rows)} portal feedback rows -> {out}")
     return len(rows)
+
+
+# ── round 4: loop points for songs that had none (owner, 2026-11-17) ────────────
+
+ROUND4_FALLBACK_MARK = 0.45  # jumps.FALLBACK_CTX_MEAN under test
+ROUND4_N = {"fallback": 20, "cleaned": 10, "control": 10}
+ROUND4_MUST = ("群青  YOASOBI1978年.mp3",)  # the owner's favourite that started it
+ROUND4_VARIANTS = tuple(ROUND4_N)
+
+
+def _split_ids(folder: Path) -> list:
+    """Songs whose beats split-beat cleaning would change (from their bundles, no audio)."""
+    from saics.structure import clean_split_beats
+
+    saics_dir = folder / ".saics"
+    out = []
+    for t in json.loads((saics_dir / "library.json").read_text("utf-8"))["tracks"]:
+        b = json.loads((saics_dir / "tracks" / f"{t['id']}.json").read_text("utf-8"))
+        beats = np.asarray(b["beats"], dtype=float)
+        if len(clean_split_beats(beats)) != len(beats):
+            out.append(t["id"])
+    return out
+
+
+def _jumps_for(b: dict, feats, feedback, mark: float | None) -> list:
+    """Jumps for a bundle's fields and features, with the fallback pass at `mark` (None: off)."""
+    from saics import jumps as J
+    from saics.analysis import compute_jumps
+    from saics.schema import Break, Section
+
+    was = J.FALLBACK_CTX_MEAN
+    J.FALLBACK_CTX_MEAN = mark
+    try:
+        return compute_jumps(
+            b["beats"], b["downbeats"], [Section(**s) for s in b["sections"]],
+            [Break(**x) for x in b.get("breaks", [])], b["bar_energy"], b["vocal_activity"],
+            b["track"]["duration_s"], feats, feedback,
+        )  # fmt: skip
+    finally:
+        J.FALLBACK_CTX_MEAN = was
+
+
+def _times(b: dict, jumps) -> set:
+    beats = np.asarray(b["beats"], dtype=float)
+    return {(round(float(beats[j.from_beat]), 1), round(float(beats[j.to_beat]), 1)) for j in jumps}
+
+
+def round4_candidates(folder: Path, re_dir: Path) -> dict:
+    """variant -> [(song, bundle dict, best new jump)]. `re_dir` holds the cleaned re-analysis.
+
+    fallback: no jumps today, and only the fallback pass finds any (on cleaned beats where the
+    song has splits). cleaned: a song with splits whose cleaned analysis finds a jump it didn't
+    have. control: an ordinary song without splits, its best jump today."""
+    from saics.analysis import read_jump_feedback
+    from saics.schema import Jump
+
+    folder, re_dir = Path(folder), Path(re_dir)
+    saics_dir = folder / ".saics"
+    fb = read_jump_feedback(saics_dir)
+    out: dict = {v: [] for v in ROUND4_VARIANTS}
+    for t in json.loads((saics_dir / "library.json").read_text("utf-8"))["tracks"]:
+        tid, rel = t["id"], t["file"]
+        fpath = saics_dir / "features" / f"{tid}.npz"
+        if not fpath.exists() or t.get("class", "music") != "music":
+            continue
+        old = json.loads((saics_dir / "tracks" / f"{tid}.json").read_text("utf-8"))
+        clean = (re_dir / "tracks" / f"{tid}.json").exists()
+        if clean:
+            b = json.loads((re_dir / "tracks" / f"{tid}.json").read_text("utf-8"))
+            feats = dict(np.load(re_dir / "features" / f"{tid}.npz"))
+        else:
+            b, feats = old, dict(np.load(fpath))
+        had = [Jump(**j) for j in old.get("jumps", [])]
+        if not had:
+            normal = _jumps_for(b, feats, fb.get(rel), None)
+            if normal and clean:
+                out["cleaned"].append((rel, b, max(normal, key=lambda j: j.score)))
+            elif not normal:
+                loose = _jumps_for(b, feats, fb.get(rel), ROUND4_FALLBACK_MARK)
+                if loose:
+                    out["fallback"].append((rel, b, max(loose, key=lambda j: j.score)))
+        elif clean:
+            normal = _jumps_for(b, feats, fb.get(rel), None)
+            seen = _times(old, had)
+            new = [j for j in normal if _times(b, [j]).isdisjoint(seen)]
+            if new:
+                out["cleaned"].append((rel, b, max(new, key=lambda j: j.score)))
+        else:
+            out["control"].append((rel, b, max(had, key=lambda j: j.score)))
+    return out
+
+
+def build_round4(folder: Path, eval_dir: Path, seed: int = 4, log=print) -> dict:
+    """Blind jump clips (15 s each side): fallback jumps on songs that had none, new jumps from
+    cleaned beats, and ordinary jumps to compare against. First re-analyses the songs with split
+    beats into eval/round4/reanalysis (the library is untouched; finished songs are kept)."""
+    from saics.reanalyse import reanalyse
+
+    folder, out_dir = Path(folder), Path(eval_dir) / "round4"
+    re_dir = out_dir / "reanalysis"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    split = _split_ids(folder)
+    log(f"{len(split)} songs have split beats: re-analysing them")
+    reanalyse(folder, split, re_dir, log=log)
+    cands = round4_candidates(folder, re_dir)
+    rng = np.random.default_rng(seed)
+    manifest = {
+        "round": "4", "context_s": ROUND2_CTX_S, "fallback_mark": ROUND4_FALLBACK_MARK,
+        "available": {v: len(c) for v, c in cands.items()}, "clips": [],
+    }  # fmt: skip
+    for variant, n in ROUND4_N.items():
+        pool = cands[variant]
+        must = [c for c in pool if c[0] in ROUND4_MUST]
+        rest = [c for c in pool if c[0] not in ROUND4_MUST]
+        k = max(0, min(n - len(must), len(rest)))
+        picked = must + [rest[i] for i in rng.choice(len(rest), size=k, replace=False)]
+        for song, b, j in picked:
+            y = decode(folder / song, sr=OUT_SR, mono=False)
+            y = np.stack([y, y]) if y.ndim == 1 else y
+            beats = np.asarray(b["beats"])
+            t_from, t_to = float(beats[j.from_beat]), float(beats[j.to_beat])
+            clip, seam_s = _seam_clip(y, OUT_SR, t_from, t_to, j.xfade_ms)
+            mono = clip.mean(0)
+            cid = secrets.token_hex(6)
+            sf.write(out_dir / f"{cid}.wav", _normalise(clip.T, OUT_SR), OUT_SR, subtype="PCM_16")
+            manifest["clips"].append({
+                "id": cid, "kind": "jump", "round": "4", "song": song, "variant": variant,
+                "seam_s": round(seam_s, 3), "duration_s": round(clip.shape[1] / OUT_SR, 3),
+                "score": round(float(j.score), 4),
+                "reveal": {"label": j.label, "from_s": round(t_from, 2), "to_s": round(t_to, 2),
+                           "text": f"{j.label}  ({_mmss(t_from)} → {_mmss(t_to)} in the song, "
+                                   f"{t_to - t_from:+.0f} s)"},
+                "metrics": seam_metrics(mono, OUT_SR, seam_s, _beats(mono, OUT_SR)),
+            })  # fmt: skip
+        log(f"  {variant}: {len(picked)} clips, from {len(pool)} songs")
+    rng.shuffle(manifest["clips"])
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8"
+    )
+    return manifest
+
+
+def report_round4(eval_dir: Path, rater: str = "owner") -> str:
+    """Each kind of jump: how many rated, the mean, the share rated 4+ and 2-; the must-hears."""
+    eval_dir = Path(eval_dir)
+    man = json.loads((eval_dir / "round4" / "manifest.json").read_text("utf-8"))
+    clips = man["clips"]
+    ids = {c["id"] for c in clips}
+    got = {r["clip_id"]: r["rating"] for r in load_ratings(eval_dir / "results")
+           if r["clip_id"] in ids and r.get("rater", "owner") == rater}  # fmt: skip
+    lines = [
+        f"{len(got)} of {len(clips)} rated. Songs per kind: {man.get('available')}.",
+        "", "| Kind | Rated | Mean | >=4 | <=2 |", "|---|---|---|---|---|",
+    ]  # fmt: skip
+    for v in ROUND4_VARIANTS:
+        rs = [got[c["id"]] for c in clips if c["variant"] == v and c["id"] in got]
+        if not rs:
+            lines.append(f"| {v} | 0 | | | |")
+            continue
+        hi, lo = 100 * np.mean([x >= 4 for x in rs]), 100 * np.mean([x <= 2 for x in rs])
+        lines.append(f"| {v} | {len(rs)} | {np.mean(rs):.2f} | {hi:.0f}% | {lo:.0f}% |")
+    for c in clips:
+        if c["song"] in ROUND4_MUST and c["id"] in got:
+            lines.append(f"\n{c['song']}: rated {got[c['id']]} ({c['reveal']['label']})")
+    return "\n".join(lines)

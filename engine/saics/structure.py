@@ -106,6 +106,38 @@ def tempo_from_beats(beats: np.ndarray) -> tuple:
     return round(bpm, 2), within >= 0.9, round(within, 3)
 
 
+SPLIT_FRAC = 0.4  # a gap under this share of the local beat interval is one beat split in two
+SPLIT_WINDOW = 8  # beat intervals either side that set the local interval
+
+
+def clean_split_beats(beats: np.ndarray) -> np.ndarray:
+    """Beat This sometimes splits one beat in two (gaps of 0.38 s and 0.08 s where one 0.46 s
+    beat should be). Each split scrambles its bar's features, and a song full of them finds no
+    repeats (YOASOBI 群青: 49 splits, no jumps; owner, 2026-11-17). Of each too-close pair, keep
+    the beat that leaves the steadier spacing: the one whose neighbours sit nearer the local
+    interval."""
+    b = np.asarray(beats, dtype=float)
+    if len(b) < 4:
+        return b
+    keep = list(b)
+    i = 0
+    while i < len(keep) - 1:
+        ibi = np.diff(keep)
+        lo, hi = max(0, i - SPLIT_WINDOW), min(len(ibi), i + SPLIT_WINDOW + 1)
+        local = float(np.median(ibi[lo:hi]))
+        if keep[i + 1] - keep[i] >= SPLIT_FRAC * local:
+            i += 1
+            continue
+        # Dropping beat i leaves the gap keep[i-1] -> keep[i+1]; dropping i+1, keep[i] -> keep[i+2].
+        cost_i = abs(keep[i + 1] - keep[i - 1] - local) if i > 0 else np.inf
+        cost_j = abs(keep[i + 2] - keep[i] - local) if i + 2 < len(keep) else np.inf
+        if np.isinf(cost_i) and np.isinf(cost_j):
+            cost_i = 0.0
+        del keep[i if cost_i < cost_j else i + 1]
+        i = max(0, i - 1)
+    return np.asarray(keep, dtype=float)
+
+
 # ── key (D23) ─────────────────────────────────────────────────────────────────
 
 

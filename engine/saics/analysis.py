@@ -51,6 +51,7 @@ from saics.structure import (  # noqa: E402  (re-exported)
     CAMELOT_MINOR,
     PITCHES,
     bar_slot_features,
+    clean_split_beats,
     key_from_chroma,
     meter_from_downbeats,
     regularize_downbeats,
@@ -86,6 +87,10 @@ def downbeat_indices(beats: np.ndarray, downbeat_times: np.ndarray, tol: float =
             out.append(i)
     return out
 
+
+# Split-beat cleaning (structure.clean_split_beats). Off until the owner has rated the jumps it
+# finds (hard rule 6); `saics eval build4` turns it on for its own re-analysis.
+CLEAN_SPLIT_BEATS = False
 
 BREAK_DB = -15.0  # a break is at least this far below the track's typical level …
 SILENCE_DB = -30.0  # … and a "silence" at least this far
@@ -260,6 +265,8 @@ def analyse_track(path: Path, rel: str, meta: dict) -> tuple:
 
     beats, dbt = _beat_model()(y, SR)
     beats = np.asarray(beats, dtype=float)
+    if CLEAN_SPLIT_BEATS:
+        beats = clean_split_beats(beats)
     raw_db = downbeat_indices(beats, np.asarray(dbt, dtype=float))
     bpm, stable, tconf = tempo_from_beats(beats)
 

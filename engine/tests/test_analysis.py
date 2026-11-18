@@ -186,3 +186,33 @@ def test_key_tolerates_a_mask_one_longer_than_the_chroma():
     mask = np.zeros(11, bool)
     mask[::4] = True
     assert key_from_chroma(prof, prof, mask)[:2] == ("G", "major")
+
+
+def test_a_split_beat_loses_the_half_off_the_grid():
+    from saics.structure import clean_split_beats
+
+    grid = np.arange(0, 20, 0.46)
+    split = np.sort(np.r_[grid, grid[10] - 0.08, grid[25] - 0.08])  # 0.38 + 0.08 for one beat
+    out = clean_split_beats(split)
+    assert len(out) == len(grid)
+    assert np.allclose(out, grid)
+
+
+def test_clean_beats_are_left_alone():
+    from saics.structure import clean_split_beats
+
+    swing = np.cumsum(np.tile([0.5, 0.42, 0.55, 0.47], 20))  # uneven but no splits
+    assert np.array_equal(clean_split_beats(swing), swing)
+    slowing = np.cumsum(np.linspace(0.4, 0.7, 80))  # a ritardando keeps every beat
+    assert np.array_equal(clean_split_beats(slowing), slowing)
+
+
+def test_a_comparison_reanalysis_never_writes_into_the_music_folder(tmp_path):
+    import pytest
+
+    from saics.reanalyse import reanalyse
+
+    with pytest.raises(ValueError):
+        reanalyse(tmp_path, [], tmp_path / ".saics" / "compare")
+    with pytest.raises(ValueError):
+        reanalyse(tmp_path, [], tmp_path)

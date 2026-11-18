@@ -35,6 +35,10 @@ PREFERRED_JUMP_S = 30.0
 CTX_MEAN = 0.55  # mean similarity along the stripe ...
 CTX_MIN = 0.20  # ... and no single bar pair below this
 STRONG_STRIPE = 0.70  # a stripe this strong counts as a repeat even if segmentation disagrees
+# A song that finds no jumps at all gets a second, looser pass (owner, 2026-11-17: 114 of 518
+# songs had none, YOASOBI 群青 among them). It trusts the stripe over the sections: any two
+# places at this mean may pair, even inside one long section. None = off, until rated (rule 6).
+FALLBACK_CTX_MEAN: float | None = None
 PER_SECONDS = 20.0  # keep about one jump source per 20 s of music
 ALIGN_BARS = 4  # direct alignment searches the target within +-4 bars …
 ALIGN_MARGIN = 0.04  # … and the best offset must beat its +-1/+-2 bar neighbours by this
@@ -141,8 +145,9 @@ def best_alignment(info: BarInfo, a: int, b: int) -> tuple:
 
 
 def find_jumps(info: BarInfo, sections: list, breaks: list, downbeats: list,
-               ctx_mean: float = CTX_MEAN) -> list:  # fmt: skip
-    """Structural jump candidates, aligned, scored and pruned (see module doc)."""
+               ctx_mean: float = CTX_MEAN, loose: bool = False) -> list:  # fmt: skip
+    """Structural jump candidates, aligned, scored and pruned (see module doc). `loose` is the
+    fallback pass (FALLBACK_CTX_MEAN) for a song the normal rules leave without a jump."""
     n = len(info.feats)
     if n < 2 * MIN_JUMP_BARS or not sections:
         return []
@@ -170,15 +175,17 @@ def find_jumps(info: BarInfo, sections: list, breaks: list, downbeats: list,
     for a in range(CONTEXT_BARS, n - CONTEXT_BARS):
         for b in range(CONTEXT_BARS, n - CONTEXT_BARS):
             dist_bars = abs(a - b)
-            if dist_bars < MIN_JUMP_BARS or sec[a] == sec[b] or sec[a] < 0 or sec[b] < 0:
+            if dist_bars < MIN_JUMP_BARS or sec[a] < 0 or sec[b] < 0:
                 continue
-            if dist_bars < max(sec_len[sec[a]], sec_len[sec[b]]):
+            if not loose and (
+                sec[a] == sec[b] or dist_bars < max(sec_len[sec[a]], sec_len[sec[b]])
+            ):
                 continue  # at least one full section away
             diag = diagonal_similarity(ssm, a, b, CONTEXT_BARS, CONTEXT_BARS)
             if len(diag) < 2 * CONTEXT_BARS:
                 continue
             m, lo = float(diag.mean()), float(diag.min())
-            same_group = sections[sec[a]].group == sections[sec[b]].group
+            same_group = loose or sections[sec[a]].group == sections[sec[b]].group
             if lo < CTX_MIN or m < (ctx_mean if same_group else max(ctx_mean, STRONG_STRIPE)):
                 continue
             cands.append((a, b, m, lo))
@@ -191,7 +198,9 @@ def find_jumps(info: BarInfo, sections: list, breaks: list, downbeats: list,
         if not clear:
             continue
         b2 = b + k
-        if (a, b2) in seen or not (0 <= b2 < n) or abs(a - b2) < MIN_JUMP_BARS or sec[b2] == sec[a]:
+        if (a, b2) in seen or not (0 <= b2 < n) or abs(a - b2) < MIN_JUMP_BARS:
+            continue
+        if sec[b2] == sec[a] and not loose:
             continue
         seen.add((a, b2))
         ly = lyric(a, b2)
@@ -256,6 +265,8 @@ def find_jumps(info: BarInfo, sections: list, breaks: list, downbeats: list,
             label=f"{label(a)} → {label(b)}", context=round(ctx, 3), lyric=round(ly, 3),
             distance_s=round(float(dist_s), 2),
         ))  # fmt: skip
+    if not out and not loose and FALLBACK_CTX_MEAN is not None:
+        return find_jumps(info, sections, breaks, downbeats, FALLBACK_CTX_MEAN, loose=True)
     return out
 
 
