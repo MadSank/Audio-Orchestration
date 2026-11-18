@@ -252,7 +252,8 @@ def analyse(y22: np.ndarray, duration: float, beats: np.ndarray, raw_down: list)
         beat_vchroma=np.zeros((12, len(beats))), beat_vonset=np.zeros(len(beats)),
         beat_chroma=chroma, beat_vocal=np.zeros(len(beats)),
     )  # fmt: skip
-    jumps = find_jumps(info, sections, [], list(downbeats), ctx_mean=LITE_CTX_MEAN)
+    # No fallback pass here: the phone's port (Lite.kt) doesn't have one, and the two must match.
+    jumps = find_jumps(info, sections, [], list(downbeats), ctx_mean=LITE_CTX_MEAN, fallback=False)
     return {
         "beats": beats, "downbeats": downbeats, "beats_per_bar": bpb, "meter_confidence": conf,
         "sections": sections, "jumps": jumps, "outro_bar": outro_bar(sections, n),

@@ -37,8 +37,10 @@ CTX_MIN = 0.20  # ... and no single bar pair below this
 STRONG_STRIPE = 0.70  # a stripe this strong counts as a repeat even if segmentation disagrees
 # A song that finds no jumps at all gets a second, looser pass (owner, 2026-11-17: 114 of 518
 # songs had none, YOASOBI 群青 among them). It trusts the stripe over the sections: any two
-# places at this mean may pair, even inside one long section. None = off, until rated (rule 6).
-FALLBACK_CTX_MEAN: float | None = None
+# places at this mean may pair, even inside one long section. Rated in round 4 (owner,
+# 2026-11-18): 4.35 against 5.00 for today's jumps, on songs that had none; turned on by the owner.
+# None = off. The phone's analysis (lite) doesn't have it.
+FALLBACK_CTX_MEAN: float | None = 0.45
 PER_SECONDS = 20.0  # keep about one jump source per 20 s of music
 ALIGN_BARS = 4  # direct alignment searches the target within +-4 bars …
 ALIGN_MARGIN = 0.04  # … and the best offset must beat its +-1/+-2 bar neighbours by this
@@ -145,7 +147,8 @@ def best_alignment(info: BarInfo, a: int, b: int) -> tuple:
 
 
 def find_jumps(info: BarInfo, sections: list, breaks: list, downbeats: list,
-               ctx_mean: float = CTX_MEAN, loose: bool = False) -> list:  # fmt: skip
+               ctx_mean: float = CTX_MEAN, loose: bool = False,
+               fallback: bool = True) -> list:  # fmt: skip
     """Structural jump candidates, aligned, scored and pruned (see module doc). `loose` is the
     fallback pass (FALLBACK_CTX_MEAN) for a song the normal rules leave without a jump."""
     n = len(info.feats)
@@ -265,7 +268,7 @@ def find_jumps(info: BarInfo, sections: list, breaks: list, downbeats: list,
             label=f"{label(a)} → {label(b)}", context=round(ctx, 3), lyric=round(ly, 3),
             distance_s=round(float(dist_s), 2),
         ))  # fmt: skip
-    if not out and not loose and FALLBACK_CTX_MEAN is not None:
+    if not out and not loose and fallback and FALLBACK_CTX_MEAN is not None:
         return find_jumps(info, sections, breaks, downbeats, FALLBACK_CTX_MEAN, loose=True)
     return out
 

@@ -88,9 +88,9 @@ def downbeat_indices(beats: np.ndarray, downbeat_times: np.ndarray, tol: float =
     return out
 
 
-# Split-beat cleaning (structure.clean_split_beats). Off until the owner has rated the jumps it
-# finds (hard rule 6); `saics eval build4` turns it on for its own re-analysis.
-CLEAN_SPLIT_BEATS = False
+# Split-beat cleaning (structure.clean_split_beats). Rated in round 4 (owner, 2026-11-18): new
+# jumps on cleaned songs 4.30 against 5.00 for today's; turned on by the owner.
+CLEAN_SPLIT_BEATS = True
 
 BREAK_DB = -15.0  # a break is at least this far below the track's typical level …
 SILENCE_DB = -30.0  # … and a "silence" at least this far

@@ -1007,7 +1007,7 @@ def write_portal_feedback(folder: Path, eval_dir: Path, rater: str = "owner", lo
 
 # ── round 4: loop points for songs that had none (owner, 2026-11-17) ────────────
 
-ROUND4_FALLBACK_MARK = 0.45  # jumps.FALLBACK_CTX_MEAN under test
+ROUND4_FALLBACK_MARK = 0.45  # jumps.FALLBACK_CTX_MEAN as rated (now the default)
 ROUND4_N = {"fallback": 20, "cleaned": 10, "control": 10}
 ROUND4_MUST = ("群青  YOASOBI1978年.mp3",)  # the owner's favourite that started it
 ROUND4_VARIANTS = tuple(ROUND4_N)

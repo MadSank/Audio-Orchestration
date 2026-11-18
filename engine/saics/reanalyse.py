@@ -24,6 +24,7 @@ def reanalyse(folder: Path, ids: list, out: Path, clean_beats: bool = True, log=
     (out / "features").mkdir(parents=True, exist_ok=True)
     feedback = A.read_jump_feedback(saics)
     not_loopable = A.read_forever_overrides(saics)
+    was = A.CLEAN_SPLIT_BEATS
     A.CLEAN_SPLIT_BEATS = clean_beats
     done = []
     try:
@@ -50,10 +51,10 @@ def reanalyse(folder: Path, ids: list, out: Path, clean_beats: bool = True, log=
             (out / "tracks" / f"{tid}.json").write_text(bundle.dump(), encoding="utf-8")
             np.savez_compressed(out / "features" / f"{tid}.npz", **feats)
             done.append(tid)
-            was = len(old.get("jumps", []))
-            log(f"  [{i + 1}/{len(ids)}] {rel}: {len(bundle.jumps)} jumps (was {was})")
+            before = len(old.get("jumps", []))
+            log(f"  [{i + 1}/{len(ids)}] {rel}: {len(bundle.jumps)} jumps (was {before})")
     finally:
-        A.CLEAN_SPLIT_BEATS = False
+        A.CLEAN_SPLIT_BEATS = was
     return done
 
 
