@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import SaicsPlayer, { type Track } from "../../modules/saics-player";
 import { displayName, versionLabel } from "../names";
 import { Mono, Narrow, Serif, useK, Word } from "../obi";
-import { type SongGroup, useLibrary } from "../usePlayer";
+import { libraryChanged, type SongGroup, useLibrary } from "../usePlayer";
 import { color, font } from "../theme/tokens";
 
 /**
@@ -17,7 +17,7 @@ import { color, font } from "../theme/tokens";
 export default function Groups() {
   const router = useRouter();
   const k = useK();
-  const { groups, tracks, reload } = useLibrary();
+  const { groups, tracks } = useLibrary();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [merging, setMerging] = useState<SongGroup | null>(null);
@@ -32,7 +32,7 @@ export default function Groups() {
 
   function saved(ok: boolean) {
     if (!ok) Alert.alert("Couldn't save", "SAICS needs write access to the music folder. Tap Change folder on the Helmet screen and pick it again.");
-    reload();
+    libraryChanged(); // the Crate, Stations and this screen all fetch the library again
   }
   function merge(into: SongGroup) {
     const from = merging;

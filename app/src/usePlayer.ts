@@ -38,11 +38,25 @@ export function groupTracks(tracks: Track[]): SongGroup[] {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Screens stay mounted in the pager, so a rescan or a group fix has to tell them to fetch again.
+const libraryListeners = new Set<() => void>();
+
+/** Every screen showing the library fetches it again (after a rescan or a group change). */
+export function libraryChanged() {
+  libraryListeners.forEach((f) => f());
+}
+
 /** The library the service holds (from the last scan); scans only if there is none yet. */
 export function useLibrary() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const reload = useCallback(() => SaicsPlayer.getLibrary().then(setTracks).catch(() => {}), []);
+  useEffect(() => {
+    libraryListeners.add(reload);
+    return () => {
+      libraryListeners.delete(reload);
+    };
+  }, [reload]);
   useEffect(() => {
     SaicsPlayer.getLibrary()
       .then((t) => (t.length || !SaicsPlayer.getFolder() ? t : SaicsPlayer.scanLibrary()))

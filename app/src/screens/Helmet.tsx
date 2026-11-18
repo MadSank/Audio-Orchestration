@@ -6,7 +6,7 @@ import Svg, { Circle, Path } from "react-native-svg";
 
 import SaicsPlayer, { addListener, type ButtonEvent, type HelmetButton, type PlayerSettings } from "../../modules/saics-player";
 import { Mono, Narrow, Serif, useK, Word } from "../obi";
-import { usePlayerState } from "../usePlayer";
+import { libraryChanged, usePlayerState } from "../usePlayer";
 import { color } from "../theme/tokens";
 
 const MAP: { button: HelmetButton; label: string; icon: (y: number) => string; acts: [string, string][] }[] = [
@@ -61,6 +61,7 @@ export default function Helmet() {
     setScanError(null);
     try {
       setCount((await SaicsPlayer.scanLibrary()).length);
+      libraryChanged();
     } catch (e) {
       setScanError(e instanceof Error ? e.message : String(e));
     } finally {
