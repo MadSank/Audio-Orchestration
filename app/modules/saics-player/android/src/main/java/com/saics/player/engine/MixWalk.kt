@@ -379,7 +379,7 @@ class MixWalk(private val graph: PortalGraph, private val rng: Random = Random(S
     const val VERSION_AFTER_S = 60.0
     const val CUT_AFTER_S = 90.0
     const val BACK_REACH_BARS = 4
-    const val NEXT_REACH_BARS = 8
+    const val NEXT_REACH_BARS = 2 // was 8: a press could wait 16 s for a portal (owner, 2026-11-18)
     const val STAY_HOLD_S = 45.0
   }
 }

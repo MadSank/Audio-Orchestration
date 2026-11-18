@@ -121,9 +121,10 @@ class MixWalkTest {
     val g = graph(track("a", portals = listOf(edge(40, "b", 8), edge(72, "c", 8))), track("b"), track("c"))
     val w = MixWalk(g, Random(1))
     w.go(g, "a")
-    val near = w.nextNow(36)!!
+    val near = w.nextNow(38)!!
     assertEquals("portal", near.kind)
     assertEquals(40, near.at)
+    assertEquals("four bars off: no waiting for it", "cut", w.nextNow(35)!!.kind)
     val far = w.nextNow(50)!!
     assertEquals("cut", far.kind)
     assertEquals(52, far.at)

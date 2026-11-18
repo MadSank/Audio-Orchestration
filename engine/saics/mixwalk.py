@@ -30,7 +30,9 @@ BREAK_AFTER_S = 30.0  # dead end: seconds of looping before each fallback opens
 VERSION_AFTER_S = 60.0
 CUT_AFTER_S = 90.0
 BACK_REACH_BARS = 4
-NEXT_REACH_BARS = 8  # Next: an upcoming portal this close is taken at its own bar
+# Next: an upcoming portal this close is taken at its own bar. Was 8, which could hold a press for
+# 16 s while it waited for a portal (owner, 2026-11-18: Dracula wouldn't skip); 2 matches x2.
+NEXT_REACH_BARS = 2
 STAY_HOLD_S = 45.0  # after Stay, no fallback for this long
 
 

@@ -199,8 +199,10 @@ def test_next_takes_a_close_portal_at_its_own_bar_else_cuts_on_the_phrase():
         "c": _track("c"),
     }
     w = MixWalk(g, "a", seed=3)  # dwell doesn't apply to Next
-    m = w.next_now(36)
+    m = w.next_now(38)
     assert (m.kind, m.at, m.to) == ("portal", 40, "b")
+    m = w.next_now(36)  # four bars off: no waiting for it
+    assert m.kind == "cut" and m.at == 40
     m = w.next_now(50)
     assert (
         m.kind == "cut" and m.to == "c" and m.at == 52 and m.to_bar == 8
