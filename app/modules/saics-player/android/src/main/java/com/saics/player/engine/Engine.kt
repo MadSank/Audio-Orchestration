@@ -685,9 +685,14 @@ class Engine(private val context: Context, private val listener: Listener) {
     }
   }
 
-  /** The next song in the queue that can play. */
-  private fun nextInQueue(): Song? =
-    (1..queue.size).map { queue[(index + it) % queue.size] }.firstOrNull { it.id !in bad }
+  /** The next song in the queue that can play. Runs every tick: no list is built. */
+  private fun nextInQueue(): Song? {
+    for (k in 1..queue.size) {
+      val s = queue[(index + k) % queue.size]
+      if (s.id !in bad) return s
+    }
+    return null
+  }
 
   private fun nextBarFrame(cur: Loaded?, now: Int): Int {
     val b = cur?.bars() ?: return now + 2048

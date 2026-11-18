@@ -20,6 +20,7 @@
       "expo-router",
       "expo-status-bar",
       "./plugins/withShortCxxPath",
+      "./plugins/withLargeHeap",
       [
         "expo-font",
         {

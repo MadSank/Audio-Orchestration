@@ -13,7 +13,8 @@ import kotlin.math.sqrt
 const val ENGINE_RATE = 44100
 
 /**
- * A whole song as 16-bit stereo PCM at [ENGINE_RATE], off the Java heap (~10.6 MB per minute).
+ * A whole song as 16-bit stereo PCM at [ENGINE_RATE] (~10.6 MB per minute). A direct buffer, but on
+ * Android it still counts against the Java heap: four of these are why the app needs largeHeap.
  * Forever jumps reach back to any bar, so the song stays in memory while it plays.
  * One decoder thread writes; the render thread reads below [frames] only.
  */

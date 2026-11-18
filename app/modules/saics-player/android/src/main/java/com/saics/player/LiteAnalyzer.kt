@@ -170,8 +170,9 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
     stage = "opening"
     synchronized(waiting) { waiting.remove(name) }
     val t0 = SystemClock.elapsedRealtime()
+    val before = index.optJSONObject(name)
     // Written first: a native crash here takes the process down before any catch can run.
-    put(name, JSONObject().put("attempts", (index.optJSONObject(name)?.optInt("attempts") ?: 0) + 1))
+    put(name, JSONObject().put("attempts", (before?.optInt("attempts") ?: 0) + 1))
     try {
       // Before decoding: a whole hour-long file would take the memory the music needs.
       val known = MediaMetadataRetriever().run {
@@ -181,6 +182,23 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
         } finally {
           release()
         }
+      }
+      // The whole song decoded, then as floats: about 12 bytes a frame on the heap the music shares.
+      // Without that much free, wait: an out-of-memory crash takes the music down with it.
+      val need = (known ?: MAX_MS) / 1000.0 * ENGINE_RATE * BYTES_PER_FRAME
+      val rt = Runtime.getRuntime()
+      if (rt.maxMemory() - (rt.totalMemory() - rt.freeMemory()) < need * 1.3) {
+        if (before == null) {
+          index.remove(name)
+          indexFile.writeText(index.toString())
+        } else {
+          put(name, before) // not an attempt
+        }
+        log("$name: waiting for memory (needs ${(need / 1e6).toInt()} MB)")
+        stage = ""
+        current = null
+        work.postDelayed({ analyse(t, name) }, MEMORY_RETRY_MS)
+        return
       }
       if (known != null && known > MAX_MS) {
         put(name, JSONObject().put("skipped", "length ${known / 1000} s"))
@@ -272,6 +290,8 @@ class LiteAnalyzer(private val context: Context, private val onChanged: () -> Un
     private const val MODEL = "beat_small.onnx"
     private const val MODEL_THREADS = 2
     private const val MAX_ATTEMPTS = 2
+    private const val BYTES_PER_FRAME = 12.0
+    private const val MEMORY_RETRY_MS = 60_000L
     private const val SETTLE_MS = 5000L
     private const val MIN_MS = 45_000L // ringtones and clips
     private const val MAX_MS = 15 * 60_000L // triage's "long": compilations and hour-long loops
