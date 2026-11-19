@@ -17,7 +17,7 @@ Not yet: the Vinyl version, Ride mode, analysing new songs on the PC (the laptop
 
 ## Use it
 
-Open the app's address in Chrome or Edge, click **Choose folder**, pick the music folder (the one
+Open **https://madsank.github.io/Audio-Orchestration/app/** in Chrome or Edge, click **Choose folder**, pick the music folder (the one
 with the hidden `.saics` folder inside), then install it from the address bar's install button. It
 then has its own window and Start-menu entry and opens offline.
 
@@ -30,6 +30,9 @@ npm test            # the walk rules, ported from the phone's tests
 npm run dev         # http://localhost:5190
 npm run build       # dist/: a static site, works from any address
 ```
+
+To publish a new build: `npm run build`, copy `dist/` to `app/` on the `gh-pages` branch (beside the
+website), commit and push. Nothing else on that branch changes.
 
 For development without the folder picker, put `SAICS_MUSIC=C:\path\to\songs` in `desktop/.env.local`
 (not committed): the dev server then serves that folder read-only and the app opens it by itself.

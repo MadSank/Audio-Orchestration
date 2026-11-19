@@ -624,7 +624,7 @@ Each edge stores its score breakdown and its **chosen transition style**:
 - **Built:** `desktop/`, an installable web app (PWA) for Chrome or Edge: Vite, React, TypeScript, Web Audio. Reads the music folder through the File System Access API (read-only) and plays offline from the laptop's `.saics` bundles and `portals.json`.
 - `src/core/` ports `ForeverWalk.kt` and `MixWalk.kt` with their tests (22 vitest cases); `src/audio/player.ts` is the Web Audio engine (whole songs decoded, seams as crossfaded buffer sources on the downbeat, decided one bar ahead), `keys.ts` the media keys with the helmet's multi-press mapping.
 - Checked in the browser against the real library: 422 songs load, a station plays, Next changes song in 2.5 s with the hands, a scheduled jump lands exactly on its bar. The production build registers its service worker and is installable; the folder picker itself needs the owner's click.
-- [ ] Host it (GitHub Pages next to the website, `…/app/`) and check offline install there
+- [x] Hosted (2026-11-19) at https://madsank.github.io/Audio-Orchestration/app/ (`app/` on `gh-pages`, beside the website): service worker active for that scope, installable, fonts and folder picker available, no errors. Publishing a build: `desktop/README.md`
 - [ ] Vinyl (port `Vinyl.kt` to an AudioWorklet, matching the frozen chain), Ride mode, the Versions rings
 - [ ] Chrome's MP3 decoding may trim the encoder delay differently from ffmpeg: measure jump seams on the PC
 
