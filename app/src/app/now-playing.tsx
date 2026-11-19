@@ -1,26 +1,29 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, AppState, Easing, Image, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Animated, AppState, Easing, Image, PanResponder, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle, ClipPath, Defs, Path } from "react-native-svg";
+import Svg, { Circle, ClipPath, Defs, Line, Path } from "react-native-svg";
 
-import SaicsPlayer, { addListener, readingNote } from "../../modules/saics-player";
+import SaicsPlayer, { addListener, readingNote, type Timeline } from "../../modules/saics-player";
 import { displayName, versionLabel } from "../names";
 import { Mono, Narrow, ObiTitle, PlayButton, Record, Serif, SkipButton, useK, useSpin, Word } from "../obi";
 import { usePlayerState } from "../usePlayer";
 import { color, OBI_WIDTH } from "../theme/tokens";
+import { ARM, armDeg, barFrac, BARS_PER_TURN, groovePath, grooveTick, PIVOT, radiusAt, secondsAt, slingshot, totalBars, turnDeg } from "../turntable";
 
 const HAND = [require("../../assets/hand/hand0.png"), require("../../assets/hand/hand1.png"), require("../../assets/hand/hand2.png")];
 const GRIP = [require("../../assets/hand/grip0.png"), require("../../assets/hand/grip1.png"), require("../../assets/hand/grip2.png")];
 /** Hand-drawn motion moves on twos: 8 positions a phase, about 12 a second. */
 const onTwos = (t: number) => Math.floor(t * 8) / 8;
-const SCRATCH_DEG = -72;
+const SWING_MS = 380; // a jump or a seek: the record swings to its new place
+const FLING_MS = 1150;
+const AHEAD_S = 4; // the record is driven this far ahead between the service's state updates
 
 export default function NowPlaying() {
   const router = useRouter();
   const state = usePlayerState();
   const k = useK();
-  const { height: H } = useWindowDimensions();
+  const { width: W, height: H } = useWindowDimensions();
   const top = useSafeAreaInsets().top;
   const bottom = useSafeAreaInsets().bottom;
   const name = displayName(state?.title ?? "");
@@ -31,10 +34,96 @@ export default function NowPlaying() {
   const D = 520 * k; // on screen its centre is at (70, 304) of the 390-wide layout
   const discTop = top + 44 * k;
   const discLeft = -190 * k;
-  const spin = useSpin(!!state?.isPlaying);
-  const scratch = useRef(new Animated.Value(0)).current;
-  const scratchAt = useRef(0);
-  const rotate = Animated.add(spin, scratch).interpolate({ inputRange: [0, 360], outputRange: ["0deg", "360deg"] });
+  const spin = useSpin(!!state?.isPlaying); // the record coming in during a song change
+  const rotate = spin.interpolate({ inputRange: [0, 360], outputRange: ["0deg", "360deg"] });
+
+  // ── the record is the timeline ──────────────────────────────────────────────
+  // It turns with the song (a turn every 8 bars) under a tonearm that moves in as it plays. Both run
+  // on the native driver, aimed a few seconds ahead at each state update from the service.
+  const songKey = `${state?.path ?? ""}|${state?.version ?? ""}`;
+  const [timeline, setTimeline] = useState<Timeline | null>(null);
+  const tl = useRef<Timeline | null>(null);
+  tl.current = timeline;
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const get = () => SaicsPlayer.getTimeline().then((t) => {
+      if (!alive) return;
+      setTimeline(t);
+      if (t && !t.complete) timer = setTimeout(get, 3000); // the last bar settles once decoded
+    }).catch(() => {});
+    get();
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [songKey]);
+  const total = timeline ? totalBars(timeline.bars, timeline.duration) : 1;
+  const turn = useRef(new Animated.Value(0)).current; // degrees, clockwise
+  const arm = useRef(new Animated.Value(armDeg(radiusAt(0, 1)))).current;
+  const sync = useRef({ pos: 0, at: 0, playing: false, key: "" });
+  const seekTo = useRef<{ pos: number; t: number } | null>(null); // a seek the state hasn't caught up with
+  const heard = useRef({ start: 0, segs: [] as [number, number][] }); // this visit, for the thread
+  const [played, setPlayed] = useState("");
+  const dragging = useRef(false);
+  const now = () => sync.current.pos + (sync.current.playing ? (Date.now() - sync.current.at) / 1000 : 0);
+  const aim = useCallback((swing: boolean) => {
+    const t = tl.current;
+    if (!t) return;
+    const tot = totalBars(t.bars, t.duration);
+    const b = barFrac(t.bars, now());
+    if (swing) {
+      Animated.parallel([
+        Animated.timing(turn, { toValue: turnDeg(b), duration: SWING_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(arm, { toValue: armDeg(radiusAt(b, tot)), duration: SWING_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      ]).start(({ finished }) => finished && aim(false));
+    } else if (sync.current.playing) {
+      const ahead = barFrac(t.bars, now() + AHEAD_S);
+      Animated.parallel([
+        Animated.timing(turn, { toValue: turnDeg(ahead), duration: AHEAD_S * 1000, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(arm, { toValue: armDeg(radiusAt(ahead, tot)), duration: AHEAD_S * 1000, easing: Easing.linear, useNativeDriver: true }),
+      ]).start();
+    } else {
+      turn.stopAnimation();
+      arm.stopAnimation();
+      turn.setValue(turnDeg(b));
+      arm.setValue(armDeg(radiusAt(b, tot)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arm, turn]);
+  useEffect(() => {
+    if (!state || !timeline || dragging.current) return;
+    const pos = state.position / 1000;
+    const pending = seekTo.current;
+    if (pending) {
+      // Paused, the service makes the seek when play resumes: until then the record stays put.
+      if (Math.abs(pos - pending.pos) < 1.5 || (state.isPlaying && Date.now() - pending.t > 4000)) seekTo.current = null;
+      else return;
+    }
+    const expected = now();
+    const fresh = sync.current.key !== songKey;
+    sync.current = { pos, at: Date.now(), playing: state.isPlaying, key: songKey };
+    const h = heard.current;
+    const b = barFrac(timeline.bars, pos);
+    if (fresh) {
+      h.start = b;
+      h.segs = [];
+      turn.stopAnimation();
+      arm.stopAnimation();
+      turn.setValue(turnDeg(b));
+      arm.setValue(armDeg(radiusAt(b, total)));
+      aim(false);
+    } else if (Math.abs(pos - expected) > 0.8) {
+      h.segs = [...h.segs, [h.start, barFrac(timeline.bars, expected)] as [number, number]].slice(-12);
+      h.start = b;
+      aim(true); // a jump: the record swings back (or on)
+    } else {
+      aim(false);
+    }
+    setPlayed([...h.segs, [h.start, b] as [number, number]].map(([a, c]) => groovePath(Math.min(a, c), Math.max(a, c), total)).join(""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, timeline]);
+  const spiral = useMemo(() => (timeline ? groovePath(0, total, total) : ""), [timeline, total]);
 
   // ── the hand (a jump) ───────────────────────────────────────────────────────
   const hand = useRef(new Animated.Value(0)).current; // 0 off, 1 on the record, 2 dragged, 3 off
@@ -42,6 +131,11 @@ export default function NowPlaying() {
   const [frame, setFrame] = useState(0);
   const [flash, setFlash] = useState<string | null>(null);
   const giveUp = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pushAt = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pushed = useRef(false);
+  const [handDir, setHandDir] = useState<-1 | 1>(-1); // back in the song (pushed up, anticlockwise) or on
+  const handDirRef = useRef(handDir);
+  handDirRef.current = handDir;
   const handAt = useRef(0);
   const toHand = useCallback((to: number, ms: number, done?: () => void) => {
     handAt.current = to;
@@ -60,17 +154,147 @@ export default function NowPlaying() {
     hand.setValue(0);
     toHand(1, ms, then);
   }, [hand, toHand]);
+  // The push itself: the record swings with it, from the position the service reports after the jump.
   const drag = useCallback(() => {
+    if (pushed.current) return;
+    pushed.current = true;
     if (giveUp.current) clearTimeout(giveUp.current);
-    scratchAt.current += SCRATCH_DEG;
-    Animated.timing(scratch, { toValue: scratchAt.current, duration: 700, easing: onTwos, useNativeDriver: true }).start();
+    if (pushAt.current) clearTimeout(pushAt.current);
     toHand(2, 700, () => setTimeout(leave, 250));
-  }, [leave, scratch, toHand]);
+  }, [leave, toHand]);
+
+  // ── the fling (a portal): the stylus goes round the label once and away ─────
+  const flight = useRef(new Animated.Value(0)).current;
+  const [flingFrom, setFlingFrom] = useState<number | null>(null); // the stylus's radius when it left
+  const fling = useCallback(() => {
+    const t = tl.current;
+    if (!t) return;
+    setFlingFrom(radiusAt(barFrac(t.bars, now()), totalBars(t.bars, t.duration)));
+    flight.setValue(0);
+    Animated.timing(flight, { toValue: 1, duration: FLING_MS, easing: Easing.linear, useNativeDriver: true }).start(() => setFlingFrom(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flight]);
 
   // ── the portal (a change of song) ───────────────────────────────────────────
   const swap = useRef(new Animated.Value(0)).current;
   const [crossing, setCrossing] = useState<{ from: string; to: string; pair: string; landed: boolean } | null>(null);
   const crossingNow = !!crossing;
+  const crossingRef = useRef(false);
+  crossingRef.current = crossingNow;
+
+  // ── turning the record by hand ──────────────────────────────────────────────
+  // Holding it stops the sound (the service fades out and decides nothing); letting go plays on from
+  // there, on the nearest downbeat. A tap does nothing. TalkBack: swipe up or down for a bar.
+  const seekSec = useCallback((secs: number) => {
+    void SaicsPlayer.seek(secs);
+    seekTo.current = { pos: secs, t: Date.now() };
+    sync.current = { ...sync.current, pos: secs, at: Date.now() };
+    const t = tl.current;
+    if (t) heard.current = { start: barFrac(t.bars, secs), segs: [] };
+    aim(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aim]);
+  const scrubbing = useRef<{ a: number; b0: number; turned: number; moved: boolean; target: number } | null>(null);
+  const cx = discLeft + D / 2;
+  const cy = discTop + D / 2;
+  const scrub = useMemo(() => {
+    const letGo = () => {
+      const d = scrubbing.current;
+      scrubbing.current = null;
+      if (!d?.moved) return;
+      dragging.current = false;
+      const t = tl.current;
+      if (t) seekSec(secondsAt(t.bars, d.target));
+      void SaicsPlayer.hold(false);
+    };
+    return PanResponder.create({
+      onStartShouldSetPanResponder: (e) => !!tl.current && !crossingRef.current && Math.hypot(e.nativeEvent.pageX - cx, e.nativeEvent.pageY - cy) < D / 2,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (e) => {
+        const t = tl.current;
+        if (!t) return;
+        const b0 = barFrac(t.bars, now());
+        scrubbing.current = { a: Math.atan2(e.nativeEvent.pageY - cy, e.nativeEvent.pageX - cx), b0, turned: 0, moved: false, target: b0 };
+      },
+      onPanResponderMove: (e) => {
+        const d = scrubbing.current;
+        const t = tl.current;
+        if (!d || !t) return;
+        const a = Math.atan2(e.nativeEvent.pageY - cy, e.nativeEvent.pageX - cx);
+        let step = a - d.a;
+        if (step > Math.PI) step -= 2 * Math.PI;
+        if (step < -Math.PI) step += 2 * Math.PI;
+        d.a = a;
+        d.turned += step;
+        if (!d.moved && Math.abs(d.turned) > 0.05) {
+          d.moved = true; // a real turn, not a tap: the hand stops the record
+          dragging.current = true;
+          turn.stopAnimation();
+          arm.stopAnimation();
+          void SaicsPlayer.hold(true);
+        }
+        if (!d.moved) return;
+        const tot = totalBars(t.bars, t.duration);
+        d.target = Math.max(0, Math.min(tot - 0.5, d.b0 + (d.turned / (2 * Math.PI)) * BARS_PER_TURN));
+        turn.setValue(turnDeg(d.target));
+        arm.setValue(armDeg(radiusAt(d.target, tot)));
+      },
+      onPanResponderRelease: letGo,
+      onPanResponderTerminate: letGo,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [D, cx, cy, seekSec]);
+  const seekBars = (n: number) => {
+    const t = tl.current;
+    if (!t) return;
+    const tot = totalBars(t.bars, t.duration);
+    seekSec(secondsAt(t.bars, Math.max(0, Math.min(tot - 1, Math.round(barFrac(t.bars, now())) + n))));
+  };
+
+  // What the record shows: the song as a spiral, the stretch heard on this visit, and where a portal
+  // leaves; the way out is drawn two bars before it.
+  const portalBar = portal?.kind === "portal" && state?.bar != null ? state.bar + portal.inBars : null;
+  const grooves = useMemo(() => (timeline ? (
+    <>
+      <Path d={spiral} fill="none" stroke={color.grooveLit} strokeWidth={1.2} />
+      <Path d={played} fill="none" stroke={color.paper} strokeWidth={2.4} strokeLinecap="round" opacity={0.85} />
+      {portalBar != null ? <Path d={grooveTick(portalBar, total)} stroke={color.vermilion} strokeWidth={4.5} strokeLinecap="round" /> : null}
+    </>
+  ) : undefined), [timeline, spiral, played, portalBar, total]);
+  const toScreen = useCallback(([x, y]: [number, number]): [number, number] => [discLeft + x * k, discTop + y * k], [discLeft, discTop, k]);
+  const wayOut = useMemo(() => {
+    if (!timeline || portalBar == null || !portal || portal.inBars > 2 || flingFrom != null) return "";
+    const r0 = radiusAt(portalBar, total);
+    let d = "";
+    for (let i = 0; i <= 40; i++) {
+      const [x, y] = toScreen(slingshot(r0, 0.02 + (0.55 * i) / 40));
+      d += `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+    }
+    return d;
+  }, [timeline, portalBar, portal, flingFrom, total, toScreen]);
+  const flingDots = useMemo(() => {
+    if (flingFrom == null) return null;
+    const N = 36;
+    const ts = Array.from({ length: N + 1 }, (_, i) => i / N);
+    const pts = ts.map((t) => toScreen(slingshot(flingFrom, t ** 1.5)));
+    return [0, 0.05, 0.1].map((lag, j) => {
+      const size = (j ? 10 - j * 2 : 14) * k;
+      const inputRange = ts.map((t) => t + lag);
+      return (
+        <Animated.View key={j} pointerEvents="none" style={{
+          position: "absolute", left: 0, top: 0, width: size, height: size, borderRadius: size / 2,
+          backgroundColor: color.vermilion, opacity: j ? 0.55 - j * 0.15 : 1,
+          transform: [
+            { translateX: flight.interpolate({ inputRange, outputRange: pts.map((q) => q[0] - size / 2), extrapolate: "clamp" }) },
+            { translateY: flight.interpolate({ inputRange, outputRange: pts.map((q) => q[1] - size / 2), extrapolate: "clamp" }) },
+          ],
+        }} />
+      );
+    });
+  }, [flingFrom, flight, k, toScreen]);
+  const turnRot = turn.interpolate({ inputRange: [0, 360], outputRange: ["0deg", "360deg"] });
+  const armRot = arm.interpolate({ inputRange: [0, 360], outputRange: ["0deg", "360deg"] });
+  const PAD = 24;
 
   useEffect(() => {
     if (!handOn && !crossingNow) return;
@@ -91,15 +315,24 @@ export default function NowPlaying() {
       }
       if (!visible()) return;
       if (a.action === "jump-soon") {
-        reach(600);
-        giveUp.current = setTimeout(leave, 5000); // the jump was dropped
+        const [, dir, ms] = (a.detail ?? "").split("|");
+        const inMs = Number(ms) || 600;
+        setHandDir(dir === "1" ? 1 : -1);
+        pushed.current = false;
+        reach(Math.max(200, Math.min(600, inMs - 120)));
+        if (pushAt.current) clearTimeout(pushAt.current);
+        pushAt.current = setTimeout(drag, inMs); // the push lands on the downbeat the sound jumps on
+        giveUp.current = setTimeout(leave, inMs + 5000); // the jump was dropped
       } else if (a.action === "jump") {
-        setFlash("Jumping back");
+        setFlash(handDirRef.current === 1 ? "Jumping ahead" : "Jumping back");
         setTimeout(() => setFlash(null), 2500);
-        if (handAt.current === 1) drag();
-        else reach(320, drag);
+        if (!pushed.current) {
+          if (handAt.current === 1) drag();
+          else reach(320, drag);
+        }
       } else if (a.action === "portal") {
         const [kind, ...title] = (a.detail ?? "").split("|");
+        if (kind === "portal") fling();
         setCrossing({ from: shownTitle.current, to: displayName(title.join("|")).title, pair: kind === "portal" ? lastPair.current : "", landed: false });
         setTimeout(() => setCrossing((c) => c && { ...c, landed: true }), 2000); // while the strip is off-screen
         swap.setValue(0);
@@ -112,8 +345,9 @@ export default function NowPlaying() {
     return () => {
       sub.remove();
       if (giveUp.current) clearTimeout(giveUp.current);
+      if (pushAt.current) clearTimeout(pushAt.current);
     };
-  }, [drag, leave, reach, swap]);
+  }, [drag, fling, leave, reach, swap]);
 
   const lerp = (input: number[], output: number[]) => swap.interpolate({ inputRange: input, outputRange: output });
   const SHRINK = 380 / 520;
@@ -169,9 +403,12 @@ export default function NowPlaying() {
 
   return (
     <View style={{ flex: 1, backgroundColor: color.night, overflow: "hidden" }}>
-      <Animated.View style={[{ position: "absolute", left: discLeft, top: discTop, width: D, height: D }, outgoing]}>
-        <Animated.View style={{ transform: [{ rotate }] }}>
-          <Record size={D} text={`${name.title} · `.repeat(3).slice(0, 44)} />
+      <Animated.View {...scrub.panHandlers} style={[{ position: "absolute", left: discLeft, top: discTop, width: D, height: D }, outgoing]}
+        accessible={!!timeline} accessibilityRole="adjustable" accessibilityLabel="Place in the song: turn the record"
+        accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+        onAccessibilityAction={(e) => seekBars(e.nativeEvent.actionName === "increment" ? 1 : -1)}>
+        <Animated.View style={{ transform: [{ rotate: timeline ? turnRot : rotate }] }}>
+          <Record size={D} text={`${name.title} · `.repeat(3).slice(0, 44)} grooves={grooves} />
         </Animated.View>
         {crossing ? <Animated.View pointerEvents="none" style={holdOut}>{gripFrames}</Animated.View> : null}
       </Animated.View>
@@ -189,6 +426,26 @@ export default function NowPlaying() {
             </Svg>
           </Animated.View>
         </>
+      ) : null}
+
+      {timeline ? (
+        <Animated.View pointerEvents="none" style={{
+          position: "absolute", left: discLeft + (PIVOT.x - PAD) * k, top: discTop + (PIVOT.y - PAD) * k,
+          width: (ARM + PAD * 2) * k, height: PAD * 2 * k, transformOrigin: [PAD * k, PAD * k, 0],
+          transform: [{ rotate: armRot }], opacity: lerp([0, 0.08, 0.84, 1], [1, 0, 0, 1]), // lifted while the records cross
+        }}>
+          <Svg width={(ARM + PAD * 2) * k} height={PAD * 2 * k} viewBox={`0 0 ${ARM + PAD * 2} ${PAD * 2}`}>
+            <Line x1={PAD} y1={PAD} x2={PAD + ARM} y2={PAD} stroke={color.paper} strokeWidth={3.5} strokeLinecap="round" />
+            <Line x1={PAD + ARM - 26} y1={PAD} x2={PAD + ARM} y2={PAD} stroke={color.paper} strokeWidth={11} strokeLinecap="round" />
+            <Circle cx={PAD} cy={PAD} r={15} fill={color.night} stroke={color.paper} strokeWidth={3.5} />
+            <Circle cx={PAD + ARM} cy={PAD} r={6} fill={color.vermilion} />
+          </Svg>
+        </Animated.View>
+      ) : null}
+      {wayOut ? (
+        <Svg pointerEvents="none" style={StyleSheet.absoluteFill} width={W} height={H}>
+          <Path d={wayOut} fill="none" stroke={color.vermilion} strokeWidth={2} strokeDasharray="6 8" />
+        </Svg>
       ) : null}
 
       <Animated.View style={[StyleSheet.absoluteFill, { left: undefined, width: obiWidth }, { transform: [{ translateX: lerp([0, 0.12, 0.24, 0.72, 0.86, 1], [0, 0, 100 * k, 100 * k, 0, 0]) }] }]}>
@@ -244,14 +501,17 @@ export default function NowPlaying() {
         </Animated.View>
       ) : null}
 
+      {flingDots}
+
       {handOn ? (
         <Animated.View pointerEvents="none" style={{
           position: "absolute", left: 152 * k, top: top + 337 * k, width: 559 * k, height: 1170 * k,
           transformOrigin: [65 * k, 52 * k, 0],
           transform: [
-            { translateX: hand.interpolate({ inputRange: [0, 1, 2, 3], outputRange: [170 * k, 0, -17 * k, 200 * k] }) },
-            { translateY: hand.interpolate({ inputRange: [0, 1, 2, 3], outputRange: [520 * k, 0, -194 * k, 540 * k] }) },
-            { rotate: hand.interpolate({ inputRange: [0, 1, 2, 3], outputRange: ["14deg", "0deg", "-9deg", "16deg"] }) },
+            // pushed up (anticlockwise) for a jump back, pulled down for a jump on
+            { translateX: hand.interpolate({ inputRange: [0, 1, 2, 3], outputRange: [170 * k, 0, handDir < 0 ? -17 * k : 26 * k, 200 * k] }) },
+            { translateY: hand.interpolate({ inputRange: [0, 1, 2, 3], outputRange: [520 * k, 0, handDir < 0 ? -194 * k : 150 * k, 540 * k] }) },
+            { rotate: hand.interpolate({ inputRange: [0, 1, 2, 3], outputRange: ["14deg", "0deg", handDir < 0 ? "-9deg" : "7deg", "16deg"] }) },
           ],
         }}>
           {HAND.map((src, i) => <Image key={i} source={src} fadeDuration={0} style={{ position: "absolute", width: 559 * k, height: 1170 * k, opacity: frame === i ? 1 : 0 }} />)}

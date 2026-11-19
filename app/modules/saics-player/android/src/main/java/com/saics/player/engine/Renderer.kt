@@ -62,6 +62,7 @@ class Renderer(val slots: Array<Slot>) {
   // Controls (written by other threads).
   @Volatile var playing = false
   @Volatile var duck = 1f
+  @Volatile var hold = 1f // 0 while a hand is on the record (Now Playing)
   @Volatile var vinylOn = false
   @Volatile var vinylComp = 1f
 
@@ -166,7 +167,7 @@ class Renderer(val slots: Array<Slot>) {
       }
       // Pause/resume ramp, ducking, and a soft limiter for boosted (quiet) songs.
       fade = if (fade < target) minOf(target, fade + fadeStep) else maxOf(target, fade - fadeStep)
-      duckNow += (duck - duckNow) * 0.0005f
+      duckNow += (duck * hold - duckNow) * 0.0005f
       val g = fade * duckNow
       out[2 * i] = limit(l * g)
       out[2 * i + 1] = limit(r * g)

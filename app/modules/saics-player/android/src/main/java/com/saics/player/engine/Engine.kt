@@ -79,8 +79,8 @@ class Engine(private val context: Context, private val listener: Listener) {
     }
   }
 
-  private enum class Kind { TRACK, NEXT, HARD_NEXT, PREVIOUS, RESTART, VERSION, MOVE }
-  private class Intent(val kind: Kind, val target: Song?, var issuedAt: Int = -1, val move: Move? = null)
+  private enum class Kind { TRACK, NEXT, HARD_NEXT, PREVIOUS, RESTART, VERSION, MOVE, SEEK }
+  private class Intent(val kind: Kind, val target: Song?, var issuedAt: Int = -1, val move: Move? = null, val frame: Int = 0)
 
   private val slots = Array(SLOTS) { Slot() }
   private val loaded = arrayOfNulls<Loaded>(SLOTS)
@@ -288,6 +288,43 @@ class Engine(private val context: Context, private val listener: Listener) {
     renderer.duck = level
   }
 
+  /** Play on from [sec] of the song playing, on the nearest downbeat (the record turned by hand). */
+  fun seek(sec: Double) = post {
+    val l = loaded.getOrNull(renderer.slot) ?: return@post
+    var frame = (sec * ENGINE_RATE).roundToInt().coerceIn(0, maxOf(0, l.pcm.frames - ENGINE_RATE))
+    val b = l.bars()
+    if (b != null) {
+      val i = l.barAt(frame)
+      frame = if (i < 0) {
+        if (frame < b[0] / 2) 0 else b[0]
+      } else {
+        b[if (i + 1 < b.size - 1 && frame - b[i] > b[i + 1] - frame) i + 1 else i]
+      }
+    }
+    renderer.pending.get()?.let { if (it.tag == TAG_JUMP) renderer.pending.compareAndSet(it, null) }
+    jumpPending = null
+    intent = Intent(Kind.SEEK, l.song, frame = frame)
+  }
+
+  /** A hand on the record: the sound fades out and the walks decide nothing until it lets go. */
+  fun hold(on: Boolean) {
+    held = on
+    renderer.hold = if (on) 0f else 1f
+  }
+
+  @Volatile private var held = false
+
+  /** The playing song's downbeats (seconds; null: not analysed) and length, for the record. */
+  fun timeline(): Map<String, Any?>? {
+    val l = loaded.getOrNull(renderer.slot) ?: return null
+    val b = l.bars()
+    val frames = if (l.pcm.complete) l.pcm.frames else l.pcm.capacity
+    return mapOf(
+      "id" to l.song.id, "bars" to b?.map { it.toDouble() / ENGINE_RATE },
+      "duration" to frames.toDouble() / ENGINE_RATE, "complete" to l.pcm.complete,
+    )
+  }
+
   fun positionMs(): Long = renderer.frame * 1000L / ENGINE_RATE
   fun durationMs(): Long = loaded.getOrNull(renderer.slot)?.pcm?.let { if (it.complete) it.frames * 1000L / ENGINE_RATE else null } ?: 0L
 
@@ -403,7 +440,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     if (key != lastKey) {
       lastKey = key
       if (renderer.vinylOn != vinylWanted) renderer.vinylOn = vinylWanted // on the bar
-      if (intent == null) decide(cs, cur, bar)
+      if (intent == null && !held) decide(cs, cur, bar)
       refreshStatus(cur, bar)
     } else if (intent == null && renderer.pending.get() == null) {
       val retry = moveRetry
@@ -457,7 +494,9 @@ class Engine(private val context: Context, private val listener: Listener) {
     renderer.pending.set(Instruction(cs, at, cs, to, XF_HALF, rho, tag = TAG_JUMP, trim = 0f))
     log("jump ${j.label} ($why) at ${at / ENGINE_RATE.toDouble()}s rho=%.2f".format(rho))
     jumpPending = "${j.label} ($why)" // reported when it executes (see tick)
-    event("jump-soon", j.label) // a bar ahead: the hand on Now Playing reaches for the record
+    // A bar ahead: the hand on Now Playing reaches for the record. "label|dir|ms": back (-1) or on
+    // (1) in the song, and how long until the seam, so its push lands with the sound.
+    event("jump-soon", "${j.label}|${if (j.toBar < boundary) -1 else 1}|${maxOf(0, at - renderer.frame) * 1000L / ENGINE_RATE}")
     jumps++
   }
 
@@ -596,6 +635,7 @@ class Engine(private val context: Context, private val listener: Listener) {
       if (renderer.executed > it.issuedAt && renderer.slot == s) {
         intent = null // done
         if (it.kind == Kind.RESTART || it.kind == Kind.PREVIOUS || it.kind == Kind.TRACK) loaded[s]?.walk?.reset(0)
+        if (it.kind == Kind.SEEK) loaded[s]?.let { l -> reenter(l, l.barAt(it.frame)) }
       } else if (renderer.pending.get() == null && renderer.armedSlot != s) {
         it.issuedAt = -1 // something else ran first: issue again
         log("reissue ${it.kind} -> ${target.title} (slot ${renderer.slot}, target $s, executed ${renderer.executed})")
@@ -613,6 +653,10 @@ class Engine(private val context: Context, private val listener: Listener) {
       Kind.TRACK -> Instruction(cs, -1, s, 0, if (cs >= 0) SWITCH_HALF else 0, tag = TAG_TRACK)
       Kind.HARD_NEXT, Kind.PREVIOUS, Kind.RESTART ->
         Instruction(cs, now + 2048, s, 0, SWITCH_HALF, tag = TAG_TRACK)
+      Kind.SEEK -> {
+        if (it.frame + SWITCH_HALF > (loaded[s]?.pcm?.frames ?: 0)) return // not decoded that far yet
+        Instruction(cs, now + 2048, s, it.frame, SWITCH_HALF, tag = TAG_TRACK)
+      }
       Kind.NEXT -> Instruction(cs, nextBarFrame(cur, now), s, 0, SWITCH_HALF, tag = TAG_TRACK)
       Kind.MOVE -> {
         val m = it.move!!
@@ -654,7 +698,7 @@ class Engine(private val context: Context, private val listener: Listener) {
     it.issuedAt = renderer.executed
     when (it.kind) {
       Kind.VERSION -> event("version", target.version)
-      Kind.TRACK, Kind.MOVE -> {}
+      Kind.TRACK, Kind.MOVE, Kind.SEEK -> {}
       else -> event("track", target.title)
     }
     skipTo = if (it.kind == Kind.HARD_NEXT || it.kind == Kind.NEXT) target.id else null
@@ -734,6 +778,17 @@ class Engine(private val context: Context, private val listener: Listener) {
       alt = null
     }
     main.post { listener.onSong(l?.song) }
+  }
+
+  /** After a seek: both walks carry on from [bar] of the same song, as if it had landed there. */
+  private fun reenter(l: Loaded, bar: Int) {
+    l.walk?.reset(maxOf(0, bar))
+    val info = graph?.tracks?.get(l.song.trackId) ?: return
+    val w = mix ?: return
+    if (l.bundle == null || !l.pcm.complete) return
+    val times = l.bundle.barTimes(l.pcm.frames.toDouble() / ENGINE_RATE)
+    w.enter(info, times, l.bundle.sections, l.bundle.jumps, l.bundle.outroBar, l.bundle.loopable && !l.song.notLoopable, maxOf(0, bar), null, 0.0)
+    l.entered = true
   }
 
   /** The Forever walk needs the final bar grid, i.e. the whole song decoded. */

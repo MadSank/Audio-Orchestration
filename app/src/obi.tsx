@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, type ReactNode } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, useWindowDimensions, View, type PressableProps, type StyleProp, type TextProps, type ViewStyle } from "react-native";
 import Svg, { Circle, Defs, Path, Text as SvgText, TextPath } from "react-native-svg";
 
@@ -45,11 +45,12 @@ export function keyColor(camelot: string | undefined): string {
 const GROOVES = Array.from({ length: 14 }, (_, i) => 96 + i * 11);
 
 /** A record, drawn on a 520-wide grid. Static: spinning it is only a transform. */
-export const Record = memo(function Record({ size, label = color.vermilion, text }: { size: number; label?: string; text?: string }) {
+/** `grooves` replaces the plain grooves (Now Playing presses the song itself there as a spiral). */
+export const Record = memo(function Record({ size, label = color.vermilion, text, grooves }: { size: number; label?: string; text?: string; grooves?: ReactNode }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 520 520">
       <Circle cx={260} cy={260} r={258} fill={color.vinyl} />
-      {GROOVES.map((r) => <Circle key={r} cx={260} cy={260} r={r} fill="none" stroke={color.grooveLit} strokeWidth={1} />)}
+      {grooves ?? GROOVES.map((r) => <Circle key={r} cx={260} cy={260} r={r} fill="none" stroke={color.grooveLit} strokeWidth={1} />)}
       <Path d="M260 2 A258 258 0 0 1 480 125 L260 260 Z" fill={color.paper} opacity={0.05} />
       <Path d="M260 518 A258 258 0 0 1 40 395 L260 260 Z" fill={color.paper} opacity={0.05} />
       <Circle cx={260} cy={260} r={84} fill={label} />

@@ -241,6 +241,9 @@ class SaicsPlayerModule : Module() {
       }
     }
     AsyncFunction("stayPortal") { promise: Promise -> onService(promise) { it.player.engine.stay(); null } }
+    AsyncFunction("getTimeline") { promise: Promise -> onService(promise) { it.player.engine.timeline() } }
+    AsyncFunction("seek") { seconds: Double, promise: Promise -> onService(promise) { it.player.engine.seek(seconds); null } }
+    AsyncFunction("hold") { on: Boolean, promise: Promise -> onService(promise) { it.player.engine.hold(on); null } }
     AsyncFunction("getPortalsFrom") { trackId: String, promise: Promise ->
       onService(promise) { it.player.engine.portalsFrom(trackId) }
     }

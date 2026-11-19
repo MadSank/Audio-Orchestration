@@ -27,6 +27,14 @@ export interface SectionInfo {
 }
 
 /** The next cross-song move, as shown on Now Playing. */
+export interface Timeline {
+  id: string;
+  bars: number[] | null;
+  duration: number;
+  /** False while still decoding: the last bar's end and the length are provisional. */
+  complete: boolean;
+}
+
 export interface NextPortal {
   /** "portal": a matched jump; "back": back through the portal we came in on; "cut": fallback. */
   kind: "portal" | "back" | "cut";
@@ -150,6 +158,12 @@ declare class SaicsPlayerModule extends NativeModule<Events> {
   pickVersion(uri: string): Promise<void>;
   /** Skip the portal shown on Now Playing and keep the current song. */
   stayPortal(): Promise<void>;
+  /** The playing song's downbeats in seconds (null: not analysed) and its length, for the record. */
+  getTimeline(): Promise<Timeline | null>;
+  /** Play on from this many seconds into the song playing, on the nearest downbeat. */
+  seek(seconds: number): Promise<void>;
+  /** A hand on the record: the sound fades out and nothing new is decided until it lets go. */
+  hold(on: boolean): Promise<void>;
   getPortalsFrom(trackId: string): Promise<PortalGroup[]>;
   startStation(index: number): Promise<void>;
   playTrack(uri: string): Promise<void>;
