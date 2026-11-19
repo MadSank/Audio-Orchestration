@@ -620,6 +620,14 @@ Each edge stores its score breakdown and its **chosen transition style**:
 - Fix D14 (or replace the page) and remove the Tone.js version chains in favour of the reference chains.
 - **Built (2026-11-07).** `web/` is now a static page, no build step, in the app's design: two demo songs synthesised in the browser (`song.js`, with a cut-down copy of the jump test using `jumps.py`'s thresholds), the record and pencil finger, portals, versions, helmet buttons, round 3c's results. The old React site, with D14 and the Tone.js chains, is gone (still in git history). Live at https://madsank.github.io/Audio-Orchestration/ from the `gh-pages` branch, which holds only `web/`. To update it: `git subtree split --prefix=web -b gh-pages-build`, then `git push origin gh-pages-build:gh-pages`. Preview: `python -m http.server 5180 --directory web`.
 
+### P10 — SAICS on the PC (owner, 2026-11-19)
+- **Built:** `desktop/`, an installable web app (PWA) for Chrome or Edge: Vite, React, TypeScript, Web Audio. Reads the music folder through the File System Access API (read-only) and plays offline from the laptop's `.saics` bundles and `portals.json`.
+- `src/core/` ports `ForeverWalk.kt` and `MixWalk.kt` with their tests (22 vitest cases); `src/audio/player.ts` is the Web Audio engine (whole songs decoded, seams as crossfaded buffer sources on the downbeat, decided one bar ahead), `keys.ts` the media keys with the helmet's multi-press mapping.
+- Checked in the browser against the real library: 422 songs load, a station plays, Next changes song in 2.5 s with the hands, a scheduled jump lands exactly on its bar. The production build registers its service worker and is installable; the folder picker itself needs the owner's click.
+- [ ] Host it (GitHub Pages next to the website, `…/app/`) and check offline install there
+- [ ] Vinyl (port `Vinyl.kt` to an AudioWorklet, matching the frozen chain), Ride mode, the Versions rings
+- [ ] Chrome's MP3 decoding may trim the encoder delay differently from ffmpeg: measure jump seams on the PC
+
 ### P9 — Virtual radio jockey (RJ): **DROPPED** (owner, 2026-11-06: "not worth it"; the idea below is kept for the record only; research in `docs/research/2026-11-03-mix-web-and-radio-jockey.md`)
 A spoken host that knows the time, the weather and the route, and talks like a DJ who is looping songs by hand, to keep the rider awake.
 
