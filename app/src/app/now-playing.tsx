@@ -257,7 +257,7 @@ export default function NowPlaying() {
   const grooves = useMemo(() => (timeline ? (
     <>
       <Path d={spiral} fill="none" stroke={color.grooveLit} strokeWidth={1.2} />
-      <Path d={played} fill="none" stroke={color.paper} strokeWidth={2.4} strokeLinecap="round" opacity={0.85} />
+      <Path d={played} fill="none" stroke={color.paper} strokeWidth={2} strokeLinecap="round" opacity={0.4} />
       {portalBar != null ? <Path d={grooveTick(portalBar, total)} stroke={color.vermilion} strokeWidth={4.5} strokeLinecap="round" /> : null}
     </>
   ) : undefined), [timeline, spiral, played, portalBar, total]);

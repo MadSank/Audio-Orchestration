@@ -12,7 +12,7 @@ const R_OUT = 246; // the song's first bar
 const R_IN = 104; // its last, just outside the label
 /** The tonearm's pivot, just left of the obi strip, and its length: the stylus stays on the part of
  *  the record the screen shows, clear of the strip and the text below. */
-export const PIVOT = { x: 476, y: 124 };
+export const PIVOT = { x: 468, y: 124 };
 export const ARM = 270;
 const NO_BARS_S = 2; // a song with no analysis turns as if its bars were 2 s long
 
@@ -72,11 +72,11 @@ function groove(b: number, total: number): [number, number] {
   return [C + r * Math.cos(a), C + r * Math.sin(a)];
 }
 
-export function groovePath(from: number, to: number, total: number): string {
+export function groovePath(from: number, to: number, total: number, perTurn = 72): string {
   const a = clamp(from, 0, total);
   const b = clamp(to, 0, total);
   if (b - a < 0.01) return "";
-  const n = Math.max(2, Math.ceil(((b - a) / BARS_PER_TURN) * 30));
+  const n = Math.max(2, Math.ceil(((b - a) / BARS_PER_TURN) * perTurn));
   let d = "";
   for (let i = 0; i <= n; i++) {
     const [x, y] = groove(a + ((b - a) * i) / n, total);
