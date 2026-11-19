@@ -625,6 +625,7 @@ Each edge stores its score breakdown and its **chosen transition style**:
 - `src/core/` ports `ForeverWalk.kt` and `MixWalk.kt` with their tests (22 vitest cases); `src/audio/player.ts` is the Web Audio engine (whole songs decoded, seams as crossfaded buffer sources on the downbeat, decided one bar ahead), `keys.ts` the media keys with the helmet's multi-press mapping.
 - Checked in the browser against the real library: 422 songs load, a station plays, Next changes song in 2.5 s with the hands, a scheduled jump lands exactly on its bar. The production build registers its service worker and is installable; the folder picker itself needs the owner's click.
 - [x] Hosted (2026-11-19) at https://madsank.github.io/Audio-Orchestration/app/ (`app/` on `gh-pages`, beside the website): service worker active for that scope, installable, fonts and folder picker available, no errors. Publishing a build: `desktop/README.md`
+- [x] One deployment (2026-11-19): the website and the PC app are built and published together by `.github/workflows/site.yml` on every push to `main` touching `web/` or `desktop/`. The website's hero and footer link to `app/`; the app's welcome screen and Keys tab link back.
 - [ ] Vinyl (port `Vinyl.kt` to an AudioWorklet, matching the frozen chain), Ride mode, the Versions rings
 - [ ] Chrome's MP3 decoding may trim the encoder delay differently from ffmpeg: measure jump seams on the PC
 

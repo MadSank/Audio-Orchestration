@@ -114,6 +114,7 @@ export function App() {
             </button>
           </div>
           <p className="mono" aria-live="polite">{busy ? "READING THE FOLDER…" : (error ?? "")}</p>
+          <a className="word" href="../" style={{ fontSize: 18, alignSelf: "flex-start" }}>What SAICS does</a>
         </div>
       </main>
     );

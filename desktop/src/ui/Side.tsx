@@ -111,6 +111,9 @@ function Keys() {
       <p className="mono" style={{ gridColumn: "1 / -1", marginTop: 16 }}>
         THE MEDIA KEYS ON YOUR KEYBOARD AND HEADPHONES WORK TOO, EVEN WITH THE WINDOW IN THE BACKGROUND.
       </p>
+      <a className="word" href="../" target="_blank" rel="noopener" style={{ gridColumn: "1 / -1", fontSize: 18, textDecoration: "none" }}>
+        How the jumping works
+      </a>
     </div>
   );
 }

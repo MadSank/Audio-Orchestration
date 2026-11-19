@@ -31,8 +31,11 @@ npm run dev         # http://localhost:5190
 npm run build       # dist/: a static site, works from any address
 ```
 
-To publish a new build: `npm run build`, copy `dist/` to `app/` on the `gh-pages` branch (beside the
-website), commit and push. Nothing else on that branch changes.
+Publishing is automatic: a push to `main` that touches `web/` or `desktop/` runs
+`.github/workflows/site.yml`, which tests and builds this app, puts it under `app/` beside the website
+and publishes both to the `gh-pages` branch that GitHub Pages serves. It can also be run by hand from
+the repository's Actions tab. One deployment, one address:
+https://madsank.github.io/Audio-Orchestration/ (the website) and `.../app/` (this app).
 
 For development without the folder picker, put `SAICS_MUSIC=C:\path\to\songs` in `desktop/.env.local`
 (not committed): the dev server then serves that folder read-only and the app opens it by itself.
