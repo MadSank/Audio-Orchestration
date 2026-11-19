@@ -79,12 +79,17 @@ button { font: inherit; color: inherit; }
   99% { opacity: 1; transform: translate(70vw, 70vh) rotate(-52deg); }
   100% { opacity: 0; }
 }
-.crossing { position: absolute; inset: 0; background: color-mix(in oklab, var(--night) 82%, transparent); display: flex; align-items: center; justify-content: center; gap: 2vw; animation: fade 2.2s forwards; pointer-events: none; }
-.crossing img { width: 220px; animation: lift 2.2s steps(14) forwards; }
-.crossing .what { position: absolute; left: 48px; bottom: 48px; }
-@keyframes fade { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes lift { 0% { transform: translateY(80vh); } 25%, 75% { transform: translateY(0); } 100% { transform: translateY(80vh); } }
-@media (prefers-reduced-motion: reduce) { .finger.go, .crossing img { animation: none; opacity: 0; } }
+/* The song change: two records, each carried by a grip hand (Portal.tsx has the keyframes). */
+.np-record.incoming { pointer-events: none; }
+.grip { position: absolute; pointer-events: none; }
+.grip img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.lens { position: absolute; pointer-events: none; }
+.crossing { position: absolute; inset: 0; pointer-events: none; }
+.cross-from { position: absolute; left: 32px; top: 30px; font-size: 30px; max-width: 40%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cross-to { position: absolute; left: 48px; top: 56%; font-size: 30px; max-width: 34%; }
+.cross-copy { position: absolute; left: 48px; right: 32px; bottom: 44px; display: flex; flex-direction: column; gap: 8px; }
+.obi { transition: none; }
+@media (prefers-reduced-motion: reduce) { .finger.go { animation: none; opacity: 0; } }
 
 /* ── the side panel: Crate and Stations ────────────────────────────────── */
 .side { border-left: 1px solid var(--groove); display: flex; flex-direction: column; min-width: 0; background: var(--night); }

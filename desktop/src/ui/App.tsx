@@ -4,6 +4,7 @@ import { loadLibrary, type Library } from "../audio/library";
 import { Player, type PlayerEvent } from "../audio/player";
 import { canRead, DevSource, FolderSource, pickFolder, rememberedFolder, rememberFolder, type Source } from "../audio/source";
 import { displayName, versionLabel } from "./names";
+import { bodyOpacity, copyOpacity, Grip, incomingStyle, landed, lensOpacity, obiShift, outgoingStyle, useCrossing, type Crossing } from "./Portal";
 import { Record } from "./Record";
 import { Side } from "./Side";
 
@@ -17,7 +18,12 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [, setTick] = useState(0);
   const [jumpKey, setJumpKey] = useState(0);
-  const [crossing, setCrossing] = useState<{ title: string; pair: string; key: number } | null>(null);
+  const [crossing, setCrossing] = useState<Crossing | null>(null);
+  const endCrossing = useCallback(() => setCrossing(null), []);
+  const { p, frame } = useCrossing(crossing, endCrossing);
+  const shownTitle = useRef("SAICS"); // what the record says now: the song a crossing starts from
+  const recordBox = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 800, left: 0, top: 0 });
   const [flash, setFlash] = useState<string | null>(null);
   const flashTimer = useRef(0);
 
@@ -51,13 +57,24 @@ export function App() {
 
   useEffect(() => bindKeys(player), []);
 
+  // The record's size and place: the crossing's keyframes are in the phone's units (record = 520).
+  useEffect(() => {
+    const el = recordBox.current;
+    if (!el) return;
+    const measure = () => setBox({ w: el.offsetWidth, left: el.offsetLeft, top: el.offsetTop });
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, [lib]);
+
   useEffect(
     () =>
       player.on((e: PlayerEvent | null) => {
         setTick((t) => t + 1);
         if (!e) return;
         if (e.type === "jump-soon") setJumpKey((k) => k + 1);
-        if (e.type === "portal") setCrossing({ title: e.title, pair: e.pair, key: Date.now() });
+        if (e.type === "portal" && !matchMedia("(prefers-reduced-motion: reduce)").matches) setCrossing({ from: shownTitle.current, to: displayName(e.title).title, pair: e.pair, start: performance.now() });
         if (e.type === "error") {
           setFlash(e.message);
           clearTimeout(flashTimer.current);
@@ -105,6 +122,8 @@ export function App() {
   const s = player.state();
   const t = s.track;
   const name = t ? displayName(t.groupName && t.version !== "original" ? t.groupName : t.title) : { title: "SAICS", artist: "" };
+  if (!crossing) shownTitle.current = name.title;
+  const u = box.w / 520;
   const status =
     flash ??
     (s.loading ? "Loading…"
@@ -117,9 +136,23 @@ export function App() {
   return (
     <div className="shell">
       <main className="np">
-        <div className="np-record">
-          <Record title={name.title} playing={s.playing} />
+        <div className="np-record" ref={recordBox} style={crossing ? outgoingStyle(p, u) : undefined}>
+          <Record title={crossing ? crossing.from : name.title} playing={s.playing} />
+          {crossing ? <Grip which="out" p={p} u={u} frame={frame} /> : null}
         </div>
+        {crossing ? (
+          <>
+            <div className="np-record incoming" style={incomingStyle(p, u)}>
+              <Record title={crossing.to} playing={s.playing} />
+              <Grip which="in" p={p} u={u} frame={frame} />
+            </div>
+            <svg className="lens" viewBox="0 0 390 600" aria-hidden="true"
+              style={{ left: box.left + 190 * u, top: box.top - 44 * u, width: 390 * u, height: 600 * u, opacity: lensOpacity(p) }}>
+              <defs><clipPath id="lens"><circle cx="110" cy="170" r="190" /></clipPath></defs>
+              <circle cx="280" cy="390" r="190" fill="var(--vermilion)" clipPath="url(#lens)" />
+            </svg>
+          </>
+        ) : null}
         {jumpKey ? <img key={jumpKey} className="finger go" src="hand/hand1.webp" alt="" /> : null}
         <button className="heart" onClick={() => player.toggleLike(t)} aria-pressed={!!t && player.liked.has(t.file)} aria-label="Like this song">
           <svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true">
@@ -127,7 +160,7 @@ export function App() {
               fill={t && player.liked.has(t.file) ? "var(--vermilion)" : "none"} stroke={t && player.liked.has(t.file) ? "var(--vermilion)" : "var(--paper)"} strokeWidth="1.8" />
           </svg>
         </button>
-        <div className="np-text">
+        <div className="np-text" style={{ opacity: crossing ? bodyOpacity(p) : 1 }}>
           <h1 className="np-title">{name.title}</h1>
           <div className="np-sub">{[name.artist, t ? versionLabel(t.version) : ""].filter(Boolean).join(" · ") || "Pick a song or a station"}</div>
           <div className="mono status" aria-live="polite">{status}</div>
@@ -156,19 +189,19 @@ export function App() {
           </div>
         </div>
         {crossing ? (
-          <div key={crossing.key} className="crossing" onAnimationEnd={(e) => e.target === e.currentTarget && setCrossing(null)}>
-            <img src="hand/grip0.webp" alt="" />
-            <img src="hand/grip1.webp" alt="" />
-            <div className="what">
-              <div className="serif" style={{ fontSize: 40 }}>{crossing.pair ? "Same beat. New song." : "New song."}</div>
-              <div className="np-sub">{displayName(crossing.title).title}</div>
+          <div className="crossing" style={{ opacity: copyOpacity(p) }} aria-live="polite">
+            <div className="cross-from serif">{crossing.from}</div>
+            <div className="cross-to serif">{crossing.to}</div>
+            <div className="cross-copy">
+              <div className="serif" style={{ fontSize: 44 }}>{crossing.pair ? "Same beat. New song." : "New song."}</div>
+              {crossing.pair ? <div className="np-sub">{crossing.pair.replace("→", "into")}, on the downbeat</div> : null}
             </div>
           </div>
         ) : null}
       </main>
       <Side player={player} tracks={lib.tracks} current={t} />
-      <aside className="obi" aria-hidden="true">
-        <div className="obi-title">{name.title}</div>
+      <aside className="obi" aria-hidden="true" style={crossing ? { transform: `translateX(${obiShift(p, u)}px)` } : undefined}>
+        <div className="obi-title">{crossing ? (landed(p) ? crossing.to : crossing.from) : name.title}</div>
         <div className="mono">
           {s.bpm ? Math.round(s.bpm) : ""}
           <br />
