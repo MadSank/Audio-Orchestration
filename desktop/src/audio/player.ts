@@ -39,7 +39,7 @@ interface Seg {
 }
 
 export type PlayerEvent =
-  | { type: "jump-soon"; label: string }
+  | { type: "jump-soon"; label: string; inMs: number; dir: -1 | 1 } // dir: back or ahead in the song
   | { type: "jump"; label: string }
   | { type: "portal"; kind: string; title: string; pair: string }
   | { type: "error"; message: string };
@@ -54,7 +54,7 @@ export interface PlayerState {
   jumpPoints: number | null; // null: not analysed
   bpm: number;
   camelot: string;
-  next: { kind: string; title: string; inBars: number } | null;
+  next: { kind: string; title: string; inBars: number; atBar: number } | null;
 }
 
 const dbToGain = (db: number) => 10 ** (Math.max(-30, Math.min(MAX_BOOST_DB, db)) / 20);
@@ -86,6 +86,7 @@ export class Player {
   liked = new Set<string>(JSON.parse(localStorage.getItem("saics.liked") ?? "[]"));
   private listeners = new Set<(e: PlayerEvent | null) => void>();
 
+  private held = false; // a hand on the record: silent, and the walk waits
   private wantPlaying = false; // what the owner asked for; the browser may suspend audio on its own
 
   constructor() {
@@ -142,7 +143,7 @@ export class Player {
       jumpPoints: L ? (L.bundle ? L.bundle.jumps.length : null) : null,
       bpm: L?.bundle?.bpm ?? 0,
       camelot: L?.bundle?.camelot ?? "",
-      next: p && this.mixOn ? { kind: p.kind, title: this.byId.get(p.to)?.title ?? "", inBars: Math.max(0, p.at - bar) } : null,
+      next: p && this.mixOn ? { kind: p.kind, title: this.byId.get(p.to)?.title ?? "", inBars: Math.max(0, p.at - bar), atBar: p.at } : null,
     };
   }
 
@@ -154,6 +155,12 @@ export class Player {
 
   duration(): number {
     return this.live?.loaded.buffer.duration ?? 0;
+  }
+
+  /** The song playing, as the record draws it: its downbeats (null: not analysed) and length. */
+  timeline(): { barT: number[] | null; duration: number; file: string } | null {
+    const L = this.live?.loaded;
+    return L ? { barT: L.barT, duration: L.buffer.duration, file: L.track.file } : null;
   }
 
   // ── decoding ───────────────────────────────────────────────────────────────
@@ -262,7 +269,7 @@ export class Player {
   // ── the clock ──────────────────────────────────────────────────────────────
 
   private tick(): void {
-    if (!this.live || this.ctx.state !== "running") return;
+    if (!this.live || this.ctx.state !== "running" || this.held) return;
     const now = this.ctx.currentTime;
     if (this.pending && now >= this.pending.at) {
       const prev = this.live;
@@ -319,7 +326,7 @@ export class Player {
     const when = this.when(t[fromBar]);
     if (when < this.ctx.currentTime + 0.02) return; // too late for this bar
     this.seam(L, when, t[toBar], SEAM_S, { why: "jump", label });
-    this.emit({ type: "jump-soon", label });
+    this.emit({ type: "jump-soon", label, inMs: (when - this.ctx.currentTime) * 1000, dir: toBar < fromBar ? -1 : 1 });
   }
 
   private repeatOne(): void {
@@ -553,16 +560,66 @@ export class Player {
     if (!this.forever && this.pending?.why === "jump") this.cancelPending();
     localStorage.setItem("saics.forever", String(this.forever));
     // Re-enter the walk so the change counts from the next bar.
-    if (this.live) {
-      const L = this.live.loaded;
-      const g = this.lib?.graph?.get(L.track.id);
-      this.entered = false;
-      if (this.mix && g && L.bundle && L.barT && this.mixActive) {
-        this.mix.enter(g, L.barT, L.bundle.sections, L.bundle.jumps, L.bundle.outroBar, L.bundle.loopable && !L.track.notLoopable,
-          Math.max(0, barAt(L.barT, this.position())), null);
-        this.entered = true;
+    const L = this.live?.loaded;
+    if (L) this.reenter(L.barT ? Math.max(0, barAt(L.barT, this.position())) : 0);
+    this.emit();
+  }
+
+  /** Start the cross-song walk again from `bar` of the song playing (no portal brought us here). */
+  private reenter(bar: number): void {
+    const L = this.live?.loaded;
+    if (!L) return;
+    const g = this.lib?.graph?.get(L.track.id);
+    this.entered = false;
+    if (this.mix && g && L.bundle && L.barT && this.mixActive) {
+      this.mix.enter(g, L.barT, L.bundle.sections, L.bundle.jumps, L.bundle.outroBar, L.bundle.loopable && !L.track.notLoopable, bar, null);
+      this.entered = true;
+    }
+  }
+
+  /** A hand on the record (turning it to find a place): the sound fades out and the walk waits. */
+  hold(on: boolean): void {
+    if (this.held === on) return;
+    this.held = on;
+    const g = this.master.gain;
+    const now = this.ctx.currentTime;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(on || !this.wantPlaying ? 0 : 1, now + (on ? 0.08 : 0.15));
+  }
+
+  /** Play on from `seconds` of the song playing, on the nearest downbeat (jumps stay on the beat). */
+  seek(seconds: number): void {
+    const L = this.live?.loaded;
+    if (!L) return;
+    let at = Math.max(0, Math.min(seconds, L.buffer.duration - 1));
+    let bar = 0;
+    if (L.barT) {
+      const t = L.barT;
+      const n = t.length - 1;
+      const i = barAt(t, at);
+      if (i < 0) at = at < t[0] / 2 ? 0 : t[0];
+      else {
+        bar = Math.min(n - 1, at - t[i] > t[Math.min(n, i + 1)] - at ? i + 1 : i);
+        at = t[bar];
       }
     }
+    this.cancelPending();
+    L.walk?.reset(bar);
+    this.seam(L, this.ctx.currentTime + 0.03, at, SWITCH_S, { why: "start" });
+    if (this.ctx.state !== "running" && this.pending) {
+      // Paused: the clock isn't running to make the switch, so make it now.
+      const prev = this.live!;
+      this.live = this.pending;
+      this.pending = null;
+      try {
+        prev.src.stop();
+      } catch {
+        /* never started */
+      }
+    }
+    this.reenter(bar);
+    this.lastBar = -2;
     this.emit();
   }
 

@@ -42,7 +42,7 @@ button { font: inherit; color: inherit; }
 .word:hover { opacity: 0.8; }
 .word:disabled { opacity: 0.35; cursor: default; }
 
-.shell { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 34vw) var(--obi); height: 100%; }
+.shell { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 34vw) var(--obi); grid-template-rows: minmax(0, 1fr); height: 100%; }
 @media (max-width: 1000px) { .shell { grid-template-columns: minmax(0, 1fr) var(--obi); } .side { display: none; } }
 
 /* ── Now Playing ───────────────────────────────────────────────────────── */
@@ -70,15 +70,20 @@ button { font: inherit; color: inherit; }
 .status { min-height: 1.4em; }
 
 /* The pencil finger (a jump) and the two hands (a song change): the app's drawings. */
-.finger { position: absolute; width: 300px; pointer-events: none; transform-origin: 12% 3%; left: 38%; top: 12%; opacity: 0; }
+.finger { position: absolute; pointer-events: none; transform-origin: 12% 3%; opacity: 0; }
 .finger.go { animation: finger 1.6s steps(19) forwards; }
 @keyframes finger {
-  0% { opacity: 1; transform: translate(70vw, 60vh) rotate(-52deg); }
-  45% { transform: translate(0, 0) rotate(-52deg); }
-  70% { transform: translate(-30px, 18px) rotate(-52deg); }
-  99% { opacity: 1; transform: translate(70vw, 70vh) rotate(-52deg); }
+  0% { opacity: 1; transform: translate(var(--ox), var(--oy)) rotate(-124deg); }
+  45% { transform: translate(0, 0) rotate(-124deg); }
+  60% { transform: translate(var(--px), var(--py)) rotate(-124deg); }
+  99% { opacity: 1; transform: translate(var(--ox), var(--oy)) rotate(-124deg); }
   100% { opacity: 0; }
 }
+/* The record is the timeline: turned by hand, under a tonearm (Turntable.tsx). */
+.np-record[role="slider"] { cursor: grab; touch-action: none; border-radius: 50%; }
+.np-record[role="slider"]:active { cursor: grabbing; }
+.np-record[role="slider"]:focus-visible { outline: 3px solid var(--vermilion); outline-offset: -4px; }
+.arm { position: absolute; overflow: visible; pointer-events: none; }
 /* The song change: two records, each carried by a grip hand (Portal.tsx has the keyframes). */
 .np-record.incoming { pointer-events: none; }
 .grip { position: absolute; pointer-events: none; }

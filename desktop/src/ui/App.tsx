@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { bindKeys } from "../audio/keys";
 import { loadLibrary, type Library } from "../audio/library";
 import { Player, type PlayerEvent } from "../audio/player";
@@ -7,6 +7,7 @@ import { displayName, versionLabel } from "./names";
 import { bodyOpacity, copyOpacity, Grip, incomingStyle, landed, lensOpacity, obiShift, outgoingStyle, useCrossing, type Crossing } from "./Portal";
 import { Record } from "./Record";
 import { Side } from "./Side";
+import { Arm, useTurntable } from "./Turntable";
 
 const player = new Player();
 if (import.meta.env.DEV) (window as unknown as { saics: Player }).saics = player; // for checking from the console
@@ -17,7 +18,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, setTick] = useState(0);
-  const [jumpKey, setJumpKey] = useState(0);
+  const [finger, setFinger] = useState<{ key: number; inMs: number; dir: -1 | 1 } | null>(null);
   const [crossing, setCrossing] = useState<Crossing | null>(null);
   const endCrossing = useCallback(() => setCrossing(null), []);
   const { p, frame } = useCrossing(crossing, endCrossing);
@@ -25,6 +26,9 @@ export function App() {
   const recordBox = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 800, left: 0, top: 0 });
   const [flash, setFlash] = useState<string | null>(null);
+  const tt = useTurntable(player, recordBox, !!crossing);
+  const eject = useRef(tt.eject);
+  eject.current = tt.eject;
   const flashTimer = useRef(0);
 
   const open = useCallback(async (source: Source) => {
@@ -64,6 +68,7 @@ export function App() {
     const measure = () => setBox({ w: el.offsetWidth, left: el.offsetLeft, top: el.offsetTop });
     const ro = new ResizeObserver(measure);
     ro.observe(el);
+    if (el.parentElement) ro.observe(el.parentElement); // its place moves when the panel resizes
     measure();
     return () => ro.disconnect();
   }, [lib]);
@@ -73,8 +78,11 @@ export function App() {
       player.on((e: PlayerEvent | null) => {
         setTick((t) => t + 1);
         if (!e) return;
-        if (e.type === "jump-soon") setJumpKey((k) => k + 1);
-        if (e.type === "portal" && !matchMedia("(prefers-reduced-motion: reduce)").matches) setCrossing({ from: shownTitle.current, to: displayName(e.title).title, pair: e.pair, start: performance.now() });
+        if (e.type === "jump-soon") setFinger((f) => ({ key: (f?.key ?? 0) + 1, inMs: e.inMs, dir: e.dir }));
+        if (e.type === "portal" && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          if (e.kind === "portal") eject.current();
+          setCrossing({ from: shownTitle.current, to: displayName(e.title).title, pair: e.pair, start: performance.now() });
+        }
         if (e.type === "error") {
           setFlash(e.message);
           clearTimeout(flashTimer.current);
@@ -125,6 +133,25 @@ export function App() {
   const name = t ? displayName(t.groupName && t.version !== "original" ? t.groupName : t.title) : { title: "SAICS", artist: "" };
   if (!crossing) shownTitle.current = name.title;
   const u = box.w / 520;
+  const k = box.w / 600; // the record's own units
+  // The finger comes down from the top, clear of the tonearm, meets the record up and to the right
+  // and pushes it round: back (anticlockwise) for a jump back, on for a jump ahead. Its push lands
+  // on the downbeat the sound jumps on.
+  const touch = (-30 * Math.PI) / 180;
+  const reach = (-72 * Math.PI) / 180; // the way the arm goes, off the top of the screen
+  const fingerStyle = finger
+    ? ({
+        width: box.w * 0.39,
+        left: box.left + (300 + 230 * Math.cos(touch)) * k - box.w * 0.39 * 0.12,
+        top: box.top + (300 + 230 * Math.sin(touch)) * k - box.w * 0.39 * (1125 / 537) * 0.03,
+        "--px": `${finger.dir * -Math.sin(touch) * 44 * k}px`,
+        "--py": `${finger.dir * Math.cos(touch) * 44 * k}px`,
+        "--ox": `${Math.cos(reach) * 1100 * k}px`,
+        "--oy": `${Math.sin(reach) * 1100 * k}px`,
+        animationDelay: `${Math.round(finger.inMs - 720)}ms`,
+      } as CSSProperties)
+    : undefined;
+  const armOpacity = crossing ? (p < 0.08 ? 1 - p / 0.08 : p > 0.84 ? (p - 0.84) / 0.16 : 0) : 1;
   const status =
     flash ??
     (s.loading ? "Loading…"
@@ -137,8 +164,9 @@ export function App() {
   return (
     <div className="shell">
       <main className="np">
-        <div className="np-record" ref={recordBox} style={crossing ? outgoingStyle(p, u) : undefined}>
-          <Record title={crossing ? crossing.from : name.title} playing={s.playing} />
+        <div className="np-record" ref={recordBox} style={crossing ? outgoingStyle(p, u) : undefined}
+          role="slider" tabIndex={0} aria-label="Place in the song: turn the record" aria-valuemin={0} {...tt.handlers}>
+          <Record title={crossing ? crossing.from : name.title} playing={s.playing} turntable={tt.refs} />
           {crossing ? <Grip which="out" p={p} u={u} frame={frame} /> : null}
         </div>
         {crossing ? (
@@ -154,7 +182,8 @@ export function App() {
             </svg>
           </>
         ) : null}
-        {jumpKey ? <img key={jumpKey} className="finger go" src="hand/hand1.webp" alt="" /> : null}
+        <Arm refs={tt.refs} style={{ left: box.left, top: box.top, width: box.w, height: box.w }} lifted={1 - armOpacity} />
+        {finger ? <img key={finger.key} className="finger go" src="hand/hand1.webp" alt="" style={fingerStyle} /> : null}
         <button className="heart" onClick={() => player.toggleLike(t)} aria-pressed={!!t && player.liked.has(t.file)} aria-label="Like this song">
           <svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 20s-7-4.4-9.2-8.6C1.3 8.3 3.1 5 6.4 5c2 0 3.3 1.1 4.1 2.3h3c.8-1.2 2.1-2.3 4.1-2.3 3.3 0 5.1 3.3 3.6 6.4C19 15.6 12 20 12 20z" transform="translate(0 -.5)"
@@ -164,6 +193,7 @@ export function App() {
         <div className="np-text" style={{ opacity: crossing ? bodyOpacity(p) : 1 }}>
           <h1 className="np-title">{name.title}</h1>
           <div className="np-sub">{[name.artist, t ? versionLabel(t.version) : ""].filter(Boolean).join(" · ") || "Pick a song or a station"}</div>
+          <div className="mono" ref={(e) => void (tt.refs.time = e)} />
           <div className="mono status" aria-live="polite">{status}</div>
           <div className="np-words">
             <button className={`word${s.forever ? " on" : ""}`} onClick={() => player.toggleForever()} aria-pressed={s.forever}>

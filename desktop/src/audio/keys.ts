@@ -31,7 +31,7 @@ export function bindKeys(player: Player): () => void {
 
   const onKey = (e: KeyboardEvent) => {
     const el = e.target as HTMLElement;
-    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.getAttribute?.("role") === "slider")) return;
     if (e.code === "Space" || e.key === "k") {
       e.preventDefault();
       void player.togglePlay();
