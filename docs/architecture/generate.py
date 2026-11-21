@@ -1,4 +1,4 @@
-"""Generates SAICS's two architecture diagrams (diagram-design grammar, Obi Night skin). Run: python generate.py docs/architecture"""
+"""Generates SAICS's four architecture diagrams (diagram-design grammar, Obi Night skin). Run: python generate.py docs/architecture"""
 import html
 import os
 import sys
@@ -61,7 +61,9 @@ class Diagram:
             f'<rect x="{x + 8}" y="{y + 6}" width="{tw}" height="12" rx="2" fill="transparent" stroke="{tag_stroke}" stroke-width="0.8"/>\n'
             f'<text x="{x + 8 + tw / 2:g}" y="{y + 15}" fill="{tagc}" font-size="7" font-family="{MONO}" text-anchor="middle" letter-spacing="0.08em">{esc(tag)}</text>\n'
             f'<text x="{cx}" y="{y + 38}" fill="{INK}" font-size="13" font-weight="600" font-family="{SANS}" text-anchor="middle">{esc(name)}</text>\n'
-            f'<text x="{cx}" y="{y + 53}" fill="{MUTED}" font-size="9" font-family="{MONO}" text-anchor="middle">{esc(sub)}</text>')
+            + "\n".join(  # one sublabel line, or two for the detailed diagrams (h=80)
+                f'<text x="{cx}" y="{y + 53 + 13 * i}" fill="{MUTED}" font-size="9" font-family="{MONO}" text-anchor="middle">{esc(s)}</text>'
+                for i, s in enumerate([sub] if isinstance(sub, str) else sub)))
 
     def arrow(self, d, role="muted", dashed=False):
         color, marker = ARROWS[role]
@@ -86,8 +88,9 @@ class Diagram:
                 f, s, _ = KINDS[kind]
                 out.append(f'<rect x="{x}" y="{y + 32}" width="14" height="10" rx="2" fill="{f}" stroke="{s}" stroke-width="1"/>')
             else:
-                color, marker = ARROWS[kind.replace("dashed", "muted")]
-                dash = ' stroke-dasharray="4,3"' if kind == "dashed" else ""
+                color, marker = ARROWS[kind.replace("dashed", "muted").replace("event", "muted")]
+                marker = "arrow-open" if kind == "event" else marker
+                dash = ' stroke-dasharray="4,3"' if kind in ("dashed", "event") else ""
                 out.append(f'<line x1="{x}" y1="{y + 37}" x2="{x + 24}" y2="{y + 37}" stroke="{color}" stroke-width="1.2"{dash} marker-end="url(#{marker})"/>')
             out.append(f'<text x="{x + 30}" y="{y + 40}" fill="{MUTED}" font-size="9" font-family="{SANS}">{esc(text)}</text>')
             x += 30 + int(len(text) * 9 * 0.5) + 36
@@ -98,7 +101,7 @@ class Diagram:
             f'<marker id="{m}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="{c}"/></marker>'
             for c, m in ARROWS.values())
         body = "\n".join(self.zones + self.arrows + self.labels + self.nodes + self.legend)
-        return (f'<svg viewBox="0 {self.top} {self.w} {self.h - self.top}"xmlns="http://www.w3.org/2000/svg" role="img" '
+        return (f'<svg viewBox="0 {self.top} {self.w} {self.h - self.top}" xmlns="http://www.w3.org/2000/svg" role="img" '
                 f'aria-labelledby="{self.slug}-title {self.slug}-desc">\n'
                 f'<title id="{self.slug}-title">{esc(title)}</title>\n<desc id="{self.slug}-desc">{esc(desc)}</desc>\n'
                 f'<defs>{markers}</defs>\n<rect x="0" y="{self.top}" width="{self.w}" height="{self.h - self.top}" fill="{PAPER}"/>\n{body}\n</svg>')
@@ -227,4 +230,133 @@ open(os.path.join(OUT, "saics-phone.html"), "w", encoding="utf-8", newline="\n")
     "Inside the SAICS Android app: React Native screens talk through a native module to a Media3 playback service, whose scheduler hands seams to a real-time renderer fed by decoder threads, with the Cardo helmet's buttons arriving through the media session.",
     "The renderer runs on its own thread with no allocations, locks or logging; decoding and the walks' decisions happen elsewhere and reach it as ready PCM and single instructions. "
     "Helmet presses arrive as standard media keys, so every ride action works with the screen off."))
+
+# ── 3. How a jump is found (the laptop's analysis, per song) ─────────────────
+f = Diagram("saics-analysis", 1000, 640, top=112)
+C0, C1, C2, C3, W, H = 40, 280, 520, 760, 176, 80
+R1, R2, R3 = 144, 304, 464
+# row 1, left to right
+f.arrow(f"M {C0 + W},{R1 + 40} H {C1}")
+f.arrow(f"M {C1 + W},{R1 + 40} H {C2}")
+f.arrow(f"M {C2 + W},{R1 + 40} H {C3}")
+f.arrow(f"M {C3 + 88},{R1 + H} V {R2}")                               # bars -> self-similarity
+# row 2, right to left
+f.arrow(f"M {C3},{R2 + 40} H {C2 + W}")
+f.arrow(f"M {C2},{R2 + 40} H {C1 + W}", "accent")                     # jump finder -> bundle
+f.arrow(f"M {C1},{R2 + 40} H {C0 + W}")
+f.arrow(f"M {C2 + 88},{R3} V {R2 + H}")                               # vocal stem -> jump finder
+f.label(248, R1 + 28, "AUDIO")
+f.label(488, R1 + 28, "BEATS")
+f.label(728, R1 + 28, "PER BEAT")
+f.label(892, R1 + 120, "FINGERPRINT")
+f.label(728, R2 + 28, "STRIPES")
+f.label(488, R2 + 28, "JUMPS", "accent")
+f.label(248, R2 + 28, "LIBRARY")
+f.label(648, R3 - 40, "VOCAL STEM")
+f.node(C0, R1, W, H, "backend", "FFMPEG", "Decode", ["44.1 kHz stereo", "+ a mono mix"])
+f.node(C1, R1, W, H, "backend", "MODEL", "Beat This!", ["beats + downbeats", "meter from downbeats"])
+f.node(C2, R1, W, H, "backend", "LIBROSA", "Features per beat", ["36-bin CQT chroma, bass", "MFCC 1-13, onsets"])
+f.node(C3, R1, W, H, "backend", "BARS", "Bar fingerprints", ["each beat slot of a bar", "never assumes 4/4"])
+f.node(C3, R2, W, H, "backend", "SSM", "Self-similarity", ["every bar vs every bar", "novelty → sections"])
+f.node(C2, R2, W, H, "focal", "RULES", "Jump finder", ["4 bars each side ≥ 0.55", "≥ 16 bars apart, align ±4"])
+f.node(C2, R3, W, H, "backend", "DEMUCS", "Vocal stem", ["sung line must continue", "across the seam"])
+f.node(C1, R2, W, H, "focal", "JSON", ".saics bundle", ["beats, sections, jumps", "gain to −14 LUFS"])
+f.node(C0, R2, W, H, "backend", "GRAPH", "Portal matcher", ["tempo ±5%, Camelot key", "4 bars of the same chords"])
+f.legend_strip(576, [("focal", "Focal"), ("backend", "Step"), ("accent", "The result")])
+open(os.path.join(OUT, "saics-analysis.html"), "w", encoding="utf-8", newline="\n").write(page(
+    f, "Engine · SAICS · analysis", "How a jump is found",
+    "How SAICS finds a jump",
+    "The laptop analysis of one song: decoding, a neural beat tracker, beat-level features and bar fingerprints, a self-similarity matrix, vocal separation and the jump finder's rules, written to a .saics bundle, then matched across songs into portals.",
+    "A jump is only allowed where the music repeats: the bars either side of the seam must match a "
+    "stripe in the self-similarity matrix, the target is aligned to within four bars, and a sung line "
+    "may not be cut. Portals use the same idea between two songs. This runs once per song; the phone "
+    "only reads the result."))
+
+
+# ── 4. How a jump is played (the phone engine, one bar to the next) ──────────
+class Sequence(Diagram):
+    """diagram-design's Sequence grammar: actors, dashed lifelines, messages top to bottom."""
+
+    def __init__(self, slug, w, h, top, actors, life_end):
+        super().__init__(slug, w, h, top)
+        self.x = {}
+        for key, cx, kind, tag, name, sub in actors:
+            self.x[key] = cx
+            self.zones.append(f'<line x1="{cx}" y1="{top + 72}" x2="{cx}" y2="{life_end}" stroke="{INK_A(0.22)}" stroke-width="1" stroke-dasharray="3,3"/>')
+            self.node(cx - 80, top + 8, 160, 64, kind, tag, name, sub)
+
+    def frame(self, x, y, w, h, op, guard):
+        self.zones.append(
+            f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="4" fill="{INK_A(0.04)}" stroke="{INK_A(0.22)}" stroke-width="1"/>\n'
+            f'<rect x="{x}" y="{y}" width="44" height="16" rx="2" fill="{PAPER}" stroke="{INK_A(0.22)}" stroke-width="1"/>\n'
+            f'<text x="{x + 22}" y="{y + 12}" fill="{MUTED}" font-size="8" font-family="{MONO}" text-anchor="middle" letter-spacing="0.12em">{op}</text>\n'
+            f'<text x="{x + 52}" y="{y + 12}" fill="{MUTED}" font-size="8" font-family="{MONO}" letter-spacing="0.04em">{esc(guard)}</text>')
+
+    def active(self, key, y0, y1):
+        cx = self.x[key]
+        self.zones.append(f'<rect x="{cx - 4}" y="{y0}" width="8" height="{y1 - y0}" fill="{INK_A(0.06)}" stroke="{MUTED}" stroke-width="0.8"/>')
+
+    def msg(self, a, b, y, text, kind="call"):
+        """call: solid, filled head; ret: dashed, filled; async: dashed, open head; head: accent."""
+        xa, xb = self.x[a], self.x[b]
+        d = 1 if xb > xa else -1
+        x1, x2 = xa + 4 * d, xb - 4 * d  # from and to the activation-bar edges
+        stroke, marker, dash = {"call": (MUTED, "arrow", ""), "ret": (MUTED, "arrow", ' stroke-dasharray="4,3"'),
+                                "async": (MUTED, "arrow-open", ' stroke-dasharray="4,3"'),
+                                "head": (ACCENT, "arrow-accent", "")}[kind]
+        self.arrows.append(f'<line x1="{x1}" y1="{y}" x2="{x2}" y2="{y}" stroke="{stroke}" stroke-width="1.2"{dash} marker-end="url(#{marker})"/>')
+        self.label((x1 + x2) / 2, y - 12, text, "accent" if kind == "head" else "muted")
+
+    def self_msg(self, a, y, text, kind="call"):
+        cx = self.x[a] + 4
+        stroke, marker = (ACCENT, "arrow-accent") if kind == "head" else (MUTED, "arrow")
+        self.arrows.append(f'<path d="M {cx},{y} H {cx + 28} Q {cx + 36},{y} {cx + 36},{y + 8} V {y + 12} Q {cx + 36},{y + 20} {cx + 28},{y + 20} H {cx}" '
+                           f'fill="none" stroke="{stroke}" stroke-width="1.2" marker-end="url(#{marker})"/>')
+        w = int(mono_w(text) + 8) // 4 * 4 + 4
+        color = ACCENT if kind == "head" else SOFT
+        self.labels.append(
+            f'<rect x="{cx + 44}" y="{y + 4}" width="{w}" height="12" rx="2" fill="{PAPER}"/>\n'
+            f'<text x="{cx + 48}" y="{y + 13}" fill="{color}" font-size="8" font-family="{MONO}" letter-spacing="0.06em">{esc(text)}</text>')
+
+    def svg(self, title, desc):
+        out = super().svg(title, desc)
+        opened = f'<marker id="arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="{MUTED}" stroke-width="1.2"/></marker>'
+        return out.replace("</defs>", opened + "</defs>", 1)
+
+
+s = Sequence("saics-playback", 1000, 816, 112, [
+    ("walks", 120, "backend", "WALKS", "Forever / Ride", "pick the next bar"),
+    ("sched", 312, "backend", "SCHED", "Scheduler", "10 ms tick"),
+    ("rend", 504, "focal", "AUDIO", "Renderer", "audio thread"),
+    ("dec", 696, "backend", "THREADS", "Decoder", "whole song to PCM"),
+    ("ui", 868, "backend", "EXPO", "Screen", "record + hand"),
+], life_end=728)
+s.frame(88, 272, 456, 192, "LOOP", "[every new bar]")
+s.active("sched", 296, 496)
+s.active("sched", 632, 688)
+s.active("ui", 480, 496)
+s.active("ui", 672, 724)
+s.active("walks", 304, 344)
+s.active("rend", 528, 616)
+s.msg("dec", "rend", 232, "PCM INTO SLOT", "async")
+s.msg("sched", "walks", 312, "STEP(BAR+1)")
+s.msg("walks", "sched", 344, "JUMP 64 → 24", "ret")
+s.self_msg("sched", 368, "MATCH SEAM")
+s.msg("sched", "rend", 432, "INSTRUCTION")
+s.msg("sched", "ui", 488, "JUMP-SOON, DIR, MS", "async")
+s.self_msg("rend", 536, "ARM 512 AHEAD")
+s.self_msg("rend", 576, "30 MS CROSSFADE", "head")
+s.msg("rend", "sched", 640, "EXECUTED", "async")
+s.msg("sched", "ui", 680, "JUMP", "async")
+s.self_msg("ui", 696, "HAND PUSHES")
+s.legend_strip(752, [("focal", "Focal"), ("backend", "Actor"), ("muted", "Call"), ("dashed", "Reply"), ("event", "One-way event"),
+                     ("accent", "The seam itself")])
+open(os.path.join(OUT, "saics-playback.html"), "w", encoding="utf-8", newline="\n").write(page(
+    s, "Engine · SAICS · playback", "How a jump is played",
+    "How SAICS plays a jump",
+    "The phone engine from one bar to the next: the scheduler asks the walk for the next bar, matches the seam, hands the renderer one instruction for the downbeat, and tells the screen; the renderer arms it a block ahead and crossfades for 30 ms on the beat, then reports back.",
+    "Every bar, the walk decides one bar ahead whether to jump; the jump is handed over as a single "
+    "instruction for the exact downbeat frame. The renderer, the only real-time thread, takes it a block "
+    "ahead and fades between the two places over 30 ms, matched by correlation so the seam doesn't dip. "
+    "The screen hears about it twice: early, so the hand can reach the record, and when it happens."))
 print("ok")

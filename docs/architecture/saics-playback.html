@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How SAICS plays a jump</title>
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@800&family=Archivo+Narrow:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --paper: #0E0C0A; --ink: #EEE5D3; --muted: #B9AE9A; --accent: #E8452A; }
+    body { font-family: 'Archivo Narrow', 'Archivo', system-ui, sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh;
+           display: flex; align-items: center; justify-content: center; padding: 3rem 2rem; }
+    .frame { max-width: 1100px; width: 100%; }
+    .eyebrow { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em;
+               text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem; }
+    h1 { font-family: 'Shippori Mincho', 'Noto Serif', serif; font-weight: 800; font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2.1rem);
+         line-height: 1.15; margin-bottom: 1.5rem; }
+    .scroll { overflow-x: auto; }
+    svg { width: 100%; min-width: 1000px; display: block; }
+    .caption { font-family: 'Archivo Narrow', 'Archivo', system-ui, sans-serif; font-size: 0.95rem; color: var(--muted); margin-top: 1.25rem; max-width: 60ch; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Engine · SAICS · playback</p>
+    <h1>How a jump is played</h1>
+    <div class="scroll">
+<svg viewBox="0 112 1000 704" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="saics-playback-title saics-playback-desc">
+<title id="saics-playback-title">How SAICS plays a jump</title>
+<desc id="saics-playback-desc">The phone engine from one bar to the next: the scheduler asks the walk for the next bar, matches the seam, hands the renderer one instruction for the downbeat, and tells the screen; the renderer arms it a block ahead and crossfades for 30 ms on the beat, then reports back.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#B9AE9A"/></marker><marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#E8452A"/></marker><marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#6FD3FF"/></marker><marker id="arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#B9AE9A" stroke-width="1.2"/></marker></defs>
+<rect x="0" y="112" width="1000" height="704" fill="#0E0C0A"/>
+<line x1="120" y1="184" x2="120" y2="728" stroke="rgba(238,229,211,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+<line x1="312" y1="184" x2="312" y2="728" stroke="rgba(238,229,211,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+<line x1="504" y1="184" x2="504" y2="728" stroke="rgba(238,229,211,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+<line x1="696" y1="184" x2="696" y2="728" stroke="rgba(238,229,211,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+<line x1="868" y1="184" x2="868" y2="728" stroke="rgba(238,229,211,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+<rect x="88" y="272" width="456" height="192" rx="4" fill="rgba(238,229,211,0.04)" stroke="rgba(238,229,211,0.22)" stroke-width="1"/>
+<rect x="88" y="272" width="44" height="16" rx="2" fill="#0E0C0A" stroke="rgba(238,229,211,0.22)" stroke-width="1"/>
+<text x="110" y="284" fill="#B9AE9A" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.12em">LOOP</text>
+<text x="140" y="284" fill="#B9AE9A" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" letter-spacing="0.04em">[every new bar]</text>
+<rect x="308" y="296" width="8" height="200" fill="rgba(238,229,211,0.06)" stroke="#B9AE9A" stroke-width="0.8"/>
+<rect x="308" y="632" width="8" height="56" fill="rgba(238,229,211,0.06)" stroke="#B9AE9A" stroke-width="0.8"/>
+<rect x="864" y="480" width="8" height="16" fill="rgba(238,229,211,0.06)" stroke="#B9AE9A" stroke-width="0.8"/>
+<rect x="864" y="672" width="8" height="52" fill="rgba(238,229,211,0.06)" stroke="#B9AE9A" stroke-width="0.8"/>
+<rect x="116" y="304" width="8" height="40" fill="rgba(238,229,211,0.06)" stroke="#B9AE9A" stroke-width="0.8"/>
+<rect x="500" y="528" width="8" height="88" fill="rgba(238,229,211,0.06)" stroke="#B9AE9A" stroke-width="0.8"/>
+<line x1="692" y1="232" x2="508" y2="232" stroke="#B9AE9A" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-open)"/>
+<line x1="308" y1="312" x2="124" y2="312" stroke="#B9AE9A" stroke-width="1.2" marker-end="url(#arrow)"/>
+<line x1="124" y1="344" x2="308" y2="344" stroke="#B9AE9A" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+<path d="M 316,368 H 344 Q 352,368 352,376 V 380 Q 352,388 344,388 H 316" fill="none" stroke="#B9AE9A" stroke-width="1.2" marker-end="url(#arrow)"/>
+<line x1="316" y1="432" x2="500" y2="432" stroke="#B9AE9A" stroke-width="1.2" marker-end="url(#arrow)"/>
+<line x1="316" y1="488" x2="864" y2="488" stroke="#B9AE9A" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-open)"/>
+<path d="M 508,536 H 536 Q 544,536 544,544 V 548 Q 544,556 536,556 H 508" fill="none" stroke="#B9AE9A" stroke-width="1.2" marker-end="url(#arrow)"/>
+<path d="M 508,576 H 536 Q 544,576 544,584 V 588 Q 544,596 536,596 H 508" fill="none" stroke="#E8452A" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+<line x1="500" y1="640" x2="316" y2="640" stroke="#B9AE9A" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-open)"/>
+<line x1="316" y1="680" x2="864" y2="680" stroke="#B9AE9A" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-open)"/>
+<path d="M 872,696 H 900 Q 908,696 908,704 V 708 Q 908,716 900,716 H 872" fill="none" stroke="#B9AE9A" stroke-width="1.2" marker-end="url(#arrow)"/>
+<rect x="560" y="214" width="80" height="12" rx="2" fill="#0E0C0A"/>
+<text x="600.0" y="223" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">PCM INTO SLOT</text>
+<rect x="182" y="294" width="68" height="12" rx="2" fill="#0E0C0A"/>
+<text x="216.0" y="303" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">STEP(BAR+1)</text>
+<rect x="178" y="326" width="76" height="12" rx="2" fill="#0E0C0A"/>
+<text x="216.0" y="335" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">JUMP 64 → 24</text>
+<rect x="360" y="372" width="64" height="12" rx="2" fill="#0E0C0A"/>
+<text x="364" y="381" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" letter-spacing="0.06em">MATCH SEAM</text>
+<rect x="374" y="414" width="68" height="12" rx="2" fill="#0E0C0A"/>
+<text x="408.0" y="423" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">INSTRUCTION</text>
+<rect x="536" y="470" width="108" height="12" rx="2" fill="#0E0C0A"/>
+<text x="590.0" y="479" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">JUMP-SOON, DIR, MS</text>
+<rect x="552" y="540" width="80" height="12" rx="2" fill="#0E0C0A"/>
+<text x="556" y="549" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" letter-spacing="0.06em">ARM 512 AHEAD</text>
+<rect x="552" y="580" width="92" height="12" rx="2" fill="#0E0C0A"/>
+<text x="556" y="589" fill="#E8452A" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" letter-spacing="0.06em">30 MS CROSSFADE</text>
+<rect x="382" y="622" width="52" height="12" rx="2" fill="#0E0C0A"/>
+<text x="408.0" y="631" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">EXECUTED</text>
+<rect x="574" y="662" width="32" height="12" rx="2" fill="#0E0C0A"/>
+<text x="590.0" y="671" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">JUMP</text>
+<rect x="916" y="700" width="68" height="12" rx="2" fill="#0E0C0A"/>
+<text x="920" y="709" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" letter-spacing="0.06em">HAND PUSHES</text>
+<rect x="40" y="120" width="160" height="64" rx="6" fill="#0E0C0A"/>
+<rect x="40" y="120" width="160" height="64" rx="6" fill="#16130F" stroke="#EEE5D3" stroke-width="1"/>
+<rect x="48" y="126" width="36" height="12" rx="2" fill="transparent" stroke="rgba(238,229,211,0.35)" stroke-width="0.8"/>
+<text x="66" y="135" fill="#EEE5D3" font-size="7" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">WALKS</text>
+<text x="120" y="158" fill="#EEE5D3" font-size="13" font-weight="600" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif" text-anchor="middle">Forever / Ride</text>
+<text x="120" y="173" fill="#B9AE9A" font-size="9" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle">pick the next bar</text>
+<rect x="232" y="120" width="160" height="64" rx="6" fill="#0E0C0A"/>
+<rect x="232" y="120" width="160" height="64" rx="6" fill="#16130F" stroke="#EEE5D3" stroke-width="1"/>
+<rect x="240" y="126" width="36" height="12" rx="2" fill="transparent" stroke="rgba(238,229,211,0.35)" stroke-width="0.8"/>
+<text x="258" y="135" fill="#EEE5D3" font-size="7" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">SCHED</text>
+<text x="312" y="158" fill="#EEE5D3" font-size="13" font-weight="600" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif" text-anchor="middle">Scheduler</text>
+<text x="312" y="173" fill="#B9AE9A" font-size="9" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle">10 ms tick</text>
+<rect x="424" y="120" width="160" height="64" rx="6" fill="#0E0C0A"/>
+<rect x="424" y="120" width="160" height="64" rx="6" fill="rgba(232,69,42,0.12)" stroke="#E8452A" stroke-width="1"/>
+<rect x="432" y="126" width="36" height="12" rx="2" fill="transparent" stroke="rgba(232,69,42,0.5)" stroke-width="0.8"/>
+<text x="450" y="135" fill="#E8452A" font-size="7" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">AUDIO</text>
+<text x="504" y="158" fill="#EEE5D3" font-size="13" font-weight="600" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif" text-anchor="middle">Renderer</text>
+<text x="504" y="173" fill="#B9AE9A" font-size="9" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle">audio thread</text>
+<rect x="616" y="120" width="160" height="64" rx="6" fill="#0E0C0A"/>
+<rect x="616" y="120" width="160" height="64" rx="6" fill="#16130F" stroke="#EEE5D3" stroke-width="1"/>
+<rect x="624" y="126" width="48" height="12" rx="2" fill="transparent" stroke="rgba(238,229,211,0.35)" stroke-width="0.8"/>
+<text x="648" y="135" fill="#EEE5D3" font-size="7" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">THREADS</text>
+<text x="696" y="158" fill="#EEE5D3" font-size="13" font-weight="600" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif" text-anchor="middle">Decoder</text>
+<text x="696" y="173" fill="#B9AE9A" font-size="9" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle">whole song to PCM</text>
+<rect x="788" y="120" width="160" height="64" rx="6" fill="#0E0C0A"/>
+<rect x="788" y="120" width="160" height="64" rx="6" fill="#16130F" stroke="#EEE5D3" stroke-width="1"/>
+<rect x="796" y="126" width="32" height="12" rx="2" fill="transparent" stroke="rgba(238,229,211,0.35)" stroke-width="0.8"/>
+<text x="812" y="135" fill="#EEE5D3" font-size="7" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">EXPO</text>
+<text x="868" y="158" fill="#EEE5D3" font-size="13" font-weight="600" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif" text-anchor="middle">Screen</text>
+<text x="868" y="173" fill="#B9AE9A" font-size="9" font-family="'IBM Plex Mono', ui-monospace, monospace" text-anchor="middle">record + hand</text>
+<line x1="40" y1="752" x2="960" y2="752" stroke="rgba(238,229,211,0.12)" stroke-width="0.8"/>
+<text x="40" y="770" fill="#9A8F7C" font-size="8" font-family="'IBM Plex Mono', ui-monospace, monospace" letter-spacing="0.18em">LEGEND</text>
+<rect x="40" y="784" width="14" height="10" rx="2" fill="rgba(232,69,42,0.12)" stroke="#E8452A" stroke-width="1"/>
+<text x="70" y="792" fill="#B9AE9A" font-size="9" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif">Focal</text>
+<rect x="128" y="784" width="14" height="10" rx="2" fill="#16130F" stroke="#EEE5D3" stroke-width="1"/>
+<text x="158" y="792" fill="#B9AE9A" font-size="9" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif">Actor</text>
+<line x1="216" y1="789" x2="240" y2="789" stroke="#B9AE9A" stroke-width="1.2" marker-end="url(#arrow)"/>
+<text x="246" y="792" fill="#B9AE9A" font-size="9" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif">Call</text>
+<line x1="300" y1="789" x2="324" y2="789" stroke="#B9AE9A" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+<text x="330" y="792" fill="#B9AE9A" font-size="9" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif">Reply</text>
+<line x1="388" y1="789" x2="412" y2="789" stroke="#B9AE9A" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-open)"/>
+<text x="418" y="792" fill="#B9AE9A" font-size="9" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif">One-way event</text>
+<line x1="512" y1="789" x2="536" y2="789" stroke="#E8452A" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+<text x="542" y="792" fill="#B9AE9A" font-size="9" font-family="'Archivo Narrow', 'Archivo', system-ui, sans-serif">The seam itself</text>
+</svg>
+    </div>
+    <p class="caption">Every bar, the walk decides one bar ahead whether to jump; the jump is handed over as a single instruction for the exact downbeat frame. The renderer, the only real-time thread, takes it a block ahead and fades between the two places over 30 ms, matched by correlation so the seam doesn&#x27;t dip. The screen hears about it twice: early, so the hand can reach the record, and when it happens.</p>
+  </div>
+</body>
+</html>
