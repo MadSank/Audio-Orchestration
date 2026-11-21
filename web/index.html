@@ -139,6 +139,27 @@
       <img src="assets/screens/ride.webp" alt="Ride mode: pure black, a huge play button and the word Next." width="520" height="1014" loading="lazy">
     </div>
   </section>
+
+  <section class="built" aria-labelledby="built-title">
+    <h2 id="built-title">How it’s built</h2>
+    <p>Four drawings of the machinery: the whole system, how a jump is found, how it’s played, and the phone inside. Open one to see it full size.</p>
+    <figure>
+      <a href="assets/diagrams/architecture.webp"><img src="assets/diagrams/architecture.webp" width="2000" height="1104" loading="lazy" alt="The whole system: a laptop analyses each song once into a .saics bundle beside the songs; the phone app and the PC app read that folder and play it offline, controlled from a Cardo helmet over Bluetooth."></a>
+      <figcaption>The whole system. The laptop analyses each song once; the phone and the PC play it offline.</figcaption>
+    </figure>
+    <figure>
+      <a href="assets/diagrams/analysis.webp"><img src="assets/diagrams/analysis.webp" width="2000" height="1056" loading="lazy" alt="How a jump is found: decode, a neural beat tracker, features for every beat, bar fingerprints and a bar-by-bar similarity map lead to the jump finder, which also checks the vocal stem; the result is written to the bundle and matched across songs into portals."></a>
+      <figcaption>How a jump is found. The bars either side of the seam must match, and a sung line is never cut.</figcaption>
+    </figure>
+    <figure>
+      <a href="assets/diagrams/playback.webp"><img src="assets/diagrams/playback.webp" width="2000" height="1408" loading="lazy" alt="How a jump is played: every bar the scheduler asks the walk for the next bar, matches the seam and hands the renderer one instruction for the downbeat; the renderer crossfades for 30 ms and reports back, and the screen's hand pushes the record."></a>
+      <figcaption>How a jump is played. One instruction for the downbeat, and a 30 ms crossfade on the beat.</figcaption>
+    </figure>
+    <figure>
+      <a href="assets/diagrams/phone.webp"><img src="assets/diagrams/phone.webp" width="2000" height="1120" loading="lazy" alt="Inside the phone app: screens talk through a native module to the playback service, where the helmet’s buttons arrive; the scheduler hands seams to a real-time renderer fed by decoder threads."></a>
+      <figcaption>Inside the phone. The renderer is the only real-time thread, and the helmet’s buttons arrive as media keys.</figcaption>
+    </figure>
+  </section>
 </main>
 
 <footer class="foot">

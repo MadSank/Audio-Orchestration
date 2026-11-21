@@ -159,6 +159,13 @@ main > section > h2 + p { margin-top: var(--space-md); }
 .screens { margin-top: var(--space-xl); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); max-width: 760px; }
 .screens img { width: 100%; height: auto; border-radius: 4px; }
 
+/* The drawings share the page's night, so they sit straight on it: no frame, no card. */
+.built figure { margin: var(--space-2xl) 0 0; max-width: 1100px; }
+.built figure a { display: block; }
+.built figure img { width: 100%; height: auto; display: block; }
+.built figure a:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 4px; }
+.built figcaption { margin-top: var(--space-sm); max-width: var(--measure); color: var(--color-ink-2); font-size: 1rem; }
+
 .foot { padding-block: var(--space-xl); padding-left: var(--gutter); display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-xl); align-items: baseline; }
 .foot-link { white-space: nowrap; font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; color: var(--color-ink); }
 .foot-link:hover { color: var(--color-word); }
