@@ -2,14 +2,14 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, AppState, Easing, Image, PanResponder, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle, ClipPath, Defs, Line, Path } from "react-native-svg";
+import Svg, { Circle, ClipPath, Defs, Path } from "react-native-svg";
 
 import SaicsPlayer, { addListener, readingNote, type Timeline } from "../../modules/saics-player";
 import { displayName, versionLabel } from "../names";
 import { Mono, Narrow, ObiTitle, PlayButton, Record, Serif, SkipButton, useK, useSpin, Word } from "../obi";
 import { usePlayerState } from "../usePlayer";
 import { color, OBI_WIDTH } from "../theme/tokens";
-import { ARM, armDeg, barFrac, BARS_PER_TURN, groovePath, grooveTick, PIVOT, radiusAt, secondsAt, slingshot, totalBars, turnDeg } from "../turntable";
+import { ARM_DEG, barFrac, BARS_PER_TURN, groovePath, grooveTick, radiusAt, R_OUT, secondsAt, slingshot, totalBars, turnDeg } from "../turntable";
 
 const HAND = [require("../../assets/hand/hand0.png"), require("../../assets/hand/hand1.png"), require("../../assets/hand/hand2.png")];
 const GRIP = [require("../../assets/hand/grip0.png"), require("../../assets/hand/grip1.png"), require("../../assets/hand/grip2.png")];
@@ -18,10 +18,6 @@ const onTwos = (t: number) => Math.floor(t * 8) / 8;
 const SWING_MS = 380; // a jump or a seek: the record swings to its new place
 const FLING_MS = 1150;
 const AHEAD_S = 4; // the record is driven this far ahead between the service's state updates
-/** The spindle in the middle: a stack that wears down as the song plays out (record units). */
-const SPINDLE_MAX = 32;
-const SPINDLE_MIN = 6;
-const spindleAt = (b: number, tot: number) => SPINDLE_MIN + (SPINDLE_MAX - SPINDLE_MIN) * (1 - Math.max(0, Math.min(1, b / Math.max(1, tot))));
 
 export default function NowPlaying() {
   const router = useRouter();
@@ -64,10 +60,9 @@ export default function NowPlaying() {
   }, [songKey]);
   const total = timeline ? totalBars(timeline.bars, timeline.duration) : 1;
   const turn = useRef(new Animated.Value(0)).current; // degrees, clockwise
-  const arm = useRef(new Animated.Value(armDeg(radiusAt(0, 1)))).current;
+  const arm = useRef(new Animated.Value(R_OUT)).current; // the arm's length from the spindle (record units)
   const sync = useRef({ pos: 0, at: 0, playing: false, key: "" });
   const seekTo = useRef<{ pos: number; t: number } | null>(null); // a seek the state hasn't caught up with
-  const spindle = useRef(new Animated.Value(SPINDLE_MAX)).current; // radius, record units
   const dragging = useRef(false);
   const now = () => sync.current.pos + (sync.current.playing ? (Date.now() - sync.current.at) / 1000 : 0);
   const aim = useCallback((swing: boolean) => {
@@ -78,26 +73,22 @@ export default function NowPlaying() {
     if (swing) {
       Animated.parallel([
         Animated.timing(turn, { toValue: turnDeg(b), duration: SWING_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(arm, { toValue: armDeg(radiusAt(b, tot)), duration: SWING_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(spindle, { toValue: spindleAt(b, tot), duration: SWING_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(arm, { toValue: radiusAt(b, tot), duration: SWING_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       ]).start(({ finished }) => finished && aim(false));
     } else if (sync.current.playing) {
       const ahead = barFrac(t.bars, now() + AHEAD_S);
       Animated.parallel([
         Animated.timing(turn, { toValue: turnDeg(ahead), duration: AHEAD_S * 1000, easing: Easing.linear, useNativeDriver: true }),
-        Animated.timing(arm, { toValue: armDeg(radiusAt(ahead, tot)), duration: AHEAD_S * 1000, easing: Easing.linear, useNativeDriver: true }),
-        Animated.timing(spindle, { toValue: spindleAt(ahead, tot), duration: AHEAD_S * 1000, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(arm, { toValue: radiusAt(ahead, tot), duration: AHEAD_S * 1000, easing: Easing.linear, useNativeDriver: true }),
       ]).start();
     } else {
       turn.stopAnimation();
       arm.stopAnimation();
-      spindle.stopAnimation();
       turn.setValue(turnDeg(b));
-      arm.setValue(armDeg(radiusAt(b, tot)));
-      spindle.setValue(spindleAt(b, tot));
+      arm.setValue(radiusAt(b, tot));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arm, spindle, turn]);
+  }, [arm, turn]);
   useEffect(() => {
     if (!state || !timeline || dragging.current) return;
     const pos = state.position / 1000;
@@ -114,10 +105,8 @@ export default function NowPlaying() {
     if (fresh) {
       turn.stopAnimation();
       arm.stopAnimation();
-      spindle.stopAnimation();
       turn.setValue(turnDeg(b));
-      arm.setValue(armDeg(radiusAt(b, total)));
-      spindle.setValue(spindleAt(b, total));
+      arm.setValue(radiusAt(b, total));
       aim(false);
     } else if (Math.abs(pos - expected) > 0.8) {
       aim(true); // a jump: the record swings back (or on)
@@ -232,15 +221,13 @@ export default function NowPlaying() {
           dragging.current = true;
           turn.stopAnimation();
           arm.stopAnimation();
-          spindle.stopAnimation();
           void SaicsPlayer.hold(true);
         }
         if (!d.moved) return;
         const tot = totalBars(t.bars, t.duration);
         d.target = Math.max(0, Math.min(tot - 0.5, d.b0 + (d.turned / (2 * Math.PI)) * BARS_PER_TURN));
         turn.setValue(turnDeg(d.target));
-        arm.setValue(armDeg(radiusAt(d.target, tot)));
-        spindle.setValue(spindleAt(d.target, tot));
+        arm.setValue(radiusAt(d.target, tot));
       },
       onPanResponderRelease: letGo,
       onPanResponderTerminate: letGo,
@@ -255,7 +242,7 @@ export default function NowPlaying() {
   };
 
   // What the record shows: the song as a spiral and where a portal leaves; the way out is drawn two
-  // bars before it. How far the song has got is the spindle, which wears down as it plays.
+  // bars before it. How far the song has got is the arm, from the spindle to the groove.
   const portalBar = portal?.kind === "portal" && state?.bar != null ? state.bar + portal.inBars : null;
   const grooves = useMemo(() => (timeline ? (
     <>
@@ -295,8 +282,7 @@ export default function NowPlaying() {
     });
   }, [flingFrom, flight, k, toScreen]);
   const turnRot = turn.interpolate({ inputRange: [0, 360], outputRange: ["0deg", "360deg"] });
-  const armRot = arm.interpolate({ inputRange: [0, 360], outputRange: ["0deg", "360deg"] });
-  const PAD = 24;
+  const ROD = 3.5 * k; // the arm's thickness
 
   useEffect(() => {
     if (!handOn && !crossingNow) return;
@@ -413,12 +399,29 @@ export default function NowPlaying() {
           <Record size={D} text={`${name.title} · `.repeat(3).slice(0, 44)} grooves={grooves} />
         </Animated.View>
         {timeline ? (
-          <Animated.View pointerEvents="none" style={{
-            position: "absolute", left: D / 2 - SPINDLE_MAX * k, top: D / 2 - SPINDLE_MAX * k,
-            width: SPINDLE_MAX * 2 * k, height: SPINDLE_MAX * 2 * k, borderRadius: SPINDLE_MAX * k,
-            backgroundColor: color.paper, borderWidth: 3 * k, borderColor: color.night,
-            transform: [{ scale: spindle.interpolate({ inputRange: [0, SPINDLE_MAX], outputRange: [0, 1] }) }],
-          }} />
+          // The arm grows from the spindle out to the groove being played, and shortens as the song
+          // plays in. It rides with the record (a song change carries it off with the old one).
+          <View pointerEvents="none" style={{
+            position: "absolute", left: D / 2, top: D / 2 - 12 * k, width: R_OUT * k, height: 24 * k,
+            transformOrigin: [0, 12 * k, 0], transform: [{ rotate: `${ARM_DEG}deg` }],
+          }}>
+            <Animated.View style={{
+              position: "absolute", left: 0, top: 12 * k - ROD / 2, width: R_OUT * k, height: ROD, borderRadius: ROD / 2,
+              backgroundColor: color.paper, transformOrigin: [0, ROD / 2, 0],
+              transform: [{ scaleX: arm.interpolate({ inputRange: [0, R_OUT], outputRange: [0, 1] }) }],
+            }} />
+            <Animated.View style={{
+              position: "absolute", left: -30 * k, top: 6.5 * k, width: 30 * k, height: 11 * k, flexDirection: "row", alignItems: "center",
+              transform: [{ translateX: arm.interpolate({ inputRange: [0, R_OUT], outputRange: [0, R_OUT * k] }) }],
+            }}>
+              <View style={{ flex: 1, height: 11 * k, borderRadius: 5.5 * k, backgroundColor: color.paper }} />
+              <View style={{ position: "absolute", right: -6 * k, width: 12 * k, height: 12 * k, borderRadius: 6 * k, backgroundColor: color.vermilion }} />
+            </Animated.View>
+            <View style={{
+              position: "absolute", left: -15 * k, top: -3 * k, width: 30 * k, height: 30 * k, borderRadius: 15 * k,
+              backgroundColor: color.night, borderWidth: ROD, borderColor: color.paper,
+            }} />
+          </View>
         ) : null}
         {crossing ? <Animated.View pointerEvents="none" style={holdOut}>{gripFrames}</Animated.View> : null}
       </Animated.View>
@@ -438,20 +441,6 @@ export default function NowPlaying() {
         </>
       ) : null}
 
-      {timeline ? (
-        <Animated.View pointerEvents="none" style={{
-          position: "absolute", left: discLeft + (PIVOT.x - PAD) * k, top: discTop + (PIVOT.y - PAD) * k,
-          width: (ARM + PAD * 2) * k, height: PAD * 2 * k, transformOrigin: [PAD * k, PAD * k, 0],
-          transform: [{ rotate: armRot }], opacity: lerp([0, 0.08, 0.84, 1], [1, 0, 0, 1]), // lifted while the records cross
-        }}>
-          <Svg width={(ARM + PAD * 2) * k} height={PAD * 2 * k} viewBox={`0 0 ${ARM + PAD * 2} ${PAD * 2}`}>
-            <Line x1={PAD} y1={PAD} x2={PAD + ARM} y2={PAD} stroke={color.paper} strokeWidth={3.5} strokeLinecap="round" />
-            <Line x1={PAD + ARM - 26} y1={PAD} x2={PAD + ARM} y2={PAD} stroke={color.paper} strokeWidth={11} strokeLinecap="round" />
-            <Circle cx={PAD} cy={PAD} r={15} fill={color.night} stroke={color.paper} strokeWidth={3.5} />
-            <Circle cx={PAD + ARM} cy={PAD} r={6} fill={color.vermilion} />
-          </Svg>
-        </Animated.View>
-      ) : null}
       {wayOut ? (
         <Svg pointerEvents="none" style={StyleSheet.absoluteFill} width={W} height={H}>
           <Path d={wayOut} fill="none" stroke={color.vermilion} strokeWidth={2} strokeDasharray="6 8" />

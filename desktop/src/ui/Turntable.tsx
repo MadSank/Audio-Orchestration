@@ -4,8 +4,8 @@ import type { Player } from "../audio/player";
 
 /**
  * The record is the timeline. The song is pressed as one spiral groove, rim to label, a turn for
- * every 8 bars (a phrase, so places that match tend to line up), and the record turns under a
- * tonearm that never moves round, only in. So turning the record by hand is moving through the
+ * every 8 bars (a phrase, so places that match tend to line up), and the record turns under an
+ * arm that grows from the spindle to the groove and shortens as the song plays in. So turning the record by hand is moving through the
  * song, a jump is the record pushed back (or on), and a portal flings the stylus off the record,
  * round the label once like a probe round a planet, out towards the next song.
  *
@@ -15,13 +15,13 @@ export const BARS_PER_TURN = 8;
 const C = 300;
 const R_OUT = 282; // the song's first bar
 const R_IN = 128; // its last, just outside the label
-const PIVOT = { x: 660, y: 110 }; // the tonearm's pivot, off the record to the upper right
-const ARM = 320;
+/** The arm grows from the spindle out to the groove along this angle (radians, clockwise from
+ *  3 o'clock): about 3 o'clock, below the finger (upper right) and above the title. It gets
+ *  shorter as the song plays in towards the label. */
+const ARM_ANGLE = (-4 * Math.PI) / 180;
 const NO_BARS_S = 2; // a song with no analysis turns as if its bars were 2 s long
 const EASE_MS = 380; // a jump: the record swings to its new place
 const EJECT_MS = 1150;
-const SPINDLE_MAX = 40; // the spindle's radius at the start of a song, inside the 108 label
-const SPINDLE_MIN = 9; // at its end: just the hole
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -47,11 +47,8 @@ const radiusAt = (b: number, total: number) => R_OUT - (R_OUT - R_IN) * clamp(b 
 const turnAt = (b: number) => (b / BARS_PER_TURN) * 2 * Math.PI;
 
 /** Where the stylus sits (angle from the centre) when it's `r` from the centre. */
-function stylusAngle(r: number): number {
-  const dx = PIVOT.x - C;
-  const dy = PIVOT.y - C;
-  const d = Math.hypot(dx, dy);
-  return Math.atan2(dy, dx) + Math.acos(clamp((r * r + d * d - ARM * ARM) / (2 * r * d), -1, 1));
+function stylusAngle(_r: number): number {
+  return ARM_ANGLE;
 }
 
 /** A point of the groove at bar `b`, on the record before it turns. */
@@ -96,7 +93,7 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60))
 export interface TurntableRefs {
   group: SVGGElement | null;
   spiral: SVGPathElement | null;
-  spindle: SVGCircleElement | null;
+
   portal: SVGPathElement | null;
   arm: SVGLineElement | null;
   head: SVGLineElement | null;
@@ -109,7 +106,7 @@ export interface TurntableRefs {
 
 export function useTurntable(player: Player, recordBox: RefObject<HTMLDivElement | null>, frozen: boolean) {
   const refs = useRef<TurntableRefs>({
-    group: null, spiral: null, spindle: null, portal: null, arm: null, head: null, dot: null,
+    group: null, spiral: null, portal: null, arm: null, head: null, dot: null,
     preview: null, ejectDot: null, ejectTrail: null, time: null,
   }).current;
   const st = useRef({
@@ -159,8 +156,6 @@ export function useTurntable(player: Player, recordBox: RefObject<HTMLDivElement
         refs.spiral.setAttribute("d", groovePath(0, total, total));
         st.spiralFile = tl.file;
       }
-      // How far the song has got: the spindle wears down as it plays out (and grows back on a jump back).
-      refs.spindle?.setAttribute("r", (SPINDLE_MIN + (SPINDLE_MAX - SPINDLE_MIN) * (1 - clamp(shown / Math.max(1, total), 0, 1))).toFixed(1));
       const s = player.state();
       const portal = s.next?.kind === "portal" ? s.next : null;
       if (refs.portal) {
@@ -185,8 +180,8 @@ export function useTurntable(player: Player, recordBox: RefObject<HTMLDivElement
       refs.arm?.setAttribute("x2", sx.toFixed(1));
       refs.arm?.setAttribute("y2", sy.toFixed(1));
       if (refs.head) {
-        const hx = PIVOT.x - sx;
-        const hy = PIVOT.y - sy;
+        const hx = C - sx; // the head points back along the arm, to the centre
+        const hy = C - sy;
         const l = Math.hypot(hx, hy);
         refs.head.setAttribute("x1", sx.toFixed(1));
         refs.head.setAttribute("y1", sy.toFixed(1));
@@ -321,9 +316,9 @@ export function Arm({ refs, style, lifted }: { refs: TurntableRefs; style: CSSPr
     <svg className="arm" viewBox="0 0 600 600" style={style} aria-hidden="true">
       <path ref={(e) => void (refs.preview = e)} fill="none" stroke="var(--vermilion)" strokeWidth="2.5" strokeDasharray="7 9" />
       <g className="arm-body" opacity={1 - lifted}>
-        <line ref={(e) => void (refs.arm = e)} x1={PIVOT.x} y1={PIVOT.y} x2={PIVOT.x} y2={PIVOT.y + ARM} stroke="var(--paper)" strokeWidth="4" strokeLinecap="round" />
+        <line ref={(e) => void (refs.arm = e)} x1={C} y1={C} x2={C + 280} y2={C} stroke="var(--paper)" strokeWidth="4" strokeLinecap="round" />
         <line ref={(e) => void (refs.head = e)} stroke="var(--paper)" strokeWidth="13" strokeLinecap="round" />
-        <circle cx={PIVOT.x} cy={PIVOT.y} r="19" fill="var(--night)" stroke="var(--paper)" strokeWidth="4" />
+        <circle cx={C} cy={C} r="19" fill="var(--night)" stroke="var(--paper)" strokeWidth="4" />
         <circle ref={(e) => void (refs.dot = e)} r="7" fill="var(--vermilion)" />
       </g>
       <path ref={(e) => void (refs.ejectTrail = e)} fill="none" stroke="var(--vermilion)" strokeWidth="9" strokeLinecap="round" opacity="0.6" />

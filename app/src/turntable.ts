@@ -1,19 +1,19 @@
 /**
  * The record is the timeline (as on the PC: desktop/src/ui/Turntable.tsx). The song is pressed as one
- * spiral groove, rim to label, a turn for every 8 bars, and the record turns under a tonearm that only
- * moves in. Turning the record by hand moves through the song; a jump swings it back (or on); a portal
- * flings the stylus round the label and away.
+ * spiral groove, rim to label, a turn for every 8 bars, and the record turns under an arm that grows
+ * from the spindle to the groove and shortens as the song plays in. Turning the record by hand moves
+ * through the song; a jump swings it back (or on); a portal flings the stylus round the label and away.
  *
  * Geometry is in the record's own units (Record's 520 viewBox, centre 260); on screen one unit is k.
  */
 export const BARS_PER_TURN = 8;
 const C = 260;
-const R_OUT = 246; // the song's first bar
+export const R_OUT = 246; // the song's first bar
 const R_IN = 104; // its last, just outside the label
-/** The tonearm's pivot, just left of the obi strip, and its length: the stylus stays on the part of
- *  the record the screen shows, clear of the strip and the text below. */
-export const PIVOT = { x: 468, y: 124 };
-export const ARM = 270;
+/** The arm grows from the spindle out to the groove along this angle (degrees, clockwise from
+ *  3 o'clock): up and to the right, on the part of the record the screen shows, clear of the title
+ *  below and the hand that pushes at a jump. It shortens as the song plays in towards the label. */
+export const ARM_DEG = -32;
 const NO_BARS_S = 2; // a song with no analysis turns as if its bars were 2 s long
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -51,18 +51,9 @@ export const radiusAt = (b: number, total: number) => R_OUT - (R_OUT - R_IN) * c
 /** How far the record has turned at bar `b`, in degrees, clockwise. */
 export const turnDeg = (b: number) => (b / BARS_PER_TURN) * 360;
 
-/** Where the stylus sits (angle from the centre, radians) when it's `r` from the centre. */
-function stylusAngle(r: number): number {
-  const dx = PIVOT.x - C;
-  const dy = PIVOT.y - C;
-  const d = Math.hypot(dx, dy);
-  return Math.atan2(dy, dx) + Math.acos(clamp((r * r + d * d - ARM * ARM) / (2 * r * d), -1, 1));
-}
-
-/** The tonearm's angle (degrees, from the pivot) with the stylus `r` from the centre. */
-export function armDeg(r: number): number {
-  const a = stylusAngle(r);
-  return (Math.atan2(C + r * Math.sin(a) - PIVOT.y, C + r * Math.cos(a) - PIVOT.x) * 180) / Math.PI;
+/** Where the stylus sits (angle from the centre, radians): always along the arm. */
+function stylusAngle(_r: number): number {
+  return (ARM_DEG * Math.PI) / 180;
 }
 
 /** A point of the groove at bar `b`, on the record before it turns. */

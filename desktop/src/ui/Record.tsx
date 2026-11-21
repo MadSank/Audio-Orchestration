@@ -2,8 +2,8 @@ import type { TurntableRefs } from "./Turntable";
 
 /**
  * The record: two soft bands of light, a vermilion label with the title round it, and grooves.
- * With `turntable`, the grooves are the song itself (one spiral, rim to label), a spindle in the
- * middle wears down as the song plays, and the turntable turns it; without, plain grooves spin on their own.
+ * With `turntable`, the grooves are the song itself (one spiral, rim to label), and the turntable turns
+ * it under an arm that grows from the spindle; without, plain grooves spin on their own.
  */
 export function Record({ title, playing, turntable }: { title: string; playing: boolean; turntable?: TurntableRefs }) {
   const text = `${title} · ${title} · `.slice(0, 90);
@@ -32,7 +32,6 @@ export function Record({ title, playing, turntable }: { title: string; playing: 
         </text>
         <circle cx="300" cy="300" r="9" fill="var(--night)" />
       </g>
-      {t ? <circle ref={(e) => void (t.spindle = e)} cx="300" cy="300" r="40" fill="var(--paper)" stroke="var(--night)" strokeWidth="4" /> : null}
     </svg>
   );
 }

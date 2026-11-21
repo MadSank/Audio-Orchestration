@@ -172,10 +172,20 @@ class PlaybackService : MediaLibraryService() {
   override fun onTaskRemoved(rootIntent: Intent?) {
     // Swiping SAICS away in Recents closes it, as with any music app: stop the music and the service.
     // (The helmet's play button can still start it again later through playback resumption.)
-    player.pause()
+    // Media3 keeps the service in the foreground for 10 minutes after a pause, so pause() then
+    // stopSelf() leaves it (and its notification) running: this is its way to really stop.
     saveState()
-    stopForeground(STOP_FOREGROUND_REMOVE)
-    stopSelf()
+    prefs.edit().commit() // waits for the saved state to reach the disk before the process ends
+    pauseAllPlayersAndStopSelf()
+    // The app's own controller keeps the service bound, so Media3 would leave a paused notification
+    // up: take it down and end the process, so nothing of SAICS is left running. The next launch
+    // (or a helmet press, through playback resumption) starts it fresh from the saved state.
+    // (Cancelled last, just before the end: Media3 posts it again when the pause lands.)
+    val notes = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+    android.os.Handler(mainLooper).postDelayed({
+      notes.cancelAll()
+      android.os.Process.killProcess(android.os.Process.myPid())
+    }, 400)
   }
 
   override fun onDestroy() {
