@@ -53,17 +53,14 @@ export default function Crate() {
     return out;
   }, [groups, q, filter]);
 
-  const header = portals.length > 0 && !q ? (
-    <View style={{ paddingHorizontal: 24, paddingBottom: 10 }}>
-      <Mono c={color.vermilion}>PORTALS FROM {displayName(state?.title ?? "").title.toUpperCase()}</Mono>
-      {portals.map((p) => (
-        <View key={p.trackId} style={s.portal}>
-          <Serif size={18} numberOfLines={1} style={{ flex: 1 }}>{displayName(p.title).title}</Serif>
-          <Mono>{p.count} · {p.pair}</Mono>
-        </View>
-      ))}
+  // Always the same two lines, whatever is playing: a header that grew and shrank with each song
+  // pushed every row below it, so picking a song dragged the list along under the finger.
+  const header = q ? undefined : (
+    <View style={s.portals}>
+      <Mono c={color.vermilion} numberOfLines={1}>{state?.title ? `PORTALS FROM ${displayName(state.title).title.toUpperCase()}` : " "}</Mono>
+      <Narrow numberOfLines={1}>{portals.length ? portals.map((p) => displayName(p.title).title).join(", ") : state?.title ? "None yet" : " "}</Narrow>
     </View>
-  ) : undefined;
+  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: color.night }} edges={["top", "bottom"]}>
@@ -146,6 +143,7 @@ function Pressing({ track, analysis, left }: { track: Track; analysis?: Analysis
 }
 
 const s = StyleSheet.create({
+  portals: { paddingHorizontal: 24, paddingBottom: 10, height: 62, justifyContent: "center" },
   head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   search: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 48 },
   input: { flex: 1, height: 48, paddingHorizontal: 0, color: color.paper, fontFamily: font.narrow, fontSize: 20 },

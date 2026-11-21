@@ -170,8 +170,12 @@ class PlaybackService : MediaLibraryService() {
   }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
-    // Swiping the app away must not stop a ride; only stop when nothing is playing.
-    if (!player.playWhenReady || player.mediaItemCount == 0) stopSelf()
+    // Swiping SAICS away in Recents closes it, as with any music app: stop the music and the service.
+    // (The helmet's play button can still start it again later through playback resumption.)
+    player.pause()
+    saveState()
+    stopForeground(STOP_FOREGROUND_REMOVE)
+    stopSelf()
   }
 
   override fun onDestroy() {

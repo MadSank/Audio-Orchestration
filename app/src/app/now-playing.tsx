@@ -18,6 +18,10 @@ const onTwos = (t: number) => Math.floor(t * 8) / 8;
 const SWING_MS = 380; // a jump or a seek: the record swings to its new place
 const FLING_MS = 1150;
 const AHEAD_S = 4; // the record is driven this far ahead between the service's state updates
+/** The spindle in the middle: a stack that wears down as the song plays out (record units). */
+const SPINDLE_MAX = 32;
+const SPINDLE_MIN = 6;
+const spindleAt = (b: number, tot: number) => SPINDLE_MIN + (SPINDLE_MAX - SPINDLE_MIN) * (1 - Math.max(0, Math.min(1, b / Math.max(1, tot))));
 
 export default function NowPlaying() {
   const router = useRouter();
@@ -63,8 +67,7 @@ export default function NowPlaying() {
   const arm = useRef(new Animated.Value(armDeg(radiusAt(0, 1)))).current;
   const sync = useRef({ pos: 0, at: 0, playing: false, key: "" });
   const seekTo = useRef<{ pos: number; t: number } | null>(null); // a seek the state hasn't caught up with
-  const heard = useRef({ start: 0, segs: [] as [number, number][] }); // this visit, for the thread
-  const [played, setPlayed] = useState("");
+  const spindle = useRef(new Animated.Value(SPINDLE_MAX)).current; // radius, record units
   const dragging = useRef(false);
   const now = () => sync.current.pos + (sync.current.playing ? (Date.now() - sync.current.at) / 1000 : 0);
   const aim = useCallback((swing: boolean) => {
@@ -76,21 +79,25 @@ export default function NowPlaying() {
       Animated.parallel([
         Animated.timing(turn, { toValue: turnDeg(b), duration: SWING_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
         Animated.timing(arm, { toValue: armDeg(radiusAt(b, tot)), duration: SWING_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(spindle, { toValue: spindleAt(b, tot), duration: SWING_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       ]).start(({ finished }) => finished && aim(false));
     } else if (sync.current.playing) {
       const ahead = barFrac(t.bars, now() + AHEAD_S);
       Animated.parallel([
         Animated.timing(turn, { toValue: turnDeg(ahead), duration: AHEAD_S * 1000, easing: Easing.linear, useNativeDriver: true }),
         Animated.timing(arm, { toValue: armDeg(radiusAt(ahead, tot)), duration: AHEAD_S * 1000, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(spindle, { toValue: spindleAt(ahead, tot), duration: AHEAD_S * 1000, easing: Easing.linear, useNativeDriver: true }),
       ]).start();
     } else {
       turn.stopAnimation();
       arm.stopAnimation();
+      spindle.stopAnimation();
       turn.setValue(turnDeg(b));
       arm.setValue(armDeg(radiusAt(b, tot)));
+      spindle.setValue(spindleAt(b, tot));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arm, turn]);
+  }, [arm, spindle, turn]);
   useEffect(() => {
     if (!state || !timeline || dragging.current) return;
     const pos = state.position / 1000;
@@ -103,24 +110,20 @@ export default function NowPlaying() {
     const expected = now();
     const fresh = sync.current.key !== songKey;
     sync.current = { pos, at: Date.now(), playing: state.isPlaying, key: songKey };
-    const h = heard.current;
     const b = barFrac(timeline.bars, pos);
     if (fresh) {
-      h.start = b;
-      h.segs = [];
       turn.stopAnimation();
       arm.stopAnimation();
+      spindle.stopAnimation();
       turn.setValue(turnDeg(b));
       arm.setValue(armDeg(radiusAt(b, total)));
+      spindle.setValue(spindleAt(b, total));
       aim(false);
     } else if (Math.abs(pos - expected) > 0.8) {
-      h.segs = [...h.segs, [h.start, barFrac(timeline.bars, expected)] as [number, number]].slice(-12);
-      h.start = b;
       aim(true); // a jump: the record swings back (or on)
     } else {
       aim(false);
     }
-    setPlayed([...h.segs, [h.start, b] as [number, number]].map(([a, c]) => groovePath(Math.min(a, c), Math.max(a, c), total)).join(""));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, timeline]);
   const spiral = useMemo(() => (timeline ? groovePath(0, total, total) : ""), [timeline, total]);
@@ -189,8 +192,6 @@ export default function NowPlaying() {
     void SaicsPlayer.seek(secs);
     seekTo.current = { pos: secs, t: Date.now() };
     sync.current = { ...sync.current, pos: secs, at: Date.now() };
-    const t = tl.current;
-    if (t) heard.current = { start: barFrac(t.bars, secs), segs: [] };
     aim(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aim]);
@@ -231,6 +232,7 @@ export default function NowPlaying() {
           dragging.current = true;
           turn.stopAnimation();
           arm.stopAnimation();
+          spindle.stopAnimation();
           void SaicsPlayer.hold(true);
         }
         if (!d.moved) return;
@@ -238,6 +240,7 @@ export default function NowPlaying() {
         d.target = Math.max(0, Math.min(tot - 0.5, d.b0 + (d.turned / (2 * Math.PI)) * BARS_PER_TURN));
         turn.setValue(turnDeg(d.target));
         arm.setValue(armDeg(radiusAt(d.target, tot)));
+        spindle.setValue(spindleAt(d.target, tot));
       },
       onPanResponderRelease: letGo,
       onPanResponderTerminate: letGo,
@@ -251,16 +254,15 @@ export default function NowPlaying() {
     seekSec(secondsAt(t.bars, Math.max(0, Math.min(tot - 1, Math.round(barFrac(t.bars, now())) + n))));
   };
 
-  // What the record shows: the song as a spiral, the stretch heard on this visit, and where a portal
-  // leaves; the way out is drawn two bars before it.
+  // What the record shows: the song as a spiral and where a portal leaves; the way out is drawn two
+  // bars before it. How far the song has got is the spindle, which wears down as it plays.
   const portalBar = portal?.kind === "portal" && state?.bar != null ? state.bar + portal.inBars : null;
   const grooves = useMemo(() => (timeline ? (
     <>
       <Path d={spiral} fill="none" stroke={color.grooveLit} strokeWidth={1.2} />
-      <Path d={played} fill="none" stroke={color.paper} strokeWidth={2} strokeLinecap="round" opacity={0.4} />
       {portalBar != null ? <Path d={grooveTick(portalBar, total)} stroke={color.vermilion} strokeWidth={4.5} strokeLinecap="round" /> : null}
     </>
-  ) : undefined), [timeline, spiral, played, portalBar, total]);
+  ) : undefined), [timeline, spiral, portalBar, total]);
   const toScreen = useCallback(([x, y]: [number, number]): [number, number] => [discLeft + x * k, discTop + y * k], [discLeft, discTop, k]);
   const wayOut = useMemo(() => {
     if (!timeline || portalBar == null || !portal || portal.inBars > 2 || flingFrom != null) return "";
@@ -410,6 +412,14 @@ export default function NowPlaying() {
         <Animated.View style={{ transform: [{ rotate: timeline ? turnRot : rotate }] }}>
           <Record size={D} text={`${name.title} · `.repeat(3).slice(0, 44)} grooves={grooves} />
         </Animated.View>
+        {timeline ? (
+          <Animated.View pointerEvents="none" style={{
+            position: "absolute", left: D / 2 - SPINDLE_MAX * k, top: D / 2 - SPINDLE_MAX * k,
+            width: SPINDLE_MAX * 2 * k, height: SPINDLE_MAX * 2 * k, borderRadius: SPINDLE_MAX * k,
+            backgroundColor: color.paper, borderWidth: 3 * k, borderColor: color.night,
+            transform: [{ scale: spindle.interpolate({ inputRange: [0, SPINDLE_MAX], outputRange: [0, 1] }) }],
+          }} />
+        ) : null}
         {crossing ? <Animated.View pointerEvents="none" style={holdOut}>{gripFrames}</Animated.View> : null}
       </Animated.View>
 

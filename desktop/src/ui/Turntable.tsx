@@ -20,6 +20,8 @@ const ARM = 320;
 const NO_BARS_S = 2; // a song with no analysis turns as if its bars were 2 s long
 const EASE_MS = 380; // a jump: the record swings to its new place
 const EJECT_MS = 1150;
+const SPINDLE_MAX = 40; // the spindle's radius at the start of a song, inside the 108 label
+const SPINDLE_MIN = 9; // at its end: just the hole
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -94,7 +96,7 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60))
 export interface TurntableRefs {
   group: SVGGElement | null;
   spiral: SVGPathElement | null;
-  played: SVGPathElement | null;
+  spindle: SVGCircleElement | null;
   portal: SVGPathElement | null;
   arm: SVGLineElement | null;
   head: SVGLineElement | null;
@@ -107,7 +109,7 @@ export interface TurntableRefs {
 
 export function useTurntable(player: Player, recordBox: RefObject<HTMLDivElement | null>, frozen: boolean) {
   const refs = useRef<TurntableRefs>({
-    group: null, spiral: null, played: null, portal: null, arm: null, head: null, dot: null,
+    group: null, spiral: null, spindle: null, portal: null, arm: null, head: null, dot: null,
     preview: null, ejectDot: null, ejectTrail: null, time: null,
   }).current;
   const st = useRef({
@@ -157,10 +159,8 @@ export function useTurntable(player: Player, recordBox: RefObject<HTMLDivElement
         refs.spiral.setAttribute("d", groovePath(0, total, total));
         st.spiralFile = tl.file;
       }
-      if (refs.played) {
-        const cur: [number, number] = st.drag?.moved ? [Math.min(st.segStart, shown), Math.max(st.segStart, shown)] : [st.segStart, actual];
-        refs.played.setAttribute("d", [...st.segs, cur].map(([a, b]) => groovePath(a, b, total)).join(""));
-      }
+      // How far the song has got: the spindle wears down as it plays out (and grows back on a jump back).
+      refs.spindle?.setAttribute("r", (SPINDLE_MIN + (SPINDLE_MAX - SPINDLE_MIN) * (1 - clamp(shown / Math.max(1, total), 0, 1))).toFixed(1));
       const s = player.state();
       const portal = s.next?.kind === "portal" ? s.next : null;
       if (refs.portal) {

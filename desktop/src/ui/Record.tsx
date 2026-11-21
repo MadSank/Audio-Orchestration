@@ -2,8 +2,8 @@ import type { TurntableRefs } from "./Turntable";
 
 /**
  * The record: two soft bands of light, a vermilion label with the title round it, and grooves.
- * With `turntable`, the grooves are the song itself (one spiral, rim to label), the stretch already
- * heard is drawn in paper, and the turntable turns it; without, plain grooves spin on their own.
+ * With `turntable`, the grooves are the song itself (one spiral, rim to label), a spindle in the
+ * middle wears down as the song plays, and the turntable turns it; without, plain grooves spin on their own.
  */
 export function Record({ title, playing, turntable }: { title: string; playing: boolean; turntable?: TurntableRefs }) {
   const text = `${title} · ${title} · `.slice(0, 90);
@@ -18,7 +18,6 @@ export function Record({ title, playing, turntable }: { title: string; playing: 
         {t ? (
           <>
             <path ref={(e) => void (t.spiral = e)} fill="none" stroke="var(--groove)" strokeWidth="1.4" />
-            <path ref={(e) => void (t.played = e)} fill="none" stroke="var(--paper)" strokeWidth="2.6" strokeLinecap="round" opacity="0.85" />
             <path ref={(e) => void (t.portal = e)} fill="none" stroke="var(--vermilion)" strokeWidth="5" strokeLinecap="round" />
           </>
         ) : (
@@ -33,6 +32,7 @@ export function Record({ title, playing, turntable }: { title: string; playing: 
         </text>
         <circle cx="300" cy="300" r="9" fill="var(--night)" />
       </g>
+      {t ? <circle ref={(e) => void (t.spindle = e)} cx="300" cy="300" r="40" fill="var(--paper)" stroke="var(--night)" strokeWidth="4" /> : null}
     </svg>
   );
 }
